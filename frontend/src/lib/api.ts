@@ -243,14 +243,16 @@ export const shiftCoverage = {
 // ============================================================
 
 export const messages = {
-  list: (params?: { page?: number; per_page?: number; location_id?: number }) =>
+  list: (params?: { page?: number; per_page?: number; location_id?: number; announcements_only?: boolean }) =>
     api.get('/messaging', { params }).then((r) => normalizePaginated<Message>(r.data)),
 
-  send: (data: { recipient_id?: number; body: string; location_id?: number; subject?: string }) =>
+  send: (data: { body: string; location_id?: number; recipient_ids?: number[] }) =>
     api.post<Message>('/messaging', {
       content: data.body,
       location_id: data.location_id ?? null,
       is_announcement: false,
+      is_direct: (data.recipient_ids?.length ?? 0) > 0,
+      recipient_ids: data.recipient_ids ?? [],
     }).then((r) => r.data),
 
   getAnnouncements: (params?: { location_id?: number }) =>
@@ -264,7 +266,14 @@ export const messages = {
       content: data.body ?? data.subject,
       location_id: data.location_id ?? null,
       is_announcement: true,
+      recipient_ids: [],
     }).then((r) => r.data),
+
+  markRead: (messageIds: number[]) =>
+    api.post('/messaging/mark-read', { message_ids: messageIds }).then((r) => r.data),
+
+  getUnreadCount: () =>
+    api.get<{ unread_count: number }>('/messaging/unread-count').then((r) => r.data),
 };
 
 // ============================================================

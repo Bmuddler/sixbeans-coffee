@@ -180,17 +180,27 @@ export interface ShiftCoverageRequest {
   created_at: string;
 }
 
+export interface MessageRecipientInfo {
+  user_id: number;
+  user_name?: string;
+  read_at?: string;
+}
+
 export interface Message {
   id: number;
   sender_id: number;
-  recipient_id?: number;
+  sender_name?: string;
   location_id?: number;
+  content?: string;
+  body?: string;
   subject?: string;
-  body: string;
   is_announcement: boolean;
-  is_read: boolean;
+  is_direct?: boolean;
+  is_read?: boolean;
   sender?: User;
-  recipient?: User;
+  recipients?: MessageRecipientInfo[];
+  read_count?: number;
+  total_recipients?: number;
   created_at: string;
 }
 

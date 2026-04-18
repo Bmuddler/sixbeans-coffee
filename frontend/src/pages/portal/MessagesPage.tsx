@@ -11,6 +11,9 @@ import {
   ChevronDown,
   ChevronRight,
   Users,
+  Check,
+  CheckCheck,
+  Eye,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -42,6 +45,7 @@ function formatTimestamp(dateStr: string) {
 }
 
 type Tab = 'messages' | 'announcements';
+type SendMode = 'location' | 'direct';
 
 export function MessagesPage() {
   const currentUser = useAuthStore((s) => s.user);
@@ -49,45 +53,44 @@ export function MessagesPage() {
   const [activeTab, setActiveTab] = useState<Tab>('messages');
   const [messageBody, setMessageBody] = useState('');
   const [selectedLocationFilter, setSelectedLocationFilter] = useState<number | undefined>();
+  const [sendMode, setSendMode] = useState<SendMode>('location');
+  const [sendToLocationId, setSendToLocationId] = useState<number | undefined>();
+  const [selectedRecipientIds, setSelectedRecipientIds] = useState<Set<number>>(new Set());
+  const [collapsedShops, setCollapsedShops] = useState<Set<number>>(new Set());
   const [showAnnouncementModal, setShowAnnouncementModal] = useState(false);
   const [announcementSubject, setAnnouncementSubject] = useState('');
   const [announcementBody, setAnnouncementBody] = useState('');
   const [announcementLocationId, setAnnouncementLocationId] = useState<string>('');
-  const [collapsedShops, setCollapsedShops] = useState<Set<number>>(new Set());
-  const [sendToLocationId, setSendToLocationId] = useState<number | undefined>();
+  const [showReadReceipts, setShowReadReceipts] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const isOwner = currentUser?.role === UserRole.OWNER;
   const isManager = currentUser?.role === UserRole.MANAGER;
   const isManagerOrOwner = isOwner || isManager;
 
-  const { data: allLocations } = useQuery({
-    queryKey: ['locations'],
-    queryFn: locationsApi.list,
-  });
-
-  const { data: teamData } = useQuery({
-    queryKey: ['users-for-messages'],
-    queryFn: () => usersApi.list({ per_page: 100 }),
-    enabled: isManagerOrOwner,
-  });
-
+  const { data: allLocations } = useQuery({ queryKey: ['locations'], queryFn: locationsApi.list });
+  const { data: teamData } = useQuery({ queryKey: ['users-for-messages'], queryFn: () => usersApi.list({ per_page: 100 }) });
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['messages', selectedLocationFilter],
     queryFn: () => messagesApi.list({ per_page: 50, location_id: selectedLocationFilter }),
-    refetchInterval: 15000,
+    refetchInterval: 10000,
   });
-
   const { data: announcements, isLoading: announcementsLoading } = useQuery({
     queryKey: ['announcements', selectedLocationFilter],
     queryFn: () => messagesApi.getAnnouncements(selectedLocationFilter ? { location_id: selectedLocationFilter } : undefined),
     refetchInterval: 30000,
   });
+  const { data: unreadData } = useQuery({
+    queryKey: ['unread-count'],
+    queryFn: messagesApi.getUnreadCount,
+    refetchInterval: 15000,
+  });
 
   const sendMessageMutation = useMutation({
-    mutationFn: (data: { body: string; location_id?: number }) => messagesApi.send(data),
+    mutationFn: (data: { body: string; location_id?: number; recipient_ids?: number[] }) => messagesApi.send(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['unread-count'] });
       setMessageBody('');
       toast.success('Message sent!');
     },
@@ -107,16 +110,97 @@ export function MessagesPage() {
     onError: () => toast.error('Failed to post announcement.'),
   });
 
+  const markReadMutation = useMutation({
+    mutationFn: (ids: number[]) => messagesApi.markRead(ids),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      queryClient.invalidateQueries({ queryKey: ['unread-count'] });
+    },
+  });
+
+  // Auto-scroll and mark as read
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const items = messagesData?.items ?? [];
+    const unreadIds = items
+      .filter((m) => m.recipients?.some((r) => r.user_id === currentUser?.id && !r.read_at))
+      .map((m) => m.id);
+    if (unreadIds.length > 0) markReadMutation.mutate(unreadIds);
   }, [messagesData]);
+
+  // Group team by location
+  const teamByLocation = useMemo(() => {
+    const allTeam = teamData?.items ?? [];
+    const map = new Map<number, { location: Location; members: User[] }>();
+    allLocations?.forEach((loc) => map.set(loc.id, { location: loc, members: [] }));
+
+    const isEmployee = currentUser?.role === UserRole.EMPLOYEE;
+    const myLocationIds = currentUser?.location_ids ?? [];
+
+    allTeam.forEach((member) => {
+      if (member.id === currentUser?.id) return;
+      const memberLocs = member.location_ids ?? [];
+      if (isEmployee) {
+        const isCoworker = memberLocs.some((lid) => myLocationIds.includes(lid));
+        const isMgrOrOwner = member.role === 'manager' || member.role === 'owner';
+        if (!isCoworker && !isMgrOrOwner) return;
+      }
+      memberLocs.forEach((locId) => {
+        const group = map.get(locId);
+        if (group && !group.members.find((m) => m.id === member.id)) {
+          group.members.push(member);
+        }
+      });
+    });
+    return map;
+  }, [teamData, allLocations, currentUser]);
+
+  // Selection helpers
+  const toggleRecipient = (id: number) => {
+    setSendMode('direct');
+    setSelectedRecipientIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const selectShop = (locId: number) => {
+    const group = teamByLocation.get(locId);
+    if (!group) return;
+    const ids = group.members.map((m) => m.id);
+    const allSelected = ids.every((id) => selectedRecipientIds.has(id));
+    setSendMode('direct');
+    setSelectedRecipientIds((prev) => {
+      const next = new Set(prev);
+      if (allSelected) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const selectLocationForBroadcast = (locId: number) => {
+    setSendMode('location');
+    setSendToLocationId(locId);
+    setSelectedRecipientIds(new Set());
+    setSelectedLocationFilter(locId);
+  };
+
+  const selectCompanyWide = () => {
+    setSendMode('location');
+    setSendToLocationId(undefined);
+    setSelectedRecipientIds(new Set());
+    setSelectedLocationFilter(undefined);
+  };
 
   const handleSendMessage = () => {
     if (!messageBody.trim()) return;
-    sendMessageMutation.mutate({
-      body: messageBody.trim(),
-      location_id: sendToLocationId,
-    });
+    if (sendMode === 'direct' && selectedRecipientIds.size > 0) {
+      sendMessageMutation.mutate({ body: messageBody.trim(), recipient_ids: Array.from(selectedRecipientIds) });
+    } else {
+      sendMessageMutation.mutate({ body: messageBody.trim(), location_id: sendToLocationId });
+    }
   };
 
   const handleSendAnnouncement = () => {
@@ -128,59 +212,29 @@ export function MessagesPage() {
     });
   };
 
-  // Group team members by location for sidebar
-  const teamByLocation = useMemo(() => {
-    const allTeam = teamData?.items ?? [];
-    const map = new Map<number, { location: Location; members: User[] }>();
-
-    allLocations?.forEach((loc) => {
-      map.set(loc.id, { location: loc, members: [] });
-    });
-
-    // For employees: only show their own location's coworkers + managers + owners
-    const isEmployee = currentUser?.role === UserRole.EMPLOYEE;
-    const myLocationIds = currentUser?.location_ids ?? [];
-
-    allTeam.forEach((member) => {
-      if (member.id === currentUser?.id) return;
-
-      const memberLocs = member.location_ids ?? [];
-      if (isEmployee) {
-        // Employees only see: coworkers at same location, managers, owners
-        const isCoworker = memberLocs.some((lid) => myLocationIds.includes(lid));
-        const isManagerOrOwnerMember = member.role === 'manager' || member.role === 'owner';
-        if (!isCoworker && !isManagerOrOwnerMember) return;
-      }
-
-      if (memberLocs.length === 0) return;
-      memberLocs.forEach((locId) => {
-        const group = map.get(locId);
-        if (group && !group.members.find((m) => m.id === member.id)) {
-          group.members.push(member);
-        }
-      });
-    });
-
-    return map;
-  }, [teamData, allLocations, currentUser]);
-
   const toggleShopCollapse = (locId: number) => {
-    setCollapsedShops((prev) => {
-      const next = new Set(prev);
-      if (next.has(locId)) next.delete(locId);
-      else next.add(locId);
-      return next;
-    });
-  };
-
-  const selectShopForMessage = (locId: number) => {
-    setSendToLocationId(locId);
+    setCollapsedShops((prev) => { const next = new Set(prev); if (next.has(locId)) next.delete(locId); else next.add(locId); return next; });
   };
 
   const allMessages = messagesData?.items ?? [];
   const displayMessages = allMessages.filter((m) => !m.is_announcement);
-
+  const unreadCount = unreadData?.unread_count ?? 0;
   const locationOptions = allLocations?.map((loc) => ({ value: loc.id.toString(), label: loc.name })) ?? [];
+
+  // Build "sending to" label
+  const sendingToLabel = useMemo(() => {
+    if (sendMode === 'direct' && selectedRecipientIds.size > 0) {
+      const allTeam = teamData?.items ?? [];
+      const names = Array.from(selectedRecipientIds)
+        .map((id) => allTeam.find((u) => u.id === id))
+        .filter(Boolean)
+        .map((u) => `${u!.first_name} ${u!.last_name?.[0] ?? ''}.`);
+      if (names.length <= 3) return names.join(', ');
+      return `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+    }
+    if (sendToLocationId) return allLocations?.find((l) => l.id === sendToLocationId)?.name ?? 'Location';
+    return 'Company-wide';
+  }, [sendMode, selectedRecipientIds, sendToLocationId, teamData, allLocations]);
 
   return (
     <div>
@@ -190,63 +244,41 @@ export function MessagesPage() {
           <p className="page-subtitle">Team messaging and announcements.</p>
         </div>
         {isManagerOrOwner && (
-          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowAnnouncementModal(true)}>
-            New Announcement
-          </Button>
+          <Button icon={<Plus className="h-4 w-4" />} onClick={() => setShowAnnouncementModal(true)}>New Announcement</Button>
         )}
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-gray-200 mb-6">
-        <button
-          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'messages' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          onClick={() => setActiveTab('messages')}
-        >
+        <button className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'messages' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveTab('messages')}>
           <div className="flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" />
-            Messages
+            <MessageSquare className="h-4 w-4" />Messages
+            {unreadCount > 0 && <span className="inline-flex items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-medium text-white">{unreadCount}</span>}
           </div>
         </button>
-        <button
-          className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'announcements' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
-          onClick={() => setActiveTab('announcements')}
-        >
-          <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Announcements
-          </div>
+        <button className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${activeTab === 'announcements' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveTab('announcements')}>
+          <div className="flex items-center gap-2"><Bell className="h-4 w-4" />Announcements</div>
         </button>
       </div>
 
       {/* Messages Tab */}
       {activeTab === 'messages' && (
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Message List */}
           <div className="lg:col-span-2">
             <Card padding={false}>
-              {/* Location filter bar */}
-              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200">
-                <span className="text-xs text-gray-500">Viewing:</span>
-                <div className="flex gap-1 flex-wrap">
-                  <button
-                    onClick={() => { setSelectedLocationFilter(undefined); setSendToLocationId(undefined); }}
-                    className={`px-2 py-1 rounded text-xs font-medium transition-colors ${!selectedLocationFilter ? 'bg-primary text-white' : 'bg-white text-gray-600 border border-gray-300 hover:border-primary'}`}
-                  >
-                    All
+              {/* Filter bar */}
+              <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-200 flex-wrap">
+                <span className="text-xs text-gray-500">Filter:</span>
+                <button onClick={() => setSelectedLocationFilter(undefined)} className={`px-2 py-1 rounded text-xs font-medium transition-colors ${!selectedLocationFilter ? 'bg-primary text-white' : 'bg-white text-gray-600 border border-gray-300 hover:border-primary'}`}>All</button>
+                {allLocations?.map((loc) => (
+                  <button key={loc.id} onClick={() => setSelectedLocationFilter(loc.id)} className={`px-2 py-1 rounded text-xs font-medium transition-colors ${selectedLocationFilter === loc.id ? 'bg-primary text-white' : 'bg-white text-gray-600 border border-gray-300 hover:border-primary'}`}>
+                    {loc.name.replace('Six Beans - ', '')}
                   </button>
-                  {allLocations?.map((loc) => (
-                    <button
-                      key={loc.id}
-                      onClick={() => { setSelectedLocationFilter(loc.id); setSendToLocationId(loc.id); }}
-                      className={`px-2 py-1 rounded text-xs font-medium transition-colors ${selectedLocationFilter === loc.id ? 'bg-primary text-white' : 'bg-white text-gray-600 border border-gray-300 hover:border-primary'}`}
-                    >
-                      {loc.name.replace('Six Beans - ', '')}
-                    </button>
-                  ))}
-                </div>
+                ))}
               </div>
 
-              <div className="h-[450px] overflow-y-auto">
+              {/* Messages */}
+              <div className="h-[420px] overflow-y-auto">
                 {messagesLoading ? (
                   <LoadingSpinner className="py-20" label="Loading messages..." />
                 ) : displayMessages.length > 0 ? (
@@ -256,21 +288,62 @@ export function MessagesPage() {
                       const senderName = msg.sender_name ?? 'Unknown';
                       const initials = senderName.split(' ').map((n: string) => n[0]).join('').slice(0, 2);
                       const locName = allLocations?.find((l) => l.id === msg.location_id)?.name?.replace('Six Beans - ', '');
+                      const isDirectMsg = msg.is_direct;
+                      const readCount = msg.read_count ?? 0;
+                      const totalRecipients = msg.total_recipients ?? 0;
+                      const allRead = totalRecipients > 0 && readCount >= totalRecipients;
+
                       return (
                         <div key={msg.id} className={`px-4 py-3 ${isMine ? 'bg-primary/5' : ''}`}>
                           <div className="flex items-start gap-3">
-                            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white flex-shrink-0 ${isMine ? 'bg-primary' : 'bg-gray-400'}`}>
-                              {initials}
-                            </div>
+                            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white flex-shrink-0 ${isMine ? 'bg-primary' : 'bg-gray-400'}`}>{initials}</div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <p className="text-sm font-medium text-gray-900">{senderName}{isMine && <span className="text-xs text-gray-400 ml-1">(you)</span>}</p>
-                                  {locName && <Badge variant="info">{locName}</Badge>}
+                                  {isDirectMsg && <Badge variant="info">DM</Badge>}
+                                  {locName && !isDirectMsg && <Badge variant="pending">{locName}</Badge>}
+                                  {!msg.location_id && !isDirectMsg && <Badge variant="approved">All</Badge>}
                                 </div>
-                                <span className="text-xs text-gray-400">{formatTimestamp(msg.created_at)}</span>
+                                <div className="flex items-center gap-2">
+                                  {isMine && totalRecipients > 0 && (
+                                    <button
+                                      onClick={() => setShowReadReceipts(showReadReceipts === msg.id ? null : msg.id)}
+                                      className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                                      title={`${readCount}/${totalRecipients} read`}
+                                    >
+                                      {allRead ? <CheckCheck className="h-3.5 w-3.5 text-blue-500" /> : <Check className="h-3.5 w-3.5" />}
+                                      <span>{readCount}/{totalRecipients}</span>
+                                    </button>
+                                  )}
+                                  <span className="text-xs text-gray-400">{formatTimestamp(msg.created_at)}</span>
+                                </div>
                               </div>
+                              {isDirectMsg && msg.recipients && msg.recipients.length > 0 && (
+                                <p className="text-xs text-gray-400 mt-0.5">
+                                  To: {msg.recipients.map((r) => r.user_name ?? `User #${r.user_id}`).join(', ')}
+                                </p>
+                              )}
                               <p className="text-sm text-gray-600 mt-1">{msg.content ?? msg.body}</p>
+
+                              {/* Read receipt details */}
+                              {showReadReceipts === msg.id && msg.recipients && (
+                                <div className="mt-2 p-2 rounded-lg bg-gray-50 border border-gray-200">
+                                  <p className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1"><Eye className="h-3 w-3" /> Read receipts</p>
+                                  <div className="space-y-1">
+                                    {msg.recipients.map((r) => (
+                                      <div key={r.user_id} className="flex items-center justify-between text-xs">
+                                        <span className="text-gray-700">{r.user_name ?? `User #${r.user_id}`}</span>
+                                        {r.read_at ? (
+                                          <span className="text-blue-500 flex items-center gap-1"><CheckCheck className="h-3 w-3" />{formatTimestamp(r.read_at)}</span>
+                                        ) : (
+                                          <span className="text-gray-400">Not seen</span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -279,17 +352,18 @@ export function MessagesPage() {
                     <div ref={messagesEndRef} />
                   </div>
                 ) : (
-                  <EmptyState icon={<MessageSquare className="h-12 w-12" />} title="No Messages" description="Send a message to get started." />
+                  <EmptyState icon={<MessageSquare className="h-12 w-12" />} title="No Messages" description="Select recipients and send a message to get started." />
                 )}
               </div>
 
-              {/* Message Input */}
+              {/* Send bar */}
               <div className="border-t border-gray-200 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-gray-500">Sending to:</span>
-                  <span className="text-xs font-medium text-gray-700">
-                    {sendToLocationId ? allLocations?.find((l) => l.id === sendToLocationId)?.name : 'Company-wide'}
-                  </span>
+                  <span className="text-xs text-gray-500">To:</span>
+                  <span className="text-xs font-medium text-primary">{sendingToLabel}</span>
+                  {selectedRecipientIds.size > 0 && (
+                    <button onClick={() => { setSelectedRecipientIds(new Set()); setSendMode('location'); }} className="text-xs text-gray-400 hover:text-gray-600 underline">clear</button>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <input
@@ -300,29 +374,22 @@ export function MessagesPage() {
                     placeholder="Type a message..."
                     className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
                   />
-                  <Button icon={<Send className="h-4 w-4" />} onClick={handleSendMessage} loading={sendMessageMutation.isPending} disabled={!messageBody.trim()}>
-                    Send
-                  </Button>
+                  <Button icon={<Send className="h-4 w-4" />} onClick={handleSendMessage} loading={sendMessageMutation.isPending} disabled={!messageBody.trim()}>Send</Button>
                 </div>
               </div>
             </Card>
           </div>
 
-          {/* Sidebar - Team by Shop */}
+          {/* Sidebar */}
           <div>
-            <Card title="Team by Shop" padding={false}>
-              <div className="max-h-[550px] overflow-y-auto">
-                {/* Company-wide option */}
-                <button
-                  onClick={() => { setSendToLocationId(undefined); setSelectedLocationFilter(undefined); }}
-                  className={`flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 ${!sendToLocationId ? 'bg-primary/5' : ''}`}
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  <div>
+            <Card title="Send To" padding={false}>
+              <div className="max-h-[530px] overflow-y-auto">
+                {/* Company-wide */}
+                <button onClick={selectCompanyWide} className={`flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-gray-50 transition-colors border-b border-gray-100 ${sendMode === 'location' && !sendToLocationId ? 'bg-primary/5' : ''}`}>
+                  <Users className="h-4 w-4 text-primary" />
+                  <div className="flex-1">
                     <p className="text-sm font-medium text-gray-900">Company-wide</p>
-                    <p className="text-xs text-gray-500">Message all locations</p>
+                    <p className="text-xs text-gray-500">All locations</p>
                   </div>
                 </button>
 
@@ -330,38 +397,51 @@ export function MessagesPage() {
                 {Array.from(teamByLocation.entries()).map(([locId, { location, members }]) => {
                   if (members.length === 0) return null;
                   const isCollapsed = collapsedShops.has(locId);
-                  const isActive = sendToLocationId === locId;
+                  const allShopSelected = members.every((m) => selectedRecipientIds.has(m.id));
+                  const someShopSelected = members.some((m) => selectedRecipientIds.has(m.id));
+                  const isLocActive = sendMode === 'location' && sendToLocationId === locId;
 
                   return (
-                    <div key={locId} className={isActive ? 'bg-primary/5' : ''}>
+                    <div key={locId} className={isLocActive ? 'bg-primary/5' : ''}>
                       <div className="flex items-center border-b border-gray-100">
-                        <button
-                          onClick={() => toggleShopCollapse(locId)}
-                          className="p-2 text-gray-400 hover:text-gray-600"
-                        >
+                        {/* Collapse toggle */}
+                        <button onClick={() => toggleShopCollapse(locId)} className="p-2 text-gray-400 hover:text-gray-600">
                           {isCollapsed ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         </button>
-                        <button
-                          onClick={() => selectShopForMessage(locId)}
-                          className="flex items-center gap-2 flex-1 py-2.5 pr-4 text-left hover:bg-gray-50 transition-colors"
-                        >
+
+                        {/* Select all in shop */}
+                        <button onClick={() => selectShop(locId)} className="p-1 text-gray-400 hover:text-primary" title="Select all at this location">
+                          {allShopSelected ? <CheckSquare className="h-4 w-4 text-primary" /> : someShopSelected ? <CheckSquare className="h-4 w-4 text-primary/50" /> : <Square className="h-4 w-4" />}
+                        </button>
+
+                        {/* Location name - click to broadcast to location */}
+                        <button onClick={() => selectLocationForBroadcast(locId)} className="flex items-center gap-2 flex-1 py-2.5 pr-4 text-left hover:bg-gray-50 transition-colors">
                           <MapPin className="h-4 w-4 text-primary flex-shrink-0" />
                           <span className="text-sm font-semibold text-gray-900 truncate">{location.name.replace('Six Beans - ', '')}</span>
                           <Badge variant="info">{members.length}</Badge>
                         </button>
                       </div>
+
                       {!isCollapsed && (
-                        <div className="pl-6">
-                          {members.map((member) => (
-                            <div key={member.id} className="flex items-center gap-2 px-4 py-1.5 text-xs text-gray-600">
-                              <div className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white ${member.role === 'manager' ? 'bg-amber-500' : member.role === 'owner' ? 'bg-primary' : 'bg-gray-400'}`}>
-                                {member.first_name[0]}{member.last_name?.[0] ?? ''}
-                              </div>
-                              <span className="truncate">{member.first_name} {member.last_name}</span>
-                              {member.role === 'manager' && <span className="text-[10px] text-amber-600 font-medium">MGR</span>}
-                              {member.role === 'owner' && <span className="text-[10px] text-primary font-medium">OWNER</span>}
-                            </div>
-                          ))}
+                        <div className="pl-4">
+                          {members.map((member) => {
+                            const isSelected = selectedRecipientIds.has(member.id);
+                            return (
+                              <button
+                                key={member.id}
+                                onClick={() => toggleRecipient(member.id)}
+                                className={`flex items-center gap-2 w-full px-3 py-1.5 text-left hover:bg-gray-50 transition-colors ${isSelected ? 'bg-primary/5' : ''}`}
+                              >
+                                {isSelected ? <CheckSquare className="h-3.5 w-3.5 text-primary flex-shrink-0" /> : <Square className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                                <div className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] font-semibold text-white flex-shrink-0 ${member.role === 'manager' ? 'bg-amber-500' : member.role === 'owner' ? 'bg-primary' : 'bg-gray-400'}`}>
+                                  {member.first_name[0]}{member.last_name?.[0] ?? ''}
+                                </div>
+                                <span className="text-xs text-gray-700 truncate">{member.first_name} {member.last_name}</span>
+                                {member.role === 'manager' && <span className="text-[10px] text-amber-600 font-medium ml-auto">MGR</span>}
+                                {member.role === 'owner' && <span className="text-[10px] text-primary font-medium ml-auto">OWNER</span>}
+                              </button>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -379,15 +459,9 @@ export function MessagesPage() {
           {isManagerOrOwner && locationOptions.length > 0 && (
             <div className="mb-4 flex items-center gap-3">
               <MapPin className="h-4 w-4 text-gray-400" />
-              <Select
-                options={[{ value: '', label: 'All Locations' }, ...locationOptions]}
-                value={selectedLocationFilter?.toString() ?? ''}
-                onChange={(e) => setSelectedLocationFilter(e.target.value ? parseInt(e.target.value, 10) : undefined)}
-                className="w-48"
-              />
+              <Select options={[{ value: '', label: 'All Locations' }, ...locationOptions]} value={selectedLocationFilter?.toString() ?? ''} onChange={(e) => setSelectedLocationFilter(e.target.value ? parseInt(e.target.value, 10) : undefined)} className="w-48" />
             </div>
           )}
-
           {announcementsLoading ? (
             <LoadingSpinner className="py-20" label="Loading announcements..." />
           ) : announcements && announcements.length > 0 ? (
@@ -395,9 +469,7 @@ export function MessagesPage() {
               {announcements.map((a: any) => (
                 <Card key={a.id}>
                   <div className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100 flex-shrink-0">
-                      <Bell className="h-5 w-5 text-yellow-600" />
-                    </div>
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-yellow-100 flex-shrink-0"><Bell className="h-5 w-5 text-yellow-600" /></div>
                     <div className="flex-1">
                       {a.subject && <h3 className="text-base font-semibold text-gray-900">{a.subject}</h3>}
                       <p className="text-sm text-gray-600 mt-1">{a.content ?? a.body}</p>
@@ -408,10 +480,7 @@ export function MessagesPage() {
                         {a.location_id && (
                           <>
                             <span>·</span>
-                            <span className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {allLocations?.find((l) => l.id === a.location_id)?.name ?? `Location #${a.location_id}`}
-                            </span>
+                            <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{allLocations?.find((l) => l.id === a.location_id)?.name ?? `Location #${a.location_id}`}</span>
                           </>
                         )}
                       </div>
@@ -421,38 +490,23 @@ export function MessagesPage() {
               ))}
             </div>
           ) : (
-            <Card>
-              <EmptyState icon={<Bell className="h-12 w-12" />} title="No Announcements" description="There are no announcements at this time." />
-            </Card>
+            <Card><EmptyState icon={<Bell className="h-12 w-12" />} title="No Announcements" description="There are no announcements at this time." /></Card>
           )}
         </div>
       )}
 
-      {/* New Announcement Modal */}
+      {/* Announcement Modal */}
       <Modal open={showAnnouncementModal} onClose={() => setShowAnnouncementModal(false)} title="Post Announcement">
         <div className="space-y-4">
           <Input label="Subject" value={announcementSubject} onChange={(e) => setAnnouncementSubject(e.target.value)} placeholder="Announcement title (optional)" />
           <div>
             <label className="mb-1.5 block text-sm font-medium text-gray-700">Message</label>
-            <textarea
-              value={announcementBody}
-              onChange={(e) => setAnnouncementBody(e.target.value)}
-              placeholder="Write your announcement..."
-              rows={4}
-              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-            />
+            <textarea value={announcementBody} onChange={(e) => setAnnouncementBody(e.target.value)} placeholder="Write your announcement..." rows={4} className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20" />
           </div>
-          <Select
-            label="Location (optional)"
-            options={[{ value: '', label: 'All Locations (company-wide)' }, ...locationOptions]}
-            value={announcementLocationId}
-            onChange={(e) => setAnnouncementLocationId(e.target.value)}
-          />
+          <Select label="Location (optional)" options={[{ value: '', label: 'All Locations (company-wide)' }, ...locationOptions]} value={announcementLocationId} onChange={(e) => setAnnouncementLocationId(e.target.value)} />
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="ghost" onClick={() => setShowAnnouncementModal(false)}>Cancel</Button>
-            <Button onClick={handleSendAnnouncement} loading={sendAnnouncementMutation.isPending} disabled={!announcementBody.trim()}>
-              Post Announcement
-            </Button>
+            <Button onClick={handleSendAnnouncement} loading={sendAnnouncementMutation.isPending} disabled={!announcementBody.trim()}>Post Announcement</Button>
           </div>
         </div>
       </Modal>
