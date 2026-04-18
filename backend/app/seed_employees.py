@@ -45,14 +45,6 @@ EMPLOYEES = [
     {"first_name": "Arianna", "last_name": "Rizzardi", "email": "arizzardi1206@gmail.com", "phone": "7605150064", "location": "Six Beans Coffee Yucca Loma", "permission": "Employee", "pin": "516127"},
     {"first_name": "Aura", "last_name": "Ramirez", "email": "auraampie101@gmail.com", "phone": "7608408934", "location": "Six Beans Coffee Co 7th Street", "permission": "Employee", "pin": "7888"},
     {"first_name": "Autumn", "last_name": "Hicks", "email": "", "phone": "8402627141", "location": "Six Beans Coffee Ranchero", "permission": "Employee", "pin": "167534"},
-    {"first_name": "B", "last_name": "Nicklason", "email": "logcastles@gmail.com", "phone": "", "location": "Barstow Six Beans", "permission": "Employee", "pin": "760220"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Victorville", "permission": "Employee", "pin": "491966"},
-    {"first_name": "Brian", "last_name": "Nicklason", "email": "info@sixbeanscoffee.com", "phone": "7602201521", "location": "Six Beans Coffee Yucca Loma", "permission": "Manager", "pin": "156102"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Coffee Ranchero", "permission": "Manager", "pin": "450821"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Coffee Co 7th Street", "permission": "Manager", "pin": "0562"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "SIX BEANS COFFEE CO", "permission": "Manager", "pin": "151085"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Victorville", "permission": "Manager", "pin": "758410"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Barstow Six Beans", "permission": "Manager", "pin": "200384"},
     {"first_name": "Britney", "last_name": "Solis", "email": "britneysolis14@gmail.com", "phone": "6264561739", "location": "Six Beans Victorville", "permission": "Employee", "pin": "647762"},
     {"first_name": "Cali", "last_name": "Daggy", "email": "calidaggy23@icloud.com", "phone": "7609985386", "location": "Six Beans Coffee Yucca Loma", "permission": "Employee", "pin": "646343"},
     {"first_name": "Chloe", "last_name": "Nicklason", "email": "chloe.nicklason@gmail.com", "phone": "7608819560", "location": "SIX BEANS COFFEE CO", "permission": "Employee", "pin": "819560"},
@@ -73,12 +65,6 @@ EMPLOYEES = [
     {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Coffee Ranchero", "permission": "Manager", "pin": "814216"},
     {"first_name": "Janay", "last_name": "Dumas", "email": "dumas.janay@gmail.com", "phone": "7708565796", "location": "Six Beans Victorville", "permission": "Employee", "pin": "868722"},
     {"first_name": "Jayden", "last_name": "Gutierrez", "email": "jay1sabel9@gmail.com", "phone": "7604902821", "location": "SIX BEANS COFFEE CO", "permission": "Employee", "pin": "286381"},
-    {"first_name": "Jessica", "last_name": "Nicklason", "email": "blend556@gmail.com", "phone": "5415808392", "location": "Six Beans Coffee Yucca Loma", "permission": "General Manager", "pin": "251612"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Victorville", "permission": "General Manager", "pin": "251612"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Coffee Ranchero", "permission": "General Manager", "pin": "251612"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Six Beans Coffee Co 7th Street", "permission": "General Manager", "pin": "1612"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "SIX BEANS COFFEE CO", "permission": "General Manager", "pin": "251612"},
-    {"first_name": "", "last_name": "", "email": "", "phone": "", "location": "Barstow Six Beans", "permission": "General Manager", "pin": "251612"},
     {"first_name": "Johanna", "last_name": "Munoz", "email": "jmunoz3263@gmail.com", "phone": "9097450985", "location": "Six Beans Victorville", "permission": "Employee", "pin": "167703"},
     {"first_name": "Jose", "last_name": "Ponce", "email": "jp327256@gmail.com", "phone": "9253540887", "location": "SIX BEANS COFFEE CO", "permission": "Employee", "pin": "853064"},
     {"first_name": "Julia", "last_name": "Fernandez", "email": "bayles1008@gmail.com", "phone": "7603389500", "location": "Six Beans Coffee Ranchero", "permission": "Employee", "pin": "057782"},
@@ -106,7 +92,6 @@ EMPLOYEES = [
     {"first_name": "Nici", "last_name": "Pena", "email": "nici.pena105@gmail.com", "phone": "9092146194", "location": "Six Beans Coffee Co 7th Street", "permission": "Employee", "pin": "8324"},
     {"first_name": "Payton", "last_name": "Raney", "email": "paytonraney38@gmail.com", "phone": "9099384625", "location": "Six Beans Coffee Ranchero", "permission": "Employee", "pin": "143440"},
     {"first_name": "Sofia", "last_name": "Herrarte", "email": "sofiaherrarte0@gmail.com", "phone": "8189794099", "location": "Six Beans Coffee Co 7th Street", "permission": "Employee", "pin": "0426"},
-    # TAPMANGO row skipped (no first_name, no email)
     {"first_name": "Zamantha", "last_name": "Limon", "email": "zamanthalimon1@gmail.com", "phone": "9513573113", "location": "Six Beans Coffee Co 7th Street", "permission": "Manager", "pin": "6444"},
     {"first_name": "Zoey", "last_name": "Hines", "email": "zhines5233@gmail.com", "phone": "7605529774", "location": "Six Beans Coffee Co 7th Street", "permission": "Employee", "pin": "4535"},
 ]
@@ -184,45 +169,6 @@ async def seed_employees(session):
                 resolved_location_ids.append(location_lookup[db_name])
             else:
                 logger.warning("Unknown location mapping: '%s'", loc_csv_name)
-
-        # Special case: logcastles@gmail.com — update the existing owner account
-        if email == "logcastles@gmail.com":
-            result = await session.execute(select(User).where(User.email == email))
-            existing = result.scalar_one_or_none()
-            if existing:
-                existing.first_name = first_name or existing.first_name
-                existing.last_name = last_name or existing.last_name
-                if phone:
-                    existing.phone = phone
-                existing.pin_last_four = pin
-                existing.hashed_password = hashed_pw
-                # Keep role as owner (they are an owner in the system)
-                existing.role = "owner"
-                # Set locations
-                loc_objs = [loc for loc in all_locations if loc.id in resolved_location_ids]
-                existing.locations = loc_objs
-                updated_count += 1
-                continue
-
-        # Special case: blend556@gmail.com (Jessica) — update existing jessica@sixbeanscoffee.com
-        if email == "blend556@gmail.com":
-            result = await session.execute(
-                select(User).where(User.email == "jessica@sixbeanscoffee.com")
-            )
-            existing = result.scalar_one_or_none()
-            if existing:
-                existing.email = "blend556@gmail.com"
-                existing.first_name = first_name or existing.first_name
-                existing.last_name = last_name or existing.last_name
-                if phone:
-                    existing.phone = phone
-                existing.pin_last_four = pin
-                existing.hashed_password = hashed_pw
-                existing.role = "owner"  # General Manager -> owner
-                loc_objs = [loc for loc in all_locations if loc.id in resolved_location_ids]
-                existing.locations = loc_objs
-                updated_count += 1
-                continue
 
         # Check if user already exists by email (avoid duplicates)
         if email:
