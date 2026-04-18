@@ -730,6 +730,7 @@ export function DashboardPage() {
 
   const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
   const isOwner = user.role === UserRole.OWNER;
+  const locationId = user.primary_location_id ?? user.location_ids?.[0] ?? 1;
 
   const stats = [
     {
@@ -740,19 +741,19 @@ export function DashboardPage() {
     },
     {
       label: "Today's Shifts",
-      value: summary?.today_shifts ?? 0,
+      value: summary?.today_scheduled_shifts ?? summary?.today_shifts ?? 0,
       icon: <Calendar className="h-6 w-6" />,
       color: 'bg-purple-50 text-purple-600',
     },
     {
       label: 'Clocked In',
-      value: summary?.clocked_in_count ?? 0,
+      value: summary?.currently_clocked_in ?? summary?.clocked_in_count ?? 0,
       icon: <Clock className="h-6 w-6" />,
       color: 'bg-green-50 text-green-600',
     },
     {
       label: 'Pending Requests',
-      value: summary?.pending_requests ?? 0,
+      value: summary?.pending_time_off_requests ?? summary?.pending_requests ?? 0,
       icon: <AlertCircle className="h-6 w-6" />,
       color: 'bg-yellow-50 text-yellow-600',
     },
@@ -793,11 +794,11 @@ export function DashboardPage() {
 
       {/* Manager-specific sections */}
       {isManager && !isOwner && (
-        <ManagerDashboard locationId={user.primary_location_id} />
+        <ManagerDashboard locationId={locationId} />
       )}
 
       {/* Employee sections (shown for all roles) */}
-      <EmployeeDashboard userId={user.id} locationId={user.primary_location_id} />
+      <EmployeeDashboard userId={user.id} locationId={locationId} />
     </div>
   );
 }

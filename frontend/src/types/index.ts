@@ -45,14 +45,15 @@ export interface User {
   last_name: string;
   phone?: string;
   role: UserRole;
-  primary_location_id: number;
-  secondary_location_ids: number[];
-  hire_date: string;
-  hourly_rate: number;
+  primary_location_id?: number;
+  secondary_location_ids?: number[];
+  location_ids?: number[];
+  hire_date?: string;
+  hourly_rate?: number;
   is_active: boolean;
-  pin_code?: string;
-  created_at: string;
-  updated_at: string;
+  pin_last_four?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface Location {
@@ -270,12 +271,20 @@ export interface LoginResponse {
 
 export interface DashboardSummary {
   active_employees: number;
-  today_shifts: number;
-  pending_requests: number;
-  clocked_in_count: number;
-  open_drawers: number;
-  weekly_hours: number;
-  announcements: Message[];
+  active_locations: number;
+  today_shifts?: number;
+  today_scheduled_shifts?: number;
+  pending_requests?: number;
+  pending_time_off_requests?: number;
+  pending_payroll_records?: number;
+  clocked_in_count?: number;
+  currently_clocked_in?: number;
+  open_drawers?: number;
+  weekly_hours?: number;
+  week_total_hours?: number;
+  today_cash_variance?: number;
+  announcements?: Message[];
+  date?: string;
 }
 
 export interface LocationDashboardData {
