@@ -19,10 +19,23 @@ from app.services.audit_service import log_action
 router = APIRouter()
 
 
+class UserInfo(BaseModel):
+    id: int
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+    is_active: bool
+    phone: str | None = None
+    pin_last_four: str | None = None
+    location_ids: list[int] = []
+
+
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    user: UserInfo
 
 
 class RefreshRequest(BaseModel):
@@ -64,7 +77,21 @@ async def login(
 
     await log_action(db, user.id, "login", "user", user.id)
 
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        user=UserInfo(
+            id=user.id,
+            email=user.email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            role=user.role.value if hasattr(user.role, 'value') else user.role,
+            is_active=user.is_active,
+            phone=user.phone,
+            pin_last_four=user.pin_last_four,
+            location_ids=[],
+        ),
+    )
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -121,7 +148,21 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)
 
         access_token = create_access_token(data={"sub": str(user.id)})
         refresh_token = create_refresh_token(data={"sub": str(user.id)})
-        return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+        return TokenResponse(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            user=UserInfo(
+                id=user.id,
+                email=user.email,
+                first_name=user.first_name,
+                last_name=user.last_name,
+                role=user.role.value if hasattr(user.role, 'value') else user.role,
+                is_active=user.is_active,
+                phone=user.phone,
+                pin_last_four=user.pin_last_four,
+                location_ids=[],
+            ),
+        )
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
