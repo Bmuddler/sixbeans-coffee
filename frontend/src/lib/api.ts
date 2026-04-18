@@ -82,9 +82,16 @@ login: (data: LoginRequest) => {
 // Users
 // ============================================================
 
+function normalizePaginated<T>(data: any): PaginatedResponse<T> {
+  const items = data.items ?? data.users ?? data.logs ?? data.messages ?? data.records ?? data.entries ?? [];
+  const total = data.total ?? 0;
+  const per_page = data.per_page ?? 25;
+  return { items, total, page: data.page ?? 1, per_page, total_pages: data.total_pages ?? Math.ceil(total / per_page) };
+}
+
 export const users = {
   list: (params?: { page?: number; per_page?: number; role?: string; location_id?: number }) =>
-    api.get<PaginatedResponse<User>>('/users', { params }).then((r) => r.data),
+    api.get('/users', { params }).then((r) => normalizePaginated<User>(r.data)),
 
   get: (id: number) =>
     api.get<User>(`/users/${id}`).then((r) => r.data),
