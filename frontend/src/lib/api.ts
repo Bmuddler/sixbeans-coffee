@@ -281,17 +281,28 @@ export const messages = {
 // ============================================================
 
 export const cashDrawer = {
-  open: (data: { location_id: number; starting_cash: number }) =>
-    api.post<CashDrawer>('/cash-drawer/open', data).then((r) => r.data),
+  open: (data: { location_id: number; starting_cash?: number; opening_amount?: number; date?: string }) =>
+    api.post<CashDrawer>('/cash-drawer/', {
+      location_id: data.location_id,
+      opening_amount: data.opening_amount ?? data.starting_cash ?? 0,
+      date: data.date ?? new Date().toISOString().split('T')[0],
+    }).then((r) => r.data),
 
-  close: (id: number, data: { actual_cash: number; notes?: string }) =>
-    api.post<CashDrawer>(`/cash-drawer/${id}/close`, data).then((r) => r.data),
+  close: (id: number, data: { actual_cash?: number; actual_closing?: number; notes?: string }) =>
+    api.patch<CashDrawer>(`/cash-drawer/${id}/close`, {
+      actual_closing: data.actual_closing ?? data.actual_cash ?? 0,
+      notes: data.notes,
+    }).then((r) => r.data),
 
-  addExpense: (id: number, data: { description: string; amount: number }) =>
-    api.post<UnexpectedExpense>(`/cash-drawer/${id}/expense`, data).then((r) => r.data),
+  addExpense: (id: number, data: { category?: string; description?: string; amount: number; notes?: string }) =>
+    api.post<UnexpectedExpense>(`/cash-drawer/${id}/expenses`, {
+      amount: data.amount,
+      category: data.category ?? data.description ?? 'Other',
+      notes: data.notes,
+    }).then((r) => r.data),
 
   getReport: (params: { location_id?: number; start_date?: string; end_date?: string }) =>
-    api.get<CashDrawer[]>('/cash-drawer/report', { params }).then((r) => r.data),
+    api.get<CashDrawer[]>('/cash-drawer/', { params }).then((r) => r.data),
 };
 
 // ============================================================
