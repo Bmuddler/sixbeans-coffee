@@ -7,7 +7,6 @@ services:
     pythonVersion: "3.11.9"
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    healthCheckPath: /api/health
     rootDir: backend
     envVars:
       - key: DATABASE_URL
