@@ -26,6 +26,10 @@ class CashDrawerCreate(BaseModel):
     opening_amount: float
 
 
+class CashDrawerSetExpected(BaseModel):
+    expected_closing: float
+
+
 class CashDrawerClose(BaseModel):
     actual_closing: float
     notes: str | None = None

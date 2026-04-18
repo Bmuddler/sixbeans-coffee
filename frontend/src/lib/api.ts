@@ -301,6 +301,9 @@ export const cashDrawer = {
       notes: data.notes,
     }).then((r) => r.data),
 
+  setExpected: (id: number, expected_closing: number) =>
+    api.patch<CashDrawer>(`/cash-drawer/${id}/expected`, { expected_closing }).then((r) => r.data),
+
   getReport: (params: { location_id?: number; start_date?: string; end_date?: string }) =>
     api.get<CashDrawer[]>('/cash-drawer/', { params }).then((r) => r.data),
 };

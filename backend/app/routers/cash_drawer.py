@@ -13,6 +13,7 @@ from app.schemas.cash_drawer import (
     CashDrawerClose,
     CashDrawerCreate,
     CashDrawerResponse,
+    CashDrawerSetExpected,
     UnexpectedExpenseCreate,
     UnexpectedExpenseResponse,
 )
@@ -73,6 +74,39 @@ async def api_close_drawer(
         unexpected_expenses=[
             UnexpectedExpenseResponse.model_validate(e) for e in drawer.unexpected_expenses
         ],
+        created_at=drawer.created_at,
+    )
+
+
+@router.patch("/{drawer_id}/expected", response_model=CashDrawerResponse)
+async def api_set_expected(
+    drawer_id: int,
+    data: CashDrawerSetExpected,
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CashDrawer).options(selectinload(CashDrawer.unexpected_expenses)).where(CashDrawer.id == drawer_id)
+    )
+    drawer = result.scalar_one_or_none()
+    if not drawer:
+        raise HTTPException(status_code=404, detail="Drawer not found")
+
+    drawer.expected_closing = data.expected_closing
+    await db.flush()
+
+    await log_action(
+        db, current_user.id, "set_expected", "cash_drawer", drawer.id,
+        new_values={"expected_closing": data.expected_closing},
+    )
+
+    return CashDrawerResponse(
+        id=drawer.id, employee_id=drawer.employee_id, location_id=drawer.location_id,
+        date=drawer.date, opening_amount=drawer.opening_amount,
+        expected_closing=drawer.expected_closing, actual_closing=drawer.actual_closing,
+        variance=drawer.variance, notes=drawer.notes,
+        unexpected_expenses=[UnexpectedExpenseResponse.model_validate(e) for e in drawer.unexpected_expenses],
+        employee_name=f"{current_user.first_name} {current_user.last_name}",
         created_at=drawer.created_at,
     )
 

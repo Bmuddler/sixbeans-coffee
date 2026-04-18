@@ -17,8 +17,11 @@ import { UserRole } from '@/types';
 
 const EXPENSE_CATEGORIES = [
   { value: 'CO2 Delivery', label: 'CO2 Delivery' },
+  { value: 'Milk Run', label: 'Milk Run' },
   { value: 'Supply Run', label: 'Supply Run' },
+  { value: 'Ice Run', label: 'Ice Run' },
   { value: 'Equipment', label: 'Equipment' },
+  { value: 'Maintenance', label: 'Maintenance' },
   { value: 'Other', label: 'Other' },
 ];
 
@@ -38,6 +41,8 @@ export function CashDrawerPage() {
   const [startingCash, setStartingCash] = useState('');
   const [actualCash, setActualCash] = useState('');
   const [closeNotes, setCloseNotes] = useState('');
+  const [expectedModal, setExpectedModal] = useState(false);
+  const [expectedAmount, setExpectedAmount] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategory, setExpenseCategory] = useState('CO2 Delivery');
   const [expenseNotes, setExpenseNotes] = useState('');
@@ -97,6 +102,18 @@ export function CashDrawerPage() {
     onError: () => toast.error('Failed to close drawer'),
   });
 
+  const expectedMutation = useMutation({
+    mutationFn: (data: { id: number; expected_closing: number }) =>
+      cashDrawerApi.setExpected(data.id, data.expected_closing),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cashDrawerReport'] });
+      setExpectedModal(false);
+      setExpectedAmount('');
+      toast.success('Expected amount set');
+    },
+    onError: () => toast.error('Failed to set expected amount'),
+  });
+
   const expenseMutation = useMutation({
     mutationFn: (data: { id: number; category: string; amount: number; notes?: string }) =>
       cashDrawerApi.addExpense(data.id, { category: data.category, amount: data.amount, notes: data.notes }),
@@ -133,6 +150,16 @@ export function CashDrawerPage() {
       return;
     }
     closeMutation.mutate({ id: activeDrawer.id, actual_closing: amount, notes: closeNotes || undefined });
+  };
+
+  const handleSetExpected = () => {
+    if (!activeDrawer) return;
+    const amount = parseFloat(expectedAmount);
+    if (isNaN(amount) || amount < 0) {
+      toast.error('Enter a valid expected amount');
+      return;
+    }
+    expectedMutation.mutate({ id: activeDrawer.id, expected_closing: amount });
   };
 
   const handleAddExpense = () => {
@@ -179,7 +206,15 @@ export function CashDrawerPage() {
                   Opened {format(new Date(activeDrawer.created_at), 'h:mm a')}
                   {activeDrawer.employee_name && ` by ${activeDrawer.employee_name}`}
                 </p>
-                <div className="flex gap-2 mt-2">
+                {activeDrawer.expected_closing != null && (
+                  <p className="text-sm text-blue-600 font-medium mt-1">
+                    Expected: ${activeDrawer.expected_closing.toFixed(2)}
+                  </p>
+                )}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <Button size="sm" variant="secondary" onClick={() => { setExpectedAmount(activeDrawer.expected_closing?.toString() ?? ''); setExpectedModal(true); }}>
+                    {activeDrawer.expected_closing != null ? 'Update Expected' : 'Set Expected'}
+                  </Button>
                   <Button size="sm" onClick={() => setExpenseModal(true)} icon={<Receipt className="h-4 w-4" />}>
                     Log Expense
                   </Button>
@@ -336,6 +371,20 @@ export function CashDrawerPage() {
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCloseDrawerModal(false)}>Cancel</Button>
             <Button variant="danger" onClick={handleCloseDrawer} loading={closeMutation.isPending}>Close Drawer</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Set Expected Amount Modal */}
+      <Modal open={expectedModal} onClose={() => setExpectedModal(false)} title="Set Expected Cash Amount">
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Enter the expected cash amount from your GoDaddy POS report. This will be used to calculate the variance when closing the drawer.
+          </p>
+          <Input label="Expected Amount ($)" type="number" step="0.01" min="0" placeholder="0.00" value={expectedAmount} onChange={(e) => setExpectedAmount(e.target.value)} />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setExpectedModal(false)}>Cancel</Button>
+            <Button onClick={handleSetExpected} loading={expectedMutation.isPending}>Save Expected Amount</Button>
           </div>
         </div>
       </Modal>

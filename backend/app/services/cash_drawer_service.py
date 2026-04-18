@@ -45,11 +45,12 @@ async def close_drawer(
     if not drawer:
         raise ValueError("Cash drawer not found")
 
-    # Get expected cash from GoDaddy integration
-    expected = await get_expected_cash_for_date(drawer.location_id, drawer.date)
     total_expenses = sum(e.amount for e in drawer.unexpected_expenses)
 
-    drawer.expected_closing = drawer.opening_amount + expected - total_expenses
+    # Use manually set expected amount, or calculate from GoDaddy
+    if drawer.expected_closing is None:
+        expected = await get_expected_cash_for_date(drawer.location_id, drawer.date)
+        drawer.expected_closing = drawer.opening_amount + expected - total_expenses
     drawer.actual_closing = actual_closing
     drawer.variance = round(actual_closing - drawer.expected_closing, 2)
     drawer.notes = notes
