@@ -10,6 +10,7 @@ from app.models import Base
 from app.models.user import User
 from app.models.location import Location
 from app.services.auth_service import hash_password
+from app.seed_employees import seed_employees
 from app.routers import (
     audit,
     auth,
@@ -86,35 +87,36 @@ async def startup():
             logger.info("Locations synced.")
 
         result = await session.execute(select(User).limit(1))
-        if result.scalar_one_or_none() is not None:
-            return
+        if result.scalar_one_or_none() is None:
+            logger.info("Empty database — seeding locations and owner accounts...")
+            for loc_data in SEED_LOCATIONS:
+                session.add(Location(**loc_data, is_active=True))
 
-        logger.info("Empty database — seeding locations and owner accounts...")
-        for loc_data in SEED_LOCATIONS:
-            session.add(Location(**loc_data, is_active=True))
+            session.add(User(
+                email="logcastles@gmail.com",
+                first_name="Owner",
+                last_name="Admin",
+                phone="5555550100",
+                pin_last_four="0100",
+                hashed_password=hash_password("Sixb3ans12!"),
+                role="owner",
+                is_active=True,
+            ))
+            session.add(User(
+                email="jessica@sixbeanscoffee.com",
+                first_name="Jessica",
+                last_name="Admin",
+                phone="5555550200",
+                pin_last_four="0200",
+                hashed_password=hash_password("Sixb3ans12!"),
+                role="owner",
+                is_active=True,
+            ))
+            await session.commit()
+            logger.info("Seed complete — 6 locations, 2 owner accounts.")
 
-        session.add(User(
-            email="logcastles@gmail.com",
-            first_name="Owner",
-            last_name="Admin",
-            phone="5555550100",
-            pin_last_four="0100",
-            hashed_password=hash_password("Sixb3ans12!"),
-            role="owner",
-            is_active=True,
-        ))
-        session.add(User(
-            email="jessica@sixbeanscoffee.com",
-            first_name="Jessica",
-            last_name="Admin",
-            phone="5555550200",
-            pin_last_four="0200",
-            hashed_password=hash_password("Sixb3ans12!"),
-            role="owner",
-            is_active=True,
-        ))
-        await session.commit()
-        logger.info("Seed complete — 6 locations, 2 owner accounts.")
+        # Bulk-import employees from Homebase CSV data
+        await seed_employees(session)
 
 
 @app.get("/api/health")
