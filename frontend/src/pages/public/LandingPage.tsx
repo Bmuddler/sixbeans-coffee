@@ -18,40 +18,34 @@ import { Button } from '@/components/ui/Button';
 
 const LOCATIONS = [
   {
-    name: 'Six Beans Downtown',
-    address: '123 Main Street, Downtown',
-    phone: '(555) 100-0001',
-    hours: 'Mon-Fri 6AM-8PM, Sat-Sun 7AM-6PM',
+    name: 'Six Beans - Apple Valley',
+    address: '21788 Bear Valley Rd, Apple Valley, CA 92308',
+    phone: '(760) 946-9008',
+    hours: 'Mon-Sun 5AM-7PM',
   },
   {
-    name: 'Six Beans Midtown',
-    address: '456 Oak Avenue, Midtown',
-    phone: '(555) 100-0002',
-    hours: 'Mon-Fri 6AM-7PM, Sat-Sun 7AM-5PM',
+    name: 'Six Beans - Hesperia',
+    address: '15760 Ranchero Rd, Hesperia, CA 92345',
+    phone: '(760) 948-0164',
+    hours: 'Mon-Sun 5AM-7PM',
   },
   {
-    name: 'Six Beans University',
-    address: '789 Campus Drive, University District',
-    phone: '(555) 100-0003',
-    hours: 'Mon-Fri 5:30AM-10PM, Sat-Sun 7AM-9PM',
+    name: 'Six Beans - Barstow',
+    address: '921 Barstow Rd, Barstow, CA 92311',
+    phone: '(760) 229-0997',
+    hours: 'Mon-Sun 5AM-7PM',
   },
   {
-    name: 'Six Beans Riverside',
-    address: '321 River Road, Riverside',
-    phone: '(555) 100-0004',
-    hours: 'Mon-Fri 6AM-7PM, Sat-Sun 7AM-6PM',
+    name: 'Six Beans - Victorville',
+    address: '12875 Bear Valley Rd, Victorville, CA 92392',
+    phone: '(760) 983-5028',
+    hours: 'Mon-Sun 5AM-7PM',
   },
   {
-    name: 'Six Beans Market District',
-    address: '654 Market Street, Market District',
-    phone: '(555) 100-0005',
-    hours: 'Mon-Fri 6AM-8PM, Sat-Sun 7AM-7PM',
-  },
-  {
-    name: 'Six Beans Eastside',
-    address: '987 Elm Boulevard, Eastside',
-    phone: '(555) 100-0006',
-    hours: 'Mon-Fri 6AM-7PM, Sat-Sun 8AM-5PM',
+    name: 'Six Beans - Apple Valley (Yucca Loma)',
+    address: '13730 Apple Valley Rd, Apple Valley, CA 92307',
+    phone: '(442) 292-2185',
+    hours: 'Mon-Sun 5AM-7PM',
   },
 ];
 
@@ -64,7 +58,7 @@ const FEATURES = [
   {
     icon: <Calendar className="h-8 w-8" />,
     title: 'Smart Scheduling',
-    desc: 'Create and manage schedules across all 6 locations with availability-aware tools.',
+    desc: 'Create and manage schedules across all 5 locations with availability-aware tools.',
   },
   {
     icon: <Users className="h-8 w-8" />,
@@ -73,7 +67,7 @@ const FEATURES = [
   },
   {
     icon: <MapPin className="h-8 w-8" />,
-    title: '6 Locations',
+    title: '5 Locations',
     desc: 'Manage all locations from a single dashboard with location-specific views.',
   },
   {

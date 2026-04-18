@@ -11,12 +11,11 @@ from app.services.auth_service import hash_password
 
 
 LOCATIONS = [
-    {"name": "Six Beans - Downtown", "address": "123 Main St", "city": "San Diego", "state": "CA", "zip_code": "92101", "phone": "(619) 555-0101"},
-    {"name": "Six Beans - Hillcrest", "address": "456 University Ave", "city": "San Diego", "state": "CA", "zip_code": "92103", "phone": "(619) 555-0102"},
-    {"name": "Six Beans - North Park", "address": "789 30th St", "city": "San Diego", "state": "CA", "zip_code": "92104", "phone": "(619) 555-0103"},
-    {"name": "Six Beans - Pacific Beach", "address": "321 Garnet Ave", "city": "San Diego", "state": "CA", "zip_code": "92109", "phone": "(619) 555-0104"},
-    {"name": "Six Beans - La Jolla", "address": "654 Prospect St", "city": "La Jolla", "state": "CA", "zip_code": "92037", "phone": "(858) 555-0105"},
-    {"name": "Six Beans - Encinitas", "address": "987 Coast Hwy 101", "city": "Encinitas", "state": "CA", "zip_code": "92024", "phone": "(760) 555-0106"},
+    {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
+    {"name": "Six Beans - Hesperia", "address": "15760 Ranchero Rd", "city": "Hesperia", "state": "CA", "zip_code": "92345", "phone": "(760) 948-0164"},
+    {"name": "Six Beans - Barstow", "address": "921 Barstow Rd", "city": "Barstow", "state": "CA", "zip_code": "92311", "phone": "(760) 229-0997"},
+    {"name": "Six Beans - Victorville", "address": "12875 Bear Valley Rd", "city": "Victorville", "state": "CA", "zip_code": "92392", "phone": "(760) 983-5028"},
+    {"name": "Six Beans - Apple Valley (Yucca Loma)", "address": "13730 Apple Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92307", "phone": "(442) 292-2185"},
 ]
 
 
