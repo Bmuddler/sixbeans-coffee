@@ -5,6 +5,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.cash_drawer import CashDrawer
@@ -93,9 +94,12 @@ async def api_edit_drawer(
     if not drawer:
         raise HTTPException(status_code=404, detail="Drawer not found")
 
-    # Only allow edits on the same day
-    from datetime import date as date_type
-    if drawer.date != date_type.today():
+    # Only allow edits on the same day (Pacific time)
+    from datetime import datetime as dt
+    import pytz
+    pacific = pytz.timezone(settings.timezone)
+    today_pacific = dt.now(pacific).date()
+    if drawer.date != today_pacific:
         raise HTTPException(status_code=403, detail="Can only edit drawer entries from today")
 
     old_values = {

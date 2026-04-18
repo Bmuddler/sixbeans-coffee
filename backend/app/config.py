@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
+    # Timezone
+    timezone: str = "America/Los_Angeles"
+
     # CORS (comma-separated string, parsed in main.py)
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 

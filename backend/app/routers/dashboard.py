@@ -1,9 +1,11 @@
 from datetime import date, datetime, timedelta
 
+import pytz
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_db
 from app.dependencies import require_roles
 from app.models.cash_drawer import CashDrawer
@@ -23,7 +25,7 @@ async def owner_dashboard(
     current_user: User = Depends(require_roles(UserRole.owner)),
     db: AsyncSession = Depends(get_db),
 ):
-    today = date.today()
+    today = datetime.now(pytz.timezone(settings.timezone)).date()
     week_start = today - timedelta(days=today.weekday())
 
     # Active employees count
@@ -95,7 +97,7 @@ async def location_dashboard(
     current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
-    today = date.today()
+    today = datetime.now(pytz.timezone(settings.timezone)).date()
 
     # Today's shifts at this location
     shifts_result = await db.execute(
