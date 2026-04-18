@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { Banknote, Plus, X, AlertTriangle, CheckCircle, Receipt, Pencil } from 'lucide-react';
+import { formatTime as formatTimePT, todayPacific } from '@/lib/timezone';
 import { toast } from 'react-hot-toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -79,7 +80,7 @@ export function CashDrawerPage() {
       }),
   });
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const today = todayPacific();
   const todayDrawers = drawerReport?.filter((d: any) => d.date === today) ?? [];
   const activeDrawer = todayDrawers.find((d: any) => d.actual_closing == null);
 
@@ -242,7 +243,7 @@ export function CashDrawerPage() {
                   ${(activeDrawer.opening_amount ?? 0).toFixed(2)}
                 </p>
                 <p className="text-xs text-gray-400">
-                  Opened {format(new Date(activeDrawer.created_at), 'h:mm a')}
+                  Opened {formatTimePT(activeDrawer.created_at)}
                   {activeDrawer.employee_name && ` by ${activeDrawer.employee_name}`}
                 </p>
                 {activeDrawer.expected_closing != null && (
@@ -281,7 +282,7 @@ export function CashDrawerPage() {
                 <div key={d.id} className="flex items-center justify-between rounded-lg border border-gray-100 p-3">
                   <div>
                     <p className="text-sm font-medium">
-                      {format(new Date(d.created_at), 'h:mm a')}
+                      {formatTimePT(d.created_at)}
                       {d.actual_closing != null ? ' (Closed)' : ' (Open)'}
                     </p>
                     <p className="text-xs text-gray-500">{d.employee_name ?? 'Unknown'}</p>

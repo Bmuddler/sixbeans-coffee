@@ -36,13 +36,16 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { UserRole, type ScheduledShift, type LocationDashboardData } from '@/types';
 
+const TZ = 'America/Los_Angeles';
+
 function formatTime(timeStr: string) {
   const date = new Date(timeStr);
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString([], {
+  return new Date(dateStr).toLocaleDateString('en-US', {
+    timeZone: TZ,
     weekday: 'short',
     month: 'short',
     day: 'numeric',
