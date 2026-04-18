@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     # Database
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/sixbeans"
+    database_url: str = "sqlite+aiosqlite:///./sixbeans.db"
 
     # JWT
     jwt_secret_key: str = "change-me-in-production"

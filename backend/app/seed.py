@@ -3,6 +3,7 @@ import asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from app.config import settings
+from app.database import _get_async_url
 from app.models import Base
 from app.models.user import User
 from app.models.location import Location
@@ -20,7 +21,7 @@ LOCATIONS = [
 
 
 async def seed():
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(_get_async_url(settings.database_url))
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
