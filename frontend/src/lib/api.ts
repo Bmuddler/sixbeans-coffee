@@ -181,13 +181,22 @@ export const timeClock = {
 
 export const timeOff = {
   list: (params?: { user_id?: number; status?: RequestStatus; page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<TimeOffRequest>>('/time-off', { params }).then((r) => r.data),
+    api.get('/time-off/requests', {
+      params: {
+        employee_id: params?.user_id,
+        status_filter: params?.status,
+      },
+    }).then((r) => {
+      const data = r.data as any;
+      const items = Array.isArray(data) ? data : (data.items ?? []);
+      return { items, total: items.length, page: 1, per_page: items.length, total_pages: 1 } as PaginatedResponse<TimeOffRequest>;
+    }),
 
   create: (data: { start_date: string; end_date: string; reason: string }) =>
-    api.post<TimeOffRequest>('/time-off', data).then((r) => r.data),
+    api.post<TimeOffRequest>('/time-off/requests', data).then((r) => r.data),
 
   review: (id: number, data: { status: RequestStatus; review_notes?: string }) =>
-    api.patch<TimeOffRequest>(`/time-off/${id}/review`, data).then((r) => r.data),
+    api.patch<TimeOffRequest>(`/time-off/requests/${id}/review`, data).then((r) => r.data),
 };
 
 // ============================================================
@@ -196,13 +205,13 @@ export const timeOff = {
 
 export const unavailability = {
   list: (params?: { user_id?: number; status?: RequestStatus }) =>
-    api.get<UnavailabilityRequest[]>('/unavailability', { params }).then((r) => r.data),
+    api.get<UnavailabilityRequest[]>('/time-off/unavailability', { params }).then((r) => r.data),
 
   create: (data: { day_of_week: number; start_time: string; end_time: string; reason?: string }) =>
-    api.post<UnavailabilityRequest>('/unavailability', data).then((r) => r.data),
+    api.post<UnavailabilityRequest>('/time-off/unavailability', data).then((r) => r.data),
 
   review: (id: number, data: { status: RequestStatus }) =>
-    api.patch<UnavailabilityRequest>(`/unavailability/${id}/review`, data).then((r) => r.data),
+    api.patch<UnavailabilityRequest>(`/time-off/unavailability/${id}/review`, data).then((r) => r.data),
 };
 
 // ============================================================
