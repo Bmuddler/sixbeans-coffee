@@ -47,6 +47,12 @@ const LOCATIONS = [
     phone: '(442) 292-2185',
     hours: 'Mon-Sun 5AM-7PM',
   },
+  {
+    name: 'Six Beans - Victorville (7th St)',
+    address: '14213 7th St, Victorville, CA 92395',
+    phone: '(442) 229-2222',
+    hours: 'Mon-Sun 6AM-7PM',
+  },
 ];
 
 const FEATURES = [
@@ -58,7 +64,7 @@ const FEATURES = [
   {
     icon: <Calendar className="h-8 w-8" />,
     title: 'Smart Scheduling',
-    desc: 'Create and manage schedules across all 5 locations with availability-aware tools.',
+    desc: 'Create and manage schedules across all 6 locations with availability-aware tools.',
   },
   {
     icon: <Users className="h-8 w-8" />,
@@ -67,7 +73,7 @@ const FEATURES = [
   },
   {
     icon: <MapPin className="h-8 w-8" />,
-    title: '5 Locations',
+    title: '6 Locations',
     desc: 'Manage all locations from a single dashboard with location-specific views.',
   },
   {

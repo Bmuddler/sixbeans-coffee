@@ -58,6 +58,7 @@ SEED_LOCATIONS = [
     {"name": "Six Beans - Barstow", "address": "921 Barstow Rd", "city": "Barstow", "state": "CA", "zip_code": "92311", "phone": "(760) 229-0997"},
     {"name": "Six Beans - Victorville", "address": "12875 Bear Valley Rd", "city": "Victorville", "state": "CA", "zip_code": "92392", "phone": "(760) 983-5028"},
     {"name": "Six Beans - Apple Valley (Yucca Loma)", "address": "13730 Apple Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92307", "phone": "(442) 292-2185"},
+    {"name": "Six Beans - Victorville (7th St)", "address": "14213 7th St", "city": "Victorville", "state": "CA", "zip_code": "92395", "phone": "(442) 229-2222"},
 ]
 
 
@@ -67,19 +68,22 @@ async def startup():
         await conn.run_sync(Base.metadata.create_all)
 
     async with async_session() as session:
-        # Update existing locations to real addresses
+        # Sync locations with SEED_LOCATIONS
         existing_locs = (await session.execute(select(Location))).scalars().all()
-        if existing_locs and existing_locs[0].city != "Apple Valley":
-            logger.info("Updating locations to real addresses...")
-            for i, loc in enumerate(existing_locs):
-                if i < len(SEED_LOCATIONS):
-                    for key, val in SEED_LOCATIONS[i].items():
-                        setattr(loc, key, val)
-            # Remove extra placeholder locations (had 6, now have 5)
-            for loc in existing_locs[len(SEED_LOCATIONS):]:
-                await session.delete(loc)
+        existing_addresses = {loc.address for loc in existing_locs}
+        changed = False
+        for i, loc in enumerate(existing_locs):
+            if i < len(SEED_LOCATIONS) and loc.address != SEED_LOCATIONS[i]["address"]:
+                for key, val in SEED_LOCATIONS[i].items():
+                    setattr(loc, key, val)
+                changed = True
+        for seed_loc in SEED_LOCATIONS:
+            if seed_loc["address"] not in existing_addresses:
+                session.add(Location(**seed_loc, is_active=True))
+                changed = True
+        if changed:
             await session.commit()
-            logger.info("Locations updated.")
+            logger.info("Locations synced.")
 
         result = await session.execute(select(User).limit(1))
         if result.scalar_one_or_none() is not None:
