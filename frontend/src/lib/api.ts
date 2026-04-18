@@ -136,7 +136,10 @@ export const schedules = {
     api.post<ShiftTemplate>('/schedules/templates', data).then((r) => r.data),
 
   listShifts: (params: { location_id?: number; user_id?: number; start_date: string; end_date: string }) =>
-    api.get<ScheduledShift[]>('/schedules/shifts', { params }).then((r) => r.data),
+    api.get('/schedules/week', { params: { week_start: params.start_date, location_id: params.location_id } }).then((r) => {
+      const data = r.data as any;
+      return (data.shifts ?? data ?? []) as ScheduledShift[];
+    }),
 
   createShift: (data: Partial<ScheduledShift>) =>
     api.post<ScheduledShift>('/schedules/shifts', data).then((r) => r.data),
