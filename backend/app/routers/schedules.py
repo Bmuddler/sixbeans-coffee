@@ -192,6 +192,76 @@ async def update_shift(
     )
 
 
+@router.post("/generate-from-templates", response_model=WeekScheduleResponse)
+async def generate_from_templates(
+    week_start: date = Query(...),
+    location_id: int = Query(...),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    db: AsyncSession = Depends(get_db),
+):
+    require_location_access(current_user, location_id)
+
+    result = await db.execute(
+        select(ShiftTemplate).where(ShiftTemplate.location_id == location_id)
+    )
+    templates = result.scalars().all()
+    if not templates:
+        raise HTTPException(status_code=404, detail="No templates found for this location")
+
+    day_map = {"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+    new_shifts = []
+
+    for tmpl in templates:
+        days_str = (tmpl.days_of_week or "").strip()
+        if not days_str:
+            target_days = list(range(7))
+        else:
+            target_days = [day_map[d.strip().lower()] for d in days_str.split(",") if d.strip().lower() in day_map]
+
+        for day_offset in target_days:
+            shift_date = week_start + timedelta(days=day_offset)
+            existing = await db.execute(
+                select(ScheduledShift).where(
+                    and_(
+                        ScheduledShift.location_id == location_id,
+                        ScheduledShift.date == shift_date,
+                        ScheduledShift.start_time == tmpl.start_time,
+                        ScheduledShift.end_time == tmpl.end_time,
+                    )
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+
+            shift = ScheduledShift(
+                template_id=tmpl.id,
+                location_id=location_id,
+                date=shift_date,
+                start_time=tmpl.start_time,
+                end_time=tmpl.end_time,
+                manager_notes=f"Generated from: {tmpl.name}",
+            )
+            db.add(shift)
+            new_shifts.append(shift)
+
+    await db.flush()
+    await log_action(
+        db, current_user.id, "generate_from_templates", "scheduled_shift", None,
+        new_values={"location_id": location_id, "week_start": week_start.isoformat(), "shifts_created": len(new_shifts)},
+    )
+
+    responses = [
+        ScheduledShiftResponse(
+            id=s.id, template_id=s.template_id, location_id=s.location_id,
+            employee_id=s.employee_id, date=s.date, start_time=s.start_time,
+            end_time=s.end_time, status=s.status, manager_notes=s.manager_notes,
+            created_at=s.created_at, updated_at=s.updated_at,
+        )
+        for s in new_shifts
+    ]
+    return WeekScheduleResponse(shifts=responses, total=len(responses))
+
+
 @router.delete("/shifts/{shift_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_shift(
     shift_id: int,
