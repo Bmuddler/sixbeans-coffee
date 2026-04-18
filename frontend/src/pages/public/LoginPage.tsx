@@ -130,14 +130,7 @@ export function LoginPage() {
                 </button>
               </div>
 
-              <div className="flex items-center justify-between">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary-300"
-                  />
-                  <span className="text-sm text-gray-600">Remember me</span>
-                </label>
+              <div className="flex items-center justify-end">
                 <button
                   type="button"
                   className="text-sm font-medium hover:underline"
