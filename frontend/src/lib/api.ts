@@ -138,8 +138,14 @@ export const schedules = {
   listShifts: (params: { location_id?: number; user_id?: number; start_date: string; end_date: string }) =>
     api.get('/schedules/week', { params: { week_start: params.start_date, location_id: params.location_id } }).then((r) => {
       const data = r.data as any;
-      return (data.shifts ?? data ?? []) as ScheduledShift[];
+      return { shifts: (data.shifts ?? []) as ScheduledShift[], week_status: (data.week_status ?? 'draft') as string, published_at: data.published_at as string | null };
     }),
+
+  publishWeek: (params: { week_start: string; location_id: number }) =>
+    api.post('/schedules/publish', null, { params }).then((r) => r.data),
+
+  unpublishWeek: (params: { week_start: string; location_id: number }) =>
+    api.post('/schedules/unpublish', null, { params }).then((r) => r.data),
 
   createShift: (data: Partial<ScheduledShift>) =>
     api.post<ScheduledShift>('/schedules/shifts', data).then((r) => r.data),

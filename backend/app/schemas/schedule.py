@@ -74,3 +74,5 @@ class CopyWeekRequest(BaseModel):
 class WeekScheduleResponse(BaseModel):
     shifts: list[ScheduledShiftResponse]
     total: int
+    week_status: str = "draft"
+    published_at: datetime | None = None

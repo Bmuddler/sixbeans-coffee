@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, select
@@ -11,7 +11,8 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.location import Location
 from app.models.schedule import ScheduledShift, ShiftTemplate
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, user_locations
+from app.models.week_status import WeekScheduleStatus
 from app.schemas.schedule import (
     CopyWeekRequest,
     ScheduledShiftCreate,
@@ -30,6 +31,18 @@ from app.utils.permissions import require_location_access
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def _is_week_published(db: AsyncSession, location_id: int, shift_date: date) -> bool:
+    week_start = shift_date - timedelta(days=shift_date.weekday())
+    result = await db.execute(
+        select(WeekScheduleStatus).where(and_(
+            WeekScheduleStatus.location_id == location_id,
+            WeekScheduleStatus.week_start == week_start,
+        ))
+    )
+    ws = result.scalar_one_or_none()
+    return ws is not None and ws.status == "published"
 
 
 # --- Shift Templates ---
@@ -139,7 +152,109 @@ async def get_week_schedule(
             created_at=s.created_at, updated_at=s.updated_at, employee_name=emp_name,
         ))
 
-    return WeekScheduleResponse(shifts=responses, total=len(responses))
+    ws_result = await db.execute(
+        select(WeekScheduleStatus).where(and_(
+            WeekScheduleStatus.location_id == location_id,
+            WeekScheduleStatus.week_start == week_start,
+        ))
+    )
+    week_stat = ws_result.scalar_one_or_none()
+    return WeekScheduleResponse(
+        shifts=responses, total=len(responses),
+        week_status=week_stat.status if week_stat else "draft",
+        published_at=week_stat.published_at if week_stat else None,
+    )
+
+
+@router.post("/publish")
+async def publish_week(
+    week_start: date = Query(...),
+    location_id: int = Query(...),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    db: AsyncSession = Depends(get_db),
+):
+    require_location_access(current_user, location_id)
+    now = datetime.utcnow()
+
+    result = await db.execute(
+        select(WeekScheduleStatus).where(and_(
+            WeekScheduleStatus.location_id == location_id,
+            WeekScheduleStatus.week_start == week_start,
+        ))
+    )
+    ws = result.scalar_one_or_none()
+    if ws:
+        ws.status = "published"
+        ws.published_at = now
+        ws.published_by = current_user.id
+    else:
+        ws = WeekScheduleStatus(
+            location_id=location_id, week_start=week_start,
+            status="published", published_at=now, published_by=current_user.id,
+        )
+        db.add(ws)
+
+    await db.flush()
+    await log_action(db, current_user.id, "publish_schedule", "week_schedule", ws.id,
+        new_values={"week_start": week_start.isoformat(), "location_id": location_id})
+
+    # Send SMS notifications to all employees with shifts this week
+    week_end = week_start + timedelta(days=6)
+    shift_result = await db.execute(
+        select(ScheduledShift).options(selectinload(ScheduledShift.employee)).where(and_(
+            ScheduledShift.location_id == location_id,
+            ScheduledShift.date >= week_start,
+            ScheduledShift.date <= week_end,
+            ScheduledShift.employee_id.isnot(None),
+        ))
+    )
+    shifts = shift_result.scalars().all()
+
+    loc_result = await db.execute(select(Location.name).where(Location.id == location_id))
+    loc_name = loc_result.scalar() or "your location"
+
+    notified_ids = set()
+    tasks = []
+    for s in shifts:
+        if s.employee and s.employee.phone and s.employee_id not in notified_ids:
+            notified_ids.add(s.employee_id)
+            tasks.append(notify_schedule_change(
+                s.employee.phone, f"{s.employee.first_name}",
+                "published", week_start, s.start_time, s.end_time,
+            ))
+    if tasks:
+        try:
+            asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+        except Exception:
+            logger.exception("Failed to send publish notifications")
+
+    return {"status": "published", "notified": len(notified_ids)}
+
+
+@router.post("/unpublish")
+async def unpublish_week(
+    week_start: date = Query(...),
+    location_id: int = Query(...),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    db: AsyncSession = Depends(get_db),
+):
+    require_location_access(current_user, location_id)
+
+    result = await db.execute(
+        select(WeekScheduleStatus).where(and_(
+            WeekScheduleStatus.location_id == location_id,
+            WeekScheduleStatus.week_start == week_start,
+        ))
+    )
+    ws = result.scalar_one_or_none()
+    if ws:
+        ws.status = "draft"
+        ws.published_at = None
+        ws.published_by = None
+        await db.flush()
+
+    await log_action(db, current_user.id, "unpublish_schedule", "week_schedule", ws.id if ws else None)
+    return {"status": "draft"}
 
 
 @router.post("/shifts", response_model=ScheduledShiftResponse, status_code=status.HTTP_201_CREATED)
@@ -156,21 +271,15 @@ async def create_shift(
 
     await log_action(db, current_user.id, "create_shift", "scheduled_shift", shift.id)
 
-    # Notify assigned employee about new shift
-    if shift.employee_id:
+    # Only notify if week is published
+    if shift.employee_id and await _is_week_published(db, shift.location_id, shift.date):
         try:
             emp_result = await db.execute(select(User).where(User.id == shift.employee_id))
             employee = emp_result.scalar_one_or_none()
             if employee and employee.phone:
-                loc_result = await db.execute(select(Location.name).where(Location.id == shift.location_id))
-                location_name = loc_result.scalar() or "Unknown"
                 asyncio.create_task(notify_schedule_change(
-                    employee.phone,
-                    f"{employee.first_name} {employee.last_name}",
-                    "created",
-                    shift.date,
-                    shift.start_time,
-                    shift.end_time,
+                    employee.phone, f"{employee.first_name}",
+                    "created", shift.date, shift.start_time, shift.end_time,
                 ))
         except Exception:
             logger.exception("Failed to send SMS for new shift %s", shift.id)
@@ -209,8 +318,8 @@ async def update_shift(
         old_values=old_values,
     )
 
-    # Notify assigned employee about shift update
-    if shift.employee_id:
+    # Only notify if week is published
+    if shift.employee_id and await _is_week_published(db, shift.location_id, shift.date):
         try:
             # Reload employee if not already loaded
             if not shift.employee:
@@ -331,8 +440,8 @@ async def delete_shift(
     await db.delete(shift)
     await log_action(db, current_user.id, "delete_shift", "scheduled_shift", shift_id)
 
-    # Notify employee about deleted shift
-    if deleted_employee and deleted_employee.phone:
+    # Only notify if week is published
+    if deleted_employee and deleted_employee.phone and await _is_week_published(db, shift.location_id, deleted_date):
         try:
             asyncio.create_task(notify_shift_deleted(
                 deleted_employee.phone,

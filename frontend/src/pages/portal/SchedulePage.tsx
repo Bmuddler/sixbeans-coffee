@@ -131,6 +131,16 @@ export function SchedulePage() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shiftTemplates'] }); toast.success('Template deleted'); },
     onError: () => toast.error('Failed to delete template'),
   });
+  const publishMutation = useMutation({
+    mutationFn: () => schedules.publishWeek({ week_start: format(currentWeekStart, 'yyyy-MM-dd'), location_id: selectedLocationId! }),
+    onSuccess: (data: any) => { queryClient.invalidateQueries({ queryKey: ['shifts'] }); toast.success(`Schedule published! ${data.notified} employees notified.`); },
+    onError: () => toast.error('Failed to publish schedule'),
+  });
+  const unpublishMutation = useMutation({
+    mutationFn: () => schedules.unpublishWeek({ week_start: format(currentWeekStart, 'yyyy-MM-dd'), location_id: selectedLocationId! }),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shifts'] }); toast.success('Schedule unpublished — back to draft'); },
+    onError: () => toast.error('Failed to unpublish'),
+  });
   const copyWeekMutation = useMutation({
     mutationFn: () => schedules.copyWeek({ location_id: selectedLocationId!, source_week_start: format(subWeeks(currentWeekStart, 1), 'yyyy-MM-dd'), target_week_start: format(currentWeekStart, 'yyyy-MM-dd') }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['shifts'] }); toast.success('Previous week copied'); },
@@ -159,7 +169,7 @@ export function SchedulePage() {
     weekDays.forEach((d) => openShifts.set(format(d, 'yyyy-MM-dd'), []));
 
     let totalOpenCount = 0;
-    shiftsData?.forEach((shift) => {
+    shiftsData?.shifts?.forEach((shift) => {
       if (shift.employee_id && empMap.has(shift.employee_id)) {
         const entry = empMap.get(shift.employee_id)!;
         const dayShifts = entry.shifts.get(shift.date) || [];
@@ -178,7 +188,7 @@ export function SchedulePage() {
     const dailyHours = weekDays.map((d) => {
       const dateKey = format(d, 'yyyy-MM-dd');
       let hours = 0;
-      shiftsData?.forEach((s) => { if (s.date === dateKey) hours += shiftHours(s.start_time, s.end_time); });
+      shiftsData?.shifts?.forEach((s) => { if (s.date === dateKey) hours += shiftHours(s.start_time, s.end_time); });
       return hours;
     });
 
@@ -247,7 +257,14 @@ export function SchedulePage() {
           <p className="page-subtitle">View and manage weekly schedules.</p>
         </div>
         {isManager && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {shiftsData?.week_status === 'published' ? (
+              <Button variant="secondary" size="sm" onClick={() => unpublishMutation.mutate()} loading={unpublishMutation.isPending}>Unpublish (Back to Draft)</Button>
+            ) : (
+              <Button size="sm" style={{ backgroundColor: '#2D5016' }} className="text-white" onClick={() => publishMutation.mutate()} loading={publishMutation.isPending} disabled={!shiftsData?.shifts?.length}>
+                Publish & Notify Team
+              </Button>
+            )}
             <Button variant="secondary" size="sm" icon={<Wand2 className="h-4 w-4" />} onClick={() => generateMutation.mutate()} loading={generateMutation.isPending} disabled={!templatesList?.length}>Generate from Templates</Button>
             <Button variant="secondary" size="sm" icon={<Copy className="h-4 w-4" />} onClick={() => copyWeekMutation.mutate()} loading={copyWeekMutation.isPending}>Copy Previous Week</Button>
           </div>
@@ -267,6 +284,21 @@ export function SchedulePage() {
           )}
         </div>
       </Card>
+
+      {/* Draft/Published Status Banner */}
+      {shiftsData && (
+        <div className={`mb-4 rounded-lg border px-4 py-2 flex items-center justify-between ${shiftsData.week_status === 'published' ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
+          <div className="flex items-center gap-2">
+            <span className={`inline-block h-2 w-2 rounded-full ${shiftsData.week_status === 'published' ? 'bg-green-500' : 'bg-amber-500'}`} />
+            <span className={`text-sm font-medium ${shiftsData.week_status === 'published' ? 'text-green-800' : 'text-amber-800'}`}>
+              {shiftsData.week_status === 'published' ? 'Published — employees can see this schedule' : 'Draft — only managers can see. Publish when ready.'}
+            </span>
+          </div>
+          {shiftsData.published_at && (
+            <span className="text-xs text-green-600">Published {new Date(shiftsData.published_at + 'Z').toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+          )}
+        </div>
+      )}
 
       {/* Schedule Grid — Employee Rows */}
       {shiftsLoading ? (
