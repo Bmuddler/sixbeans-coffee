@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
-import { Banknote, Plus, X, AlertTriangle, CheckCircle, Receipt } from 'lucide-react';
+import { Banknote, Plus, X, AlertTriangle, CheckCircle, Receipt, Pencil } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -43,6 +43,12 @@ export function CashDrawerPage() {
   const [closeNotes, setCloseNotes] = useState('');
   const [expectedModal, setExpectedModal] = useState(false);
   const [expectedAmount, setExpectedAmount] = useState('');
+  const [editModal, setEditModal] = useState(false);
+  const [editDrawerId, setEditDrawerId] = useState<number | null>(null);
+  const [editOpening, setEditOpening] = useState('');
+  const [editExpected, setEditExpected] = useState('');
+  const [editActual, setEditActual] = useState('');
+  const [editNotes, setEditNotes] = useState('');
   const [expenseAmount, setExpenseAmount] = useState('');
   const [expenseCategory, setExpenseCategory] = useState('CO2 Delivery');
   const [expenseNotes, setExpenseNotes] = useState('');
@@ -102,6 +108,20 @@ export function CashDrawerPage() {
     onError: () => toast.error('Failed to close drawer'),
   });
 
+  const editMutation = useMutation({
+    mutationFn: (data: { id: number; opening_amount?: number; expected_closing?: number; actual_closing?: number; notes?: string }) =>
+      cashDrawerApi.edit(data.id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cashDrawerReport'] });
+      setEditModal(false);
+      toast.success('Drawer updated');
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.detail ?? 'Failed to update drawer';
+      toast.error(msg);
+    },
+  });
+
   const expectedMutation = useMutation({
     mutationFn: (data: { id: number; expected_closing: number }) =>
       cashDrawerApi.setExpected(data.id, data.expected_closing),
@@ -150,6 +170,25 @@ export function CashDrawerPage() {
       return;
     }
     closeMutation.mutate({ id: activeDrawer.id, actual_closing: amount, notes: closeNotes || undefined });
+  };
+
+  const openEditDrawer = (d: any) => {
+    setEditDrawerId(d.id);
+    setEditOpening(d.opening_amount?.toString() ?? '');
+    setEditExpected(d.expected_closing?.toString() ?? '');
+    setEditActual(d.actual_closing?.toString() ?? '');
+    setEditNotes(d.notes ?? '');
+    setEditModal(true);
+  };
+
+  const handleEditDrawer = () => {
+    if (!editDrawerId) return;
+    const data: any = {};
+    if (editOpening) data.opening_amount = parseFloat(editOpening);
+    if (editExpected) data.expected_closing = parseFloat(editExpected);
+    if (editActual) data.actual_closing = parseFloat(editActual);
+    if (editNotes !== undefined) data.notes = editNotes || null;
+    editMutation.mutate({ id: editDrawerId, ...data });
   };
 
   const handleSetExpected = () => {
@@ -247,13 +286,18 @@ export function CashDrawerPage() {
                     </p>
                     <p className="text-xs text-gray-500">{d.employee_name ?? 'Unknown'}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm">Opening: ${(d.opening_amount ?? 0).toFixed(2)}</p>
-                    {d.variance != null && (
-                      <p className={`text-xs font-semibold ${Math.abs(d.variance) > VARIANCE_THRESHOLD ? 'text-red-600' : 'text-green-600'}`}>
-                        Variance: {d.variance >= 0 ? '+' : ''}${d.variance.toFixed(2)}
-                      </p>
-                    )}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-sm">Opening: ${(d.opening_amount ?? 0).toFixed(2)}</p>
+                      {d.variance != null && (
+                        <p className={`text-xs font-semibold ${Math.abs(d.variance) > VARIANCE_THRESHOLD ? 'text-red-600' : 'text-green-600'}`}>
+                          Variance: {d.variance >= 0 ? '+' : ''}${d.variance.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                    <button onClick={() => openEditDrawer(d)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" title="Edit">
+                      <Pencil className="h-4 w-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -371,6 +415,21 @@ export function CashDrawerPage() {
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setCloseDrawerModal(false)}>Cancel</Button>
             <Button variant="danger" onClick={handleCloseDrawer} loading={closeMutation.isPending}>Close Drawer</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Drawer Modal */}
+      <Modal open={editModal} onClose={() => setEditModal(false)} title="Edit Drawer Entry">
+        <div className="space-y-4">
+          <p className="text-xs text-gray-500">You can only edit entries from today. Changes are logged in the audit trail.</p>
+          <Input label="Opening Amount ($)" type="number" step="0.01" value={editOpening} onChange={(e) => setEditOpening(e.target.value)} />
+          <Input label="Expected Amount ($)" type="number" step="0.01" value={editExpected} onChange={(e) => setEditExpected(e.target.value)} placeholder="From GoDaddy POS" />
+          <Input label="Actual Counted ($)" type="number" step="0.01" value={editActual} onChange={(e) => setEditActual(e.target.value)} />
+          <Input label="Notes" value={editNotes} onChange={(e) => setEditNotes(e.target.value)} placeholder="Reason for edit..." />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setEditModal(false)}>Cancel</Button>
+            <Button onClick={handleEditDrawer} loading={editMutation.isPending}>Save Changes</Button>
           </div>
         </div>
       </Modal>

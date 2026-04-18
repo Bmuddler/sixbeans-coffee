@@ -14,6 +14,7 @@ from app.schemas.cash_drawer import (
     CashDrawerCreate,
     CashDrawerResponse,
     CashDrawerSetExpected,
+    CashDrawerUpdate,
     UnexpectedExpenseCreate,
     UnexpectedExpenseResponse,
 )
@@ -74,6 +75,58 @@ async def api_close_drawer(
         unexpected_expenses=[
             UnexpectedExpenseResponse.model_validate(e) for e in drawer.unexpected_expenses
         ],
+        created_at=drawer.created_at,
+    )
+
+
+@router.patch("/{drawer_id}", response_model=CashDrawerResponse)
+async def api_edit_drawer(
+    drawer_id: int,
+    data: CashDrawerUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(CashDrawer).options(selectinload(CashDrawer.unexpected_expenses)).where(CashDrawer.id == drawer_id)
+    )
+    drawer = result.scalar_one_or_none()
+    if not drawer:
+        raise HTTPException(status_code=404, detail="Drawer not found")
+
+    # Only allow edits on the same day
+    from datetime import date as date_type
+    if drawer.date != date_type.today():
+        raise HTTPException(status_code=403, detail="Can only edit drawer entries from today")
+
+    old_values = {
+        "opening_amount": drawer.opening_amount,
+        "expected_closing": drawer.expected_closing,
+        "actual_closing": drawer.actual_closing,
+    }
+
+    update_data = data.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(drawer, field, value)
+
+    # Recalculate variance if both expected and actual are set
+    if drawer.expected_closing is not None and drawer.actual_closing is not None:
+        drawer.variance = round(drawer.actual_closing - drawer.expected_closing, 2)
+
+    await db.flush()
+
+    await log_action(
+        db, current_user.id, "edit_drawer", "cash_drawer", drawer.id,
+        old_values=old_values,
+        new_values=update_data,
+    )
+
+    return CashDrawerResponse(
+        id=drawer.id, employee_id=drawer.employee_id, location_id=drawer.location_id,
+        date=drawer.date, opening_amount=drawer.opening_amount,
+        expected_closing=drawer.expected_closing, actual_closing=drawer.actual_closing,
+        variance=drawer.variance, notes=drawer.notes,
+        unexpected_expenses=[UnexpectedExpenseResponse.model_validate(e) for e in drawer.unexpected_expenses],
+        employee_name=f"{current_user.first_name} {current_user.last_name}",
         created_at=drawer.created_at,
     )
 
