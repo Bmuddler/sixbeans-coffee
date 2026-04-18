@@ -128,7 +128,7 @@ export function MessagesPage() {
     if (unreadIds.length > 0) markReadMutation.mutate(unreadIds);
   }, [messagesData]);
 
-  // Group team by location
+  // Group team by location + owners/managers without locations
   const teamByLocation = useMemo(() => {
     const allTeam = teamData?.items ?? [];
     const map = new Map<number, { location: Location; members: User[] }>();
@@ -136,15 +136,24 @@ export function MessagesPage() {
 
     const isEmployee = currentUser?.role === UserRole.EMPLOYEE;
     const myLocationIds = currentUser?.location_ids ?? [];
+    const ownersAndManagers: User[] = [];
 
     allTeam.forEach((member) => {
       if (member.id === currentUser?.id) return;
       const memberLocs = member.location_ids ?? [];
+      const isMgrOrOwner = member.role === 'manager' || member.role === 'owner';
+
       if (isEmployee) {
         const isCoworker = memberLocs.some((lid) => myLocationIds.includes(lid));
-        const isMgrOrOwner = member.role === 'manager' || member.role === 'owner';
         if (!isCoworker && !isMgrOrOwner) return;
       }
+
+      // Owners/managers with no locations go in a separate group
+      if (memberLocs.length === 0 && isMgrOrOwner) {
+        ownersAndManagers.push(member);
+        return;
+      }
+
       memberLocs.forEach((locId) => {
         const group = map.get(locId);
         if (group && !group.members.find((m) => m.id === member.id)) {
@@ -152,7 +161,7 @@ export function MessagesPage() {
         }
       });
     });
-    return map;
+    return { byLocation: map, ownersAndManagers };
   }, [teamData, allLocations, currentUser]);
 
   // Selection helpers
@@ -167,7 +176,7 @@ export function MessagesPage() {
   };
 
   const selectShop = (locId: number) => {
-    const group = teamByLocation.get(locId);
+    const group = teamByLocation.byLocation.get(locId);
     if (!group) return;
     const ids = group.members.map((m) => m.id);
     const allSelected = ids.every((id) => selectedRecipientIds.has(id));
@@ -393,8 +402,34 @@ export function MessagesPage() {
                   </div>
                 </button>
 
+                {/* Owners & managers without a location */}
+                {teamByLocation.ownersAndManagers.length > 0 && (
+                  <div className="border-b border-gray-100">
+                    <div className="px-4 py-2 bg-amber-50/50">
+                      <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">Owners & Management</p>
+                    </div>
+                    {teamByLocation.ownersAndManagers.map((member) => {
+                      const isSelected = selectedRecipientIds.has(member.id);
+                      return (
+                        <button
+                          key={member.id}
+                          onClick={() => toggleRecipient(member.id)}
+                          className={`flex items-center gap-2 w-full px-4 py-2 text-left hover:bg-gray-50 transition-colors ${isSelected ? 'bg-primary/5' : ''}`}
+                        >
+                          {isSelected ? <CheckSquare className="h-3.5 w-3.5 text-primary flex-shrink-0" /> : <Square className="h-3.5 w-3.5 text-gray-300 flex-shrink-0" />}
+                          <div className="h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-semibold text-white bg-primary flex-shrink-0">
+                            {member.first_name[0]}{member.last_name?.[0] ?? ''}
+                          </div>
+                          <span className="text-sm text-gray-700">{member.first_name} {member.last_name}</span>
+                          <span className="text-[10px] text-primary font-medium ml-auto">{member.role === 'owner' ? 'OWNER' : 'MGR'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {/* Shops with employees */}
-                {Array.from(teamByLocation.entries()).map(([locId, { location, members }]) => {
+                {Array.from(teamByLocation.byLocation.entries()).map(([locId, { location, members }]) => {
                   if (members.length === 0) return null;
                   const isCollapsed = collapsedShops.has(locId);
                   const allShopSelected = members.every((m) => selectedRecipientIds.has(m.id));

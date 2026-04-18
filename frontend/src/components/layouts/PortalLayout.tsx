@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   Coffee,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
+import { messages as messagesApi } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface NavItem {
@@ -76,6 +78,13 @@ export function PortalLayout() {
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
+  const { data: unreadData } = useQuery({
+    queryKey: ['unread-count'],
+    queryFn: messagesApi.getUnreadCount,
+    refetchInterval: 15000,
+  });
+  const unreadCount = unreadData?.unread_count ?? 0;
+
   const filteredNavItems = navItems.filter(
     (item) => !item.roles || (user && item.roles.includes(user.role)),
   );
@@ -120,6 +129,11 @@ export function PortalLayout() {
               >
                 {item.icon}
                 {item.label}
+                {item.to === '/portal/messages' && unreadCount > 0 && (
+                  <span className="ml-auto inline-flex items-center justify-center rounded-full bg-red-500 px-1.5 py-0.5 text-xs font-medium text-white min-w-[20px]">
+                    {unreadCount}
+                  </span>
+                )}
               </NavLink>
             </li>
           ))}
