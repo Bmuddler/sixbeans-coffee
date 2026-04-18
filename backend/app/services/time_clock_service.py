@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.schedule import ScheduledShift
+from app.models.system_settings import SystemSettings
 from app.models.time_clock import Break, BreakType, ClockStatus, TimeClock
 from app.utils.california_labor import (
     MAX_EARLY_CLOCK_IN_MINUTES,
@@ -37,9 +38,13 @@ async def clock_in(
     if existing:
         raise ValueError("Employee is already clocked in")
 
+    # Load system settings for early clock-in limit
+    settings_result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    sys_settings = settings_result.scalar_one_or_none()
+    early_clockin_limit = sys_settings.early_clockin_minutes if sys_settings else MAX_EARLY_CLOCK_IN_MINUTES
+
     # Check for scheduled shift within allowed window
     today = now.date()
-    current_time = now.time()
     result = await db.execute(
         select(ScheduledShift).where(
             and_(
@@ -51,19 +56,23 @@ async def clock_in(
     )
     shift = result.scalar_one_or_none()
 
+    is_unscheduled = False
     if shift:
         shift_start = datetime.combine(today, shift.start_time)
         minutes_before = (shift_start - now).total_seconds() / 60
-        if minutes_before > MAX_EARLY_CLOCK_IN_MINUTES:
+        if minutes_before > early_clockin_limit:
             raise ValueError(
-                f"Cannot clock in more than {MAX_EARLY_CLOCK_IN_MINUTES} minutes before shift start"
+                f"Cannot clock in more than {early_clockin_limit} minutes before shift start"
             )
+    else:
+        is_unscheduled = True
 
     entry = TimeClock(
         employee_id=employee_id,
         location_id=location_id,
         clock_in=now,
         status=ClockStatus.clocked_in,
+        is_unscheduled=is_unscheduled,
     )
     db.add(entry)
     await db.flush()
@@ -185,6 +194,11 @@ async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
     now = datetime.utcnow()
     today = now.date()
 
+    # Load auto-clockout buffer from system settings
+    settings_result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    sys_settings = settings_result.scalar_one_or_none()
+    auto_clockout_buffer = sys_settings.auto_clockout_minutes if sys_settings else 0
+
     result = await db.execute(
         select(TimeClock)
         .options(selectinload(TimeClock.breaks))
@@ -208,7 +222,7 @@ async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
         )
         shift = shift_result.scalar_one_or_none()
         if shift:
-            shift_end = datetime.combine(today, shift.end_time)
+            shift_end = datetime.combine(today, shift.end_time) + timedelta(minutes=auto_clockout_buffer)
             if now >= shift_end:
                 await clock_out(db, entry.employee_id, now=shift_end, auto=True)
                 clocked_out.append(entry)

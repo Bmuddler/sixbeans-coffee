@@ -27,6 +27,7 @@ class TimeClock(Base):
     clock_in = Column(DateTime, nullable=False)
     clock_out = Column(DateTime, nullable=True)
     auto_clocked_out = Column(Boolean, default=False, nullable=False)
+    is_unscheduled = Column(Boolean, default=False, nullable=False)
     total_hours = Column(Float, nullable=True)
     status = Column(Enum(ClockStatus), default=ClockStatus.clocked_in, nullable=False)
     notes = Column(String(500), nullable=True)

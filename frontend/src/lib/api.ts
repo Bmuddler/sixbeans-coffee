@@ -392,4 +392,16 @@ export const audit = {
     api.get<PaginatedResponse<AuditLog>>('/audit', { params }).then((r) => r.data),
 };
 
+// ============================================================
+// System Settings
+// ============================================================
+
+export const systemSettings = {
+  get: () =>
+    api.get<{ id: number; early_clockin_minutes: number; auto_clockout_minutes: number }>('/settings').then((r) => r.data),
+
+  update: (data: { early_clockin_minutes?: number; auto_clockout_minutes?: number }) =>
+    api.patch('/settings', data).then((r) => r.data),
+};
+
 export default api;

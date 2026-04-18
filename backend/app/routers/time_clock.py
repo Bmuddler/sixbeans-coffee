@@ -34,7 +34,9 @@ def _to_response(entry: TimeClock, employee_name: str | None = None) -> TimeCloc
     return TimeClockResponse(
         id=entry.id, employee_id=entry.employee_id, location_id=entry.location_id,
         clock_in=entry.clock_in, clock_out=entry.clock_out,
-        auto_clocked_out=entry.auto_clocked_out, total_hours=entry.total_hours,
+        auto_clocked_out=entry.auto_clocked_out,
+        is_unscheduled=getattr(entry, "is_unscheduled", False),
+        total_hours=entry.total_hours,
         status=entry.status, notes=entry.notes,
         breaks=[
             {"id": b.id, "break_type": b.break_type, "start_time": b.start_time, "end_time": b.end_time}

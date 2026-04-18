@@ -4,13 +4,14 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select, text
 
-from app.config import settings
+from app.config import settings as app_settings
 from app.database import engine, async_session
 from app.models import Base
 from app.models.user import User
 from app.models.location import Location
 from app.services.auth_service import hash_password
 from app.seed_employees import seed_employees
+from app.models.system_settings import SystemSettings
 from app.routers import (
     audit,
     auth,
@@ -26,14 +27,15 @@ from app.routers import (
     time_off,
     users,
 )
+from app.routers import settings as settings_router
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.app_name, version="1.0.0")
+app = FastAPI(title=app_settings.app_name, version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
+    allow_origins=[o.strip() for o in app_settings.cors_origins.split(",")],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,6 +54,7 @@ app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(kiosk.router, prefix="/api/kiosk", tags=["Kiosk"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
@@ -71,6 +74,9 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_direct BOOLEAN DEFAULT FALSE"
         ))
+        await conn.execute(text(
+            "ALTER TABLE time_clocks ADD COLUMN IF NOT EXISTS is_unscheduled BOOLEAN DEFAULT FALSE"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -89,6 +95,13 @@ async def startup():
         if changed:
             await session.commit()
             logger.info("Locations synced.")
+
+        # Seed default SystemSettings if none exists
+        settings_result = await session.execute(select(SystemSettings).where(SystemSettings.id == 1))
+        if settings_result.scalar_one_or_none() is None:
+            session.add(SystemSettings(id=1, early_clockin_minutes=5, auto_clockout_minutes=0))
+            await session.commit()
+            logger.info("Default system settings created.")
 
         result = await session.execute(select(User).limit(1))
         if result.scalar_one_or_none() is None:
@@ -125,4 +138,4 @@ async def startup():
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "app": settings.app_name}
+    return {"status": "healthy", "app": app_settings.app_name}

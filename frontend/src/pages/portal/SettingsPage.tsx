@@ -1,12 +1,12 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { Save, Lock, Bell, User as UserIcon } from 'lucide-react';
+import { Save, Lock, Bell, User as UserIcon, Clock } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
-import { users as usersApi } from '@/lib/api';
+import { users as usersApi, systemSettings } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface ProfileForm {
@@ -29,6 +29,70 @@ interface NotificationPrefs {
   sms_swap_requests: boolean;
   sms_announcements: boolean;
   sms_payroll_ready: boolean;
+}
+
+function SystemSettingsCard() {
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: systemSettings.get,
+  });
+
+  const [earlyMin, setEarlyMin] = useState('5');
+  const [autoOutMin, setAutoOutMin] = useState('0');
+
+  useEffect(() => {
+    if (settings) {
+      setEarlyMin(String(settings.early_clockin_minutes));
+      setAutoOutMin(String(settings.auto_clockout_minutes));
+    }
+  }, [settings]);
+
+  const saveMutation = useMutation({
+    mutationFn: () => systemSettings.update({
+      early_clockin_minutes: parseInt(earlyMin, 10) || 0,
+      auto_clockout_minutes: parseInt(autoOutMin, 10) || 0,
+    }),
+    onSuccess: () => toast.success('System settings saved'),
+    onError: () => toast.error('Failed to save settings'),
+  });
+
+  if (isLoading) return null;
+
+  return (
+    <Card title="Time Clock Settings" actions={<Clock className="h-4 w-4 text-gray-400" />}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">
+          Control when employees can clock in relative to their scheduled shift, and when they are automatically clocked out after their shift ends. Unscheduled clock-ins are always allowed but flagged for manager review.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Early Clock-In Limit (minutes)"
+            type="number"
+            min="0"
+            value={earlyMin}
+            onChange={(e) => setEarlyMin(e.target.value)}
+            helperText="How many minutes before their shift an employee can clock in. Set to 0 for no limit."
+          />
+          <Input
+            label="Auto Clock-Out After Shift (minutes)"
+            type="number"
+            min="0"
+            value={autoOutMin}
+            onChange={(e) => setAutoOutMin(e.target.value)}
+            helperText="Automatically clock out this many minutes after shift ends. Set to 0 for exact shift end time."
+          />
+        </div>
+        <div className="rounded-lg bg-blue-50 border border-blue-200 p-3">
+          <p className="text-sm text-blue-700">
+            <strong>How it works:</strong> Employees with a scheduled shift can only clock in {earlyMin} min early and will be auto-clocked out {autoOutMin} min after their shift ends. Employees without a scheduled shift can always clock in — their entry will be flagged as "unscheduled" for manager review.
+          </p>
+        </div>
+        <Button onClick={() => saveMutation.mutate()} loading={saveMutation.isPending} icon={<Save className="h-4 w-4" />}>
+          Save Time Clock Settings
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 export function SettingsPage() {
@@ -311,51 +375,7 @@ export function SettingsPage() {
         </Card>
 
         {/* Owner-only: System Settings */}
-        {isOwner && (
-          <Card title="System Settings">
-            <div className="space-y-4">
-              <p className="text-sm text-gray-500">
-                System-wide configuration settings for Six Beans Coffee Co.
-              </p>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Default Starting Cash"
-                  type="number"
-                  step="0.01"
-                  defaultValue="200.00"
-                  helperText="Default opening amount for cash drawers"
-                />
-                <Input
-                  label="Variance Threshold ($)"
-                  type="number"
-                  step="0.01"
-                  defaultValue="5.00"
-                  helperText="Flag variance amounts above this"
-                />
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Overtime Threshold (hours)"
-                  type="number"
-                  defaultValue="40"
-                  helperText="Weekly hours before overtime kicks in"
-                />
-                <Input
-                  label="Break Duration (minutes)"
-                  type="number"
-                  defaultValue="30"
-                  helperText="Default break duration"
-                />
-              </div>
-              <Button
-                onClick={() => toast.success('System settings saved')}
-                icon={<Save className="h-4 w-4" />}
-              >
-                Save System Settings
-              </Button>
-            </div>
-          </Card>
-        )}
+        {isOwner && <SystemSettingsCard />}
       </div>
     </div>
   );

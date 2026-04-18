@@ -15,3 +15,4 @@ from app.models.messaging import Message, MessageRecipient  # noqa: E402, F401
 from app.models.cash_drawer import CashDrawer, UnexpectedExpense  # noqa: E402, F401
 from app.models.payroll import PayrollRecord  # noqa: E402, F401
 from app.models.audit_log import AuditLog  # noqa: E402, F401
+from app.models.system_settings import SystemSettings  # noqa: E402, F401
