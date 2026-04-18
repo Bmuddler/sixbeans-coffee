@@ -244,10 +244,10 @@ export const shiftCoverage = {
 
 export const messages = {
   list: (params?: { page?: number; per_page?: number; location_id?: number; announcements_only?: boolean }) =>
-    api.get('/messaging', { params }).then((r) => normalizePaginated<Message>(r.data)),
+    api.get('/messaging/', { params }).then((r) => normalizePaginated<Message>(r.data)),
 
   send: (data: { body: string; location_id?: number; recipient_ids?: number[] }) =>
-    api.post<Message>('/messaging', {
+    api.post<Message>('/messaging/', {
       content: data.body,
       location_id: data.location_id ?? null,
       is_announcement: false,
@@ -256,13 +256,13 @@ export const messages = {
     }).then((r) => r.data),
 
   getAnnouncements: (params?: { location_id?: number }) =>
-    api.get('/messaging', { params: { ...params, announcements_only: true } }).then((r) => {
+    api.get('/messaging/', { params: { ...params, announcements_only: true } }).then((r) => {
       const d = r.data as any;
       return (d.items ?? d.messages ?? []) as Message[];
     }),
 
   sendAnnouncement: (data: { location_id?: number; subject?: string; body: string }) =>
-    api.post<Message>('/messaging', {
+    api.post<Message>('/messaging/', {
       content: data.body ?? data.subject,
       location_id: data.location_id ?? null,
       is_announcement: true,

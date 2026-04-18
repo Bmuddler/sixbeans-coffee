@@ -2,7 +2,7 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from app.config import settings
 from app.database import engine, async_session
@@ -67,6 +67,10 @@ SEED_LOCATIONS = [
 async def startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Add missing columns to existing tables
+        await conn.execute(text(
+            "ALTER TABLE messages ADD COLUMN IF NOT EXISTS is_direct BOOLEAN DEFAULT FALSE"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
