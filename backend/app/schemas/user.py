@@ -30,8 +30,13 @@ class UserUpdate(BaseModel):
     location_ids: list[int] | None = None
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: int
+    email: str
+    phone: str | None = None
+    first_name: str
+    last_name: str
+    role: UserRole
     is_active: bool
     pin_last_four: str | None = None
     location_ids: list[int] = []
