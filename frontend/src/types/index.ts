@@ -83,13 +83,16 @@ export interface ScheduledShift {
   id: number;
   template_id?: number;
   location_id: number;
-  user_id: number;
+  employee_id?: number;
+  user_id?: number;
   date: string;
   start_time: string;
   end_time: string;
   status: ShiftStatus;
   role_label?: string;
+  manager_notes?: string;
   notes?: string;
+  employee_name?: string;
   user?: User;
   location?: Location;
   created_at: string;

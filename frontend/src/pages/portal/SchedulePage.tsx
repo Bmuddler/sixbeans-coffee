@@ -30,7 +30,7 @@ import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { schedules, users, locations as locationsApi, timeOff } from '@/lib/api';
+import { api, schedules, users, locations as locationsApi, timeOff } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { ScheduledShift, ShiftTemplate, User, Location, RequestStatus } from '@/types';
 import { UserRole, ShiftStatus } from '@/types';
@@ -64,12 +64,13 @@ export function SchedulePage() {
 
   // Shift form state
   const [shiftForm, setShiftForm] = useState({
-    user_id: '',
+    employee_id: '',
     start_time: '06:00',
     end_time: '14:00',
     role_label: '',
-    notes: '',
+    manager_notes: '',
   });
+  const [editingShift, setEditingShift] = useState<ScheduledShift | null>(null);
 
   // Template form state
   const [templateForm, setTemplateForm] = useState({
@@ -131,6 +132,29 @@ export function SchedulePage() {
     onError: () => toast.error('Failed to create shift'),
   });
 
+  const updateShiftMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) =>
+      api.patch(`/schedules/shifts/${id}`, data).then((r) => r.data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setShowShiftModal(false);
+      setEditingShift(null);
+      toast.success('Shift updated');
+    },
+    onError: () => toast.error('Failed to update shift'),
+  });
+
+  const deleteShiftMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/schedules/shifts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      setShowShiftModal(false);
+      setEditingShift(null);
+      toast.success('Shift deleted');
+    },
+    onError: () => toast.error('Failed to delete shift'),
+  });
+
   const createTemplateMutation = useMutation({
     mutationFn: (data: Partial<ShiftTemplate>) => schedules.createTemplate(data),
     onSuccess: () => {
@@ -182,21 +206,47 @@ export function SchedulePage() {
 
   const handleAddShift = (day: Date) => {
     setSelectedDay(day);
-    setShiftForm({ user_id: '', start_time: '06:00', end_time: '14:00', role_label: '', notes: '' });
+    setEditingShift(null);
+    setShiftForm({ employee_id: '', start_time: '06:00', end_time: '14:00', role_label: '', manager_notes: '' });
+    setShowShiftModal(true);
+  };
+
+  const handleEditShift = (shift: ScheduledShift) => {
+    setEditingShift(shift);
+    setSelectedDay(parseISO(shift.date));
+    setShiftForm({
+      employee_id: String(shift.employee_id ?? ''),
+      start_time: shift.start_time?.slice(0, 5) ?? '06:00',
+      end_time: shift.end_time?.slice(0, 5) ?? '14:00',
+      role_label: shift.role_label ?? '',
+      manager_notes: shift.manager_notes ?? '',
+    });
     setShowShiftModal(true);
   };
 
   const handleSubmitShift = () => {
-    if (!selectedDay || !shiftForm.user_id || !selectedLocationId) return;
+    if (!selectedDay || !selectedLocationId) return;
+
+    if (editingShift) {
+      updateShiftMutation.mutate({
+        id: editingShift.id,
+        data: {
+          employee_id: shiftForm.employee_id ? Number(shiftForm.employee_id) : null,
+          start_time: shiftForm.start_time,
+          end_time: shiftForm.end_time,
+          manager_notes: shiftForm.manager_notes || null,
+        },
+      });
+      return;
+    }
+
     createShiftMutation.mutate({
       location_id: selectedLocationId,
-      user_id: Number(shiftForm.user_id),
+      employee_id: shiftForm.employee_id ? Number(shiftForm.employee_id) : undefined,
       date: format(selectedDay, 'yyyy-MM-dd'),
       start_time: shiftForm.start_time,
       end_time: shiftForm.end_time,
-      role_label: shiftForm.role_label || undefined,
-      notes: shiftForm.notes || undefined,
-      status: ShiftStatus.SCHEDULED,
+      manager_notes: shiftForm.manager_notes || undefined,
     });
   };
 
@@ -344,12 +394,16 @@ export function SchedulePage() {
                     dayShifts.map((shift) => (
                       <div
                         key={shift.id}
-                        className={`rounded-lg border px-2 py-1.5 text-xs ${getShiftStatusColor(shift.status)}`}
+                        className={`rounded-lg border px-2 py-1.5 text-xs cursor-pointer hover:ring-2 hover:ring-primary/30 transition-all ${getShiftStatusColor(shift.status)}`}
+                        onClick={() => isManager && handleEditShift(shift)}
                       >
                         <p className="font-semibold truncate">
-                          {shift.user
-                            ? `${shift.user.first_name} ${shift.user.last_name.charAt(0)}.`
-                            : `Employee #${shift.user_id}`}
+                          {shift.employee_name
+                            ?? (shift.user
+                              ? `${shift.user.first_name} ${shift.user.last_name}`
+                              : shift.employee_id
+                                ? `Employee #${shift.employee_id}`
+                                : 'Unassigned')}
                         </p>
                         <p className="flex items-center gap-1 mt-0.5">
                           <Clock className="h-3 w-3" />
@@ -358,15 +412,10 @@ export function SchedulePage() {
                         {shift.role_label && (
                           <p className="text-[10px] mt-0.5 opacity-75">{shift.role_label}</p>
                         )}
-                        {shift.notes && (
+                        {shift.manager_notes && (
                           <p className="text-[10px] mt-0.5 italic opacity-75 truncate">
-                            {shift.notes}
+                            {shift.manager_notes}
                           </p>
-                        )}
-                        {shift.user && hasTimeOff(shift.user_id, day) && (
-                          <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-600">
-                            <AlertCircle className="h-3 w-3" /> Time off approved
-                          </div>
                         )}
                       </div>
                     ))
@@ -416,25 +465,28 @@ export function SchedulePage() {
         </Card>
       )}
 
-      {/* Add Shift Modal */}
+      {/* Add/Edit Shift Modal */}
       <Modal
         open={showShiftModal}
-        onClose={() => setShowShiftModal(false)}
-        title={`Add Shift - ${selectedDay ? format(selectedDay, 'EEEE, MMM d') : ''}`}
+        onClose={() => { setShowShiftModal(false); setEditingShift(null); }}
+        title={`${editingShift ? 'Edit' : 'Add'} Shift - ${selectedDay ? format(selectedDay, 'EEEE, MMM d') : ''}`}
       >
         <div className="space-y-4">
           <Select
             label="Employee"
-            options={employees.map((u: User) => ({
-              value: u.id,
-              label: `${u.first_name} ${u.last_name}${
-                selectedDay && hasTimeOff(u.id, selectedDay)
-                  ? ' (has time off)'
-                  : ''
-              }`,
-            }))}
-            value={shiftForm.user_id}
-            onChange={(e) => setShiftForm({ ...shiftForm, user_id: e.target.value })}
+            options={[
+              { value: '', label: 'Unassigned' },
+              ...employees.map((u: User) => ({
+                value: u.id,
+                label: `${u.first_name} ${u.last_name}${
+                  selectedDay && hasTimeOff(u.id, selectedDay)
+                    ? ' (has time off)'
+                    : ''
+                }`,
+              })),
+            ]}
+            value={shiftForm.employee_id}
+            onChange={(e) => setShiftForm({ ...shiftForm, employee_id: e.target.value })}
             placeholder="Select employee"
           />
           <div className="grid grid-cols-2 gap-3">
@@ -452,28 +504,33 @@ export function SchedulePage() {
             />
           </div>
           <Input
-            label="Role Label (optional)"
-            value={shiftForm.role_label}
-            onChange={(e) => setShiftForm({ ...shiftForm, role_label: e.target.value })}
-            placeholder="e.g., Barista, Lead"
-          />
-          <Input
             label="Notes (optional)"
-            value={shiftForm.notes}
-            onChange={(e) => setShiftForm({ ...shiftForm, notes: e.target.value })}
+            value={shiftForm.manager_notes}
+            onChange={(e) => setShiftForm({ ...shiftForm, manager_notes: e.target.value })}
             placeholder="Shift notes..."
           />
-          <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setShowShiftModal(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmitShift}
-              loading={createShiftMutation.isPending}
-              disabled={!shiftForm.user_id}
-            >
-              Create Shift
-            </Button>
+          <div className="flex justify-between pt-2">
+            <div>
+              {editingShift && (
+                <Button
+                  variant="danger"
+                  onClick={() => deleteShiftMutation.mutate(editingShift.id)}
+                  loading={deleteShiftMutation.isPending}
+                >
+                  Delete
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => { setShowShiftModal(false); setEditingShift(null); }}>
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSubmitShift}
+                loading={createShiftMutation.isPending || updateShiftMutation.isPending}
+              >
+                {editingShift ? 'Save Changes' : 'Create Shift'}
+              </Button>
           </div>
         </div>
       </Modal>

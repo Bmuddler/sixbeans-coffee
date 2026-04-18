@@ -192,6 +192,21 @@ async def update_shift(
     )
 
 
+@router.delete("/shifts/{shift_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_shift(
+    shift_id: int,
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(select(ScheduledShift).where(ScheduledShift.id == shift_id))
+    shift = result.scalar_one_or_none()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift not found")
+    require_location_access(current_user, shift.location_id)
+    await db.delete(shift)
+    await log_action(db, current_user.id, "delete_shift", "scheduled_shift", shift_id)
+
+
 @router.post("/copy-week", response_model=WeekScheduleResponse)
 async def copy_week(
     data: CopyWeekRequest,
