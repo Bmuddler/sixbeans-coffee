@@ -513,32 +513,22 @@ function OwnerDashboard() {
     refetchInterval: 30000,
   });
 
-  const { data: recentDrawers } = useQuery({
-    queryKey: ['recent-drawers'],
-    queryFn: () =>
-      cashDrawer.getReport({
-        start_date: today,
-        end_date: today,
-      }),
-  });
-
   const locationIds = allLocations?.map((l) => l.id) ?? [];
 
   const locationDashboards = useQuery({
     queryKey: ['all-location-dashboards', locationIds],
     queryFn: async () => {
       if (!allLocations || allLocations.length === 0) return [];
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         allLocations.map((loc) => dashboard.getLocationData(loc.id))
       );
-      return results;
+      return results
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+        .map((r) => r.value);
     },
     enabled: !!allLocations && allLocations.length > 0,
     refetchInterval: 60000,
   });
-
-  const varianceAlerts =
-    recentDrawers?.filter((d) => d.variance && Math.abs(d.variance) > 5) ?? [];
 
   return (
     <div className="mb-6">
@@ -608,7 +598,7 @@ function OwnerDashboard() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {allLocations?.map((loc) => {
               const locData = locationDashboards.data?.find(
-                (ld) => ld.location.id === loc.id
+                (ld: any) => (ld.location_id ?? ld.location?.id) === loc.id
               );
               return (
                 <div
@@ -628,19 +618,19 @@ function OwnerDashboard() {
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                       <div>
                         <p className="text-lg font-semibold text-gray-900">
-                          {locData.today_shifts.length}
+                          {locData.scheduled_shifts ?? 0}
                         </p>
                         <p className="text-xs text-gray-500">Shifts</p>
                       </div>
                       <div>
                         <p className="text-lg font-semibold text-green-600">
-                          {locData.clocked_in.length}
+                          {locData.currently_clocked_in ?? 0}
                         </p>
                         <p className="text-xs text-gray-500">Active</p>
                       </div>
                       <div>
                         <p className="text-lg font-semibold text-yellow-600">
-                          {locData.pending_time_off + locData.pending_swaps}
+                          0
                         </p>
                         <p className="text-xs text-gray-500">Pending</p>
                       </div>
@@ -677,33 +667,11 @@ function OwnerDashboard() {
           </div>
         </Card>
 
-        <Card title="Cash Variance Alerts">
-          {varianceAlerts.length > 0 ? (
-            <ul className="divide-y divide-gray-100">
-              {varianceAlerts.map((d) => (
-                <li key={d.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {d.location?.name ?? `Location #${d.location_id}`}
-                    </p>
-                    <p className="text-xs text-gray-500">{formatDate(d.created_at)}</p>
-                  </div>
-                  <span
-                    className={`text-sm font-semibold ${
-                      (d.variance ?? 0) < 0 ? 'text-red-600' : 'text-green-600'
-                    }`}
-                  >
-                    {(d.variance ?? 0) >= 0 ? '+' : ''}${(d.variance ?? 0).toFixed(2)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <div className="flex items-center gap-2 py-4 text-sm text-green-600">
-              <CheckCircle2 className="h-5 w-5" />
-              No cash variance alerts today.
-            </div>
-          )}
+        <Card title="Cash Variance">
+          <div className="flex items-center gap-2 py-4 text-sm text-green-600">
+            <CheckCircle2 className="h-5 w-5" />
+            Today&apos;s variance: ${summaryData?.today_cash_variance?.toFixed(2) ?? '0.00'}
+          </div>
         </Card>
       </div>
     </div>
