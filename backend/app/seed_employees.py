@@ -2,7 +2,7 @@
 
 import logging
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, insert
 
 from app.models.user import User, user_locations
 from app.models.location import Location
@@ -193,11 +193,12 @@ async def seed_employees(session):
             is_active=True,
         )
         session.add(new_user)
-        await session.flush()  # Get the user ID assigned
+        await session.flush()
 
-        # Assign locations via the many-to-many relationship
-        loc_objs = [loc for loc in all_locations if loc.id in resolved_location_ids]
-        new_user.locations = loc_objs
+        for loc_id in resolved_location_ids:
+            await session.execute(
+                insert(user_locations).values(user_id=new_user.id, location_id=loc_id)
+            )
         created_count += 1
 
     await session.commit()
