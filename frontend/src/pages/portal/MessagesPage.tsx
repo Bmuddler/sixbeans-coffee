@@ -89,9 +89,9 @@ export function MessagesPage() {
     refetchInterval: 30000,
   });
 
-  // Send direct message
+  // Send location message
   const sendMessageMutation = useMutation({
-    mutationFn: (data: { recipient_id: number; body: string }) =>
+    mutationFn: (data: { body: string; location_id?: number }) =>
       messagesApi.send(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages'] });
@@ -122,10 +122,10 @@ export function MessagesPage() {
   }, [messagesData]);
 
   const handleSendMessage = () => {
-    if (!messageBody.trim() || !recipientId) return;
+    if (!messageBody.trim()) return;
     sendMessageMutation.mutate({
-      recipient_id: parseInt(recipientId, 10),
       body: messageBody.trim(),
+      location_id: recipientId ? parseInt(recipientId, 10) : undefined,
     });
   };
 
@@ -144,13 +144,13 @@ export function MessagesPage() {
   const directMessages = allMessages.filter((m) => !m.is_announcement);
   const unreadCount = directMessages.filter((m) => !m.is_read && m.recipient_id === user?.id).length;
 
-  const recipientOptions =
-    teamMembers?.items
-      ?.filter((u) => u.id !== user?.id && u.is_active)
-      .map((u) => ({
-        value: u.id.toString(),
-        label: `${u.first_name} ${u.last_name}`,
-      })) ?? [];
+  const recipientOptions = [
+    { value: '', label: 'Company-wide' },
+    ...(allLocations?.map((loc) => ({
+      value: loc.id.toString(),
+      label: loc.name,
+    })) ?? []),
+  ];
 
   const locationOptions =
     allLocations?.map((loc) => ({
@@ -286,7 +286,7 @@ export function MessagesPage() {
                       options={recipientOptions}
                       value={recipientId}
                       onChange={(e) => setRecipientId(e.target.value)}
-                      placeholder="Select recipient"
+                      placeholder="Select location"
                     />
                   </div>
                   <div className="flex-1">
@@ -308,7 +308,7 @@ export function MessagesPage() {
                     icon={<Send className="h-4 w-4" />}
                     onClick={handleSendMessage}
                     loading={sendMessageMutation.isPending}
-                    disabled={!messageBody.trim() || !recipientId}
+                    disabled={!messageBody.trim()}
                   >
                     Send
                   </Button>

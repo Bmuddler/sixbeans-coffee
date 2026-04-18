@@ -243,17 +243,28 @@ export const shiftCoverage = {
 // ============================================================
 
 export const messages = {
-  list: (params?: { page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<Message>>('/messages', { params }).then((r) => r.data),
+  list: (params?: { page?: number; per_page?: number; location_id?: number }) =>
+    api.get('/messaging', { params }).then((r) => normalizePaginated<Message>(r.data)),
 
-  send: (data: { recipient_id: number; subject?: string; body: string }) =>
-    api.post<Message>('/messages', data).then((r) => r.data),
+  send: (data: { recipient_id?: number; body: string; location_id?: number; subject?: string }) =>
+    api.post<Message>('/messaging', {
+      content: data.body,
+      location_id: data.location_id ?? null,
+      is_announcement: false,
+    }).then((r) => r.data),
 
   getAnnouncements: (params?: { location_id?: number }) =>
-    api.get<Message[]>('/messages/announcements', { params }).then((r) => r.data),
+    api.get('/messaging', { params: { ...params, announcements_only: true } }).then((r) => {
+      const d = r.data as any;
+      return (d.items ?? d.messages ?? []) as Message[];
+    }),
 
   sendAnnouncement: (data: { location_id?: number; subject?: string; body: string }) =>
-    api.post<Message>('/messages/announcements', data).then((r) => r.data),
+    api.post<Message>('/messaging', {
+      content: data.body ?? data.subject,
+      location_id: data.location_id ?? null,
+      is_announcement: true,
+    }).then((r) => r.data),
 };
 
 // ============================================================
