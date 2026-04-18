@@ -531,6 +531,7 @@ export function SchedulePage() {
               >
                 {editingShift ? 'Save Changes' : 'Create Shift'}
               </Button>
+            </div>
           </div>
         </div>
       </Modal>
