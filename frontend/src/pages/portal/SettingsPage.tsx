@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
-import { Save, Lock, Bell, User as UserIcon, Clock } from 'lucide-react';
+import { Save, Lock, Bell, User as UserIcon, Clock, AlertTriangle } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
-import { users as usersApi, systemSettings } from '@/lib/api';
+import { users as usersApi, auth, systemSettings } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface ProfileForm {
@@ -99,6 +100,8 @@ export function SettingsPage() {
   const user = useAuthStore((s) => s.user);
   const setUser = useAuthStore((s) => s.setUser);
   const isOwner = user?.role === UserRole.OWNER;
+  const location = useLocation();
+  const forcePasswordChange = (location.state as any)?.forcePasswordChange || user?.must_change_password;
 
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     first_name: user?.first_name ?? '',
@@ -142,19 +145,17 @@ export function SettingsPage() {
   });
 
   const passwordMutation = useMutation({
-    mutationFn: () => {
-      if (!user) throw new Error('Not authenticated');
-      // In a real app, this would call a dedicated change-password endpoint
-      return usersApi.update(user.id, {
-        // The API would handle password hashing
-      } as Record<string, unknown>);
-    },
+    mutationFn: () => auth.changePassword({ new_password: passwordForm.new_password }),
     onSuccess: () => {
       setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
       setPasswordErrors({});
-      toast.success('Password updated');
+      if (user) setUser({ ...user, must_change_password: false });
+      toast.success('Password updated successfully!');
     },
-    onError: () => toast.error('Failed to update password'),
+    onError: (err: any) => {
+      const detail = err?.response?.data?.detail;
+      toast.error(detail || 'Failed to update password');
+    },
   });
 
   const handlePasswordSubmit = () => {
@@ -221,6 +222,16 @@ export function SettingsPage() {
           <p className="page-subtitle">Manage your account settings.</p>
         </div>
       </div>
+
+      {forcePasswordChange && (
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="text-sm font-semibold text-red-800">Password Change Required</p>
+            <p className="text-sm text-red-700 mt-1">You must set a new password before continuing. Your password must be at least 8 characters with one uppercase letter, one lowercase letter, and one number.</p>
+          </div>
+        </div>
+      )}
 
       <div className="max-w-2xl space-y-6">
         {/* Profile Information */}
@@ -303,7 +314,7 @@ export function SettingsPage() {
                 setPasswordForm((f) => ({ ...f, new_password: e.target.value }))
               }
               error={passwordErrors.new_password}
-              helperText="At least 8 characters"
+              helperText="Min 8 chars, 1 uppercase, 1 lowercase, 1 number"
             />
             <Input
               label="Confirm New Password"

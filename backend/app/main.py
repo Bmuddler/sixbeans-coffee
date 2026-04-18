@@ -77,6 +77,15 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE time_clocks ADD COLUMN IF NOT EXISTS is_unscheduled BOOLEAN DEFAULT FALSE"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT TRUE"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_attempts INTEGER DEFAULT 0"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -95,6 +104,13 @@ async def startup():
         if changed:
             await session.commit()
             logger.info("Locations synced.")
+
+        # Set owners to not require password change
+        from app.models.user import UserRole
+        await session.execute(
+            text("UPDATE users SET must_change_password = FALSE WHERE role = 'owner'")
+        )
+        await session.commit()
 
         # Seed default SystemSettings if none exists
         settings_result = await session.execute(select(SystemSettings).where(SystemSettings.id == 1))
@@ -118,6 +134,7 @@ async def startup():
                 hashed_password=hash_password("Sixb3ans12!"),
                 role="owner",
                 is_active=True,
+                must_change_password=False,
             ))
             session.add(User(
                 email="jessica@sixbeanscoffee.com",
@@ -128,6 +145,7 @@ async def startup():
                 hashed_password=hash_password("Sixb3ans12!"),
                 role="owner",
                 is_active=True,
+                must_change_password=False,
             ))
             await session.commit()
             logger.info("Seed complete — 6 locations, 2 owner accounts.")

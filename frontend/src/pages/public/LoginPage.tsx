@@ -27,10 +27,16 @@ export function LoginPage() {
     try {
       const res = await auth.login({ email, password });
       login(res.user, res.access_token);
-      toast.success(`Welcome back, ${res.user.first_name}!`);
-      navigate('/portal/dashboard');
-    } catch {
-      setError('Invalid email or password. Please try again.');
+      if (res.user.must_change_password) {
+        navigate('/portal/settings', { state: { forcePasswordChange: true } });
+        toast('Please set a new password to continue.', { icon: '🔒' });
+      } else {
+        toast.success(`Welcome back, ${res.user.first_name}!`);
+        navigate('/portal/dashboard');
+      }
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      setError(detail || 'Invalid email or password. Please try again.');
     } finally {
       setLoading(false);
     }

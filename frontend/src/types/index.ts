@@ -51,6 +51,7 @@ export interface User {
   hire_date?: string;
   hourly_rate?: number;
   is_active: boolean;
+  must_change_password?: boolean;
   pin_last_four?: string;
   created_at?: string;
   updated_at?: string;

@@ -75,7 +75,10 @@ login: (data: LoginRequest) => {
     api.post<{ access_token: string }>('/auth/refresh').then((r) => r.data),
 
   resetPassword: (data: { email: string }) =>
-    api.post('/auth/reset-password', data).then((r) => r.data),
+    api.post('/auth/password-reset-request', data).then((r) => r.data),
+
+  changePassword: (data: { new_password: string }) =>
+    api.post('/auth/change-password', data).then((r) => r.data),
 };
 
 // ============================================================
