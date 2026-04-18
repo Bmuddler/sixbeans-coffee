@@ -41,7 +41,7 @@ services:
     rootDir: frontend
     envVars:
       - key: VITE_API_URL
-        value: https://sixbeans-api.onrender.com
+        value: https://sixbeans-api.onrender.com/api
     routes:
       - type: rewrite
         source: /*
