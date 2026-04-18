@@ -20,7 +20,7 @@ class AuditLogResponse(BaseModel):
 
 
 class AuditLogListResponse(BaseModel):
-    logs: list[AuditLogResponse]
+    items: list[AuditLogResponse]
     total: int
     page: int
     per_page: int

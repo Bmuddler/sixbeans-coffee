@@ -50,7 +50,7 @@ async def list_audit_logs(
     logs = result.scalars().all()
 
     return AuditLogListResponse(
-        logs=[
+        items=[
             AuditLogResponse(
                 id=log.id, user_id=log.user_id, action=log.action,
                 entity_type=log.entity_type, entity_id=log.entity_id,

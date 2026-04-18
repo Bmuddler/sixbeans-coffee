@@ -45,7 +45,7 @@ class PayrollRecordResponse(BaseModel):
 
 
 class PayrollListResponse(BaseModel):
-    records: list[PayrollRecordResponse]
+    items: list[PayrollRecordResponse]
     total: int
     page: int
     per_page: int

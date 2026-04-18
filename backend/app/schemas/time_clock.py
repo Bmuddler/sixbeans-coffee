@@ -54,7 +54,7 @@ class TimeClockResponse(BaseModel):
 
 
 class TimeClockListResponse(BaseModel):
-    entries: list[TimeClockResponse]
+    items: list[TimeClockResponse]
     total: int
     page: int
     per_page: int

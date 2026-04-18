@@ -42,7 +42,7 @@ class UserResponse(UserBase):
 
 
 class UserListResponse(BaseModel):
-    users: list[UserResponse]
+    items: list[UserResponse]
     total: int
     page: int
     per_page: int

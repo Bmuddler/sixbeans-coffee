@@ -22,7 +22,7 @@ class MessageResponse(BaseModel):
 
 
 class MessageListResponse(BaseModel):
-    messages: list[MessageResponse]
+    items: list[MessageResponse]
     total: int
     page: int
     per_page: int

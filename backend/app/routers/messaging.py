@@ -84,7 +84,7 @@ async def list_messages(
     messages = result.scalars().all()
 
     return MessageListResponse(
-        messages=[
+        items=[
             MessageResponse(
                 id=m.id, sender_id=m.sender_id, location_id=m.location_id,
                 content=m.content, is_announcement=m.is_announcement,

@@ -46,7 +46,7 @@ async def list_users(
     users = result.unique().scalars().all()
 
     return UserListResponse(
-        users=[
+        items=[
             UserResponse(
                 id=u.id, email=u.email, phone=u.phone, first_name=u.first_name,
                 last_name=u.last_name, role=u.role, is_active=u.is_active,
