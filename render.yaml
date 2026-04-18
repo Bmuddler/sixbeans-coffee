@@ -3,7 +3,7 @@ services:
     name: sixbeans-api
     runtime: python
     region: oregon
-    plan: free
+    plan: starter
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     rootDir: sixbeans/backend
@@ -34,7 +34,6 @@ services:
   - type: web
     name: sixbeans
     runtime: static
-    plan: free
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     rootDir: sixbeans/frontend
