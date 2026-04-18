@@ -36,16 +36,17 @@ import {
 import { useAuthStore } from '@/stores/authStore';
 import { UserRole, type ScheduledShift, type LocationDashboardData } from '@/types';
 
-const TZ = 'America/Los_Angeles';
+function ensureUtc(s: string) {
+  return s && !s.endsWith('Z') && !s.includes('+') && !s.includes('-', 10) ? s + 'Z' : s;
+}
 
 function formatTime(timeStr: string) {
-  const date = new Date(timeStr);
-  return date.toLocaleTimeString('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit' });
+  return new Date(ensureUtc(timeStr)).toLocaleTimeString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' });
 }
 
 function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    timeZone: TZ,
+  return new Date(ensureUtc(dateStr)).toLocaleDateString('en-US', {
+    timeZone: 'America/Los_Angeles',
     weekday: 'short',
     month: 'short',
     day: 'numeric',

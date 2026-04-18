@@ -1,13 +1,23 @@
 export const TIMEZONE = 'America/Los_Angeles';
 
+function ensureUtc(dateStr: string): string {
+  if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
+    return dateStr + 'Z';
+  }
+  return dateStr;
+}
+
+function toDate(dateStr: string | Date): Date {
+  if (typeof dateStr === 'string') return new Date(ensureUtc(dateStr));
+  return dateStr;
+}
+
 export function formatDateTime(dateStr: string | Date, options?: Intl.DateTimeFormatOptions): string {
-  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-  return date.toLocaleString('en-US', { timeZone: TIMEZONE, ...options });
+  return toDate(dateStr).toLocaleString('en-US', { timeZone: TIMEZONE, ...options });
 }
 
 export function formatTime(dateStr: string | Date): string {
-  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-  return date.toLocaleTimeString('en-US', {
+  return toDate(dateStr).toLocaleTimeString('en-US', {
     timeZone: TIMEZONE,
     hour: 'numeric',
     minute: '2-digit',
@@ -16,8 +26,7 @@ export function formatTime(dateStr: string | Date): string {
 }
 
 export function formatDate(dateStr: string | Date): string {
-  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-  return date.toLocaleDateString('en-US', {
+  return toDate(dateStr).toLocaleDateString('en-US', {
     timeZone: TIMEZONE,
     month: 'short',
     day: 'numeric',
@@ -26,8 +35,7 @@ export function formatDate(dateStr: string | Date): string {
 }
 
 export function formatShortDate(dateStr: string | Date): string {
-  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
-  return date.toLocaleDateString('en-US', {
+  return toDate(dateStr).toLocaleDateString('en-US', {
     timeZone: TIMEZONE,
     month: 'short',
     day: 'numeric',
@@ -39,5 +47,9 @@ export function nowPacific(): Date {
 }
 
 export function todayPacific(): string {
-  return nowPacific().toISOString().split('T')[0];
+  const now = nowPacific();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
