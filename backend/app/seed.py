@@ -41,7 +41,7 @@ async def seed():
             last_name="Admin",
             phone="5555550100",
             pin_last_four="0100",
-            hashed_password=hash_password("changeme123"),
+            hashed_password=hash_password("Sixb3ans12!"),
             role="owner",
             is_active=True,
         )
@@ -51,7 +51,7 @@ async def seed():
             last_name="Admin",
             phone="5555550200",
             pin_last_four="0200",
-            hashed_password=hash_password("changeme123"),
+            hashed_password=hash_password("Sixb3ans12!"),
             role="owner",
             is_active=True,
         )
@@ -60,9 +60,8 @@ async def seed():
 
         await session.commit()
         print(f"Seeded {len(locations)} locations and 2 owner accounts.")
-        print("Owner 1: logcastles@gmail.com / changeme123")
-        print("Owner 2: jessica@sixbeanscoffee.com / changeme123")
-        print("IMPORTANT: Change these passwords after first login!")
+        print("Owner 1: logcastles@gmail.com")
+        print("Owner 2: jessica@sixbeanscoffee.com")
 
     await engine.dispose()
 
