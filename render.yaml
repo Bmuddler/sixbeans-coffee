@@ -11,7 +11,7 @@ services:
       - key: DATABASE_URL
         fromDatabase:
           name: sixbeans-db
-          property: connectionURI
+          property: connectionString
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: CORS_ORIGINS
@@ -34,7 +34,6 @@ services:
   - type: web
     name: sixbeans
     runtime: static
-    region: oregon
     plan: starter
     buildCommand: npm install && npm run build
     staticPublishPath: dist
