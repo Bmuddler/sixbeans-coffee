@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,7 +22,15 @@ from app.schemas.shift_swap import (
     ShiftSwapReviewRequest,
 )
 from app.services.audit_service import log_action
-from app.services.notification_service import notify_shift_swap
+from app.services.notification_service import (
+    notify_shift_swap_request,
+    notify_shift_swap_decision,
+    notify_coverage_posted,
+    notify_coverage_claimed,
+    notify_coverage_decision,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -61,15 +71,18 @@ async def create_swap_request(
 
     await log_action(db, current_user.id, "create_swap_request", "shift_swap_request", swap.id)
 
-    # Notify target employee
-    result = await db.execute(select(User).where(User.id == data.target_employee_id))
-    target_user = result.scalar_one_or_none()
-    if target_user and target_user.phone:
-        await notify_shift_swap(
-            f"{current_user.first_name} {current_user.last_name}",
-            target_user.phone,
-            req_shift.date.isoformat(),
-        )
+    # Notify target employee via SMS
+    try:
+        result = await db.execute(select(User).where(User.id == data.target_employee_id))
+        target_user = result.scalar_one_or_none()
+        if target_user and target_user.phone:
+            asyncio.create_task(notify_shift_swap_request(
+                target_user.phone,
+                f"{current_user.first_name} {current_user.last_name}",
+                req_shift.date,
+            ))
+    except Exception:
+        logger.exception("Failed to send SMS for swap request %s", swap.id)
 
     return ShiftSwapResponse(
         id=swap.id, requesting_employee_id=swap.requesting_employee_id,
@@ -155,6 +168,25 @@ async def review_swap_request(
     await db.flush()
     await log_action(db, current_user.id, "review_swap", "shift_swap_request", swap.id)
 
+    # Notify requester about swap decision
+    try:
+        if swap.requesting_employee and swap.requesting_employee.phone:
+            # Look up the requesting shift date for the notification
+            req_shift_result = await db.execute(
+                select(ScheduledShift).where(ScheduledShift.id == swap.requesting_shift_id)
+            )
+            req_shift = req_shift_result.scalar_one_or_none()
+            shift_date = req_shift.date if req_shift else None
+            if shift_date:
+                asyncio.create_task(notify_shift_swap_decision(
+                    swap.requesting_employee.phone,
+                    f"{swap.requesting_employee.first_name} {swap.requesting_employee.last_name}",
+                    data.status.value,
+                    shift_date,
+                ))
+    except Exception:
+        logger.exception("Failed to send SMS for swap review %s", swap.id)
+
     return ShiftSwapResponse(
         id=swap.id, requesting_employee_id=swap.requesting_employee_id,
         target_employee_id=swap.target_employee_id,
@@ -189,6 +221,26 @@ async def create_coverage_request(
     await db.flush()
 
     await log_action(db, current_user.id, "create_coverage_request", "shift_coverage_request", coverage.id)
+
+    # Notify coworkers at the same location about coverage availability
+    try:
+        from app.models.user import user_locations
+        loc_result = await db.execute(
+            select(user_locations.c.user_id).where(user_locations.c.location_id == shift.location_id)
+        )
+        coworker_ids = [row[0] for row in loc_result.all() if row[0] != current_user.id]
+        if coworker_ids:
+            coworker_result = await db.execute(select(User).where(User.id.in_(coworker_ids)))
+            coworkers = coworker_result.scalars().all()
+            poster_name = f"{current_user.first_name} {current_user.last_name}"
+            tasks = [
+                notify_coverage_posted(u.phone, poster_name, shift.date, shift.start_time)
+                for u in coworkers if u.phone
+            ]
+            if tasks:
+                asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+    except Exception:
+        logger.exception("Failed to send SMS for coverage request %s", coverage.id)
 
     return CoverageRequestResponse(
         id=coverage.id, shift_id=coverage.shift_id,
@@ -253,6 +305,23 @@ async def claim_coverage(
 
     await log_action(db, current_user.id, "claim_coverage", "shift_coverage_request", coverage.id)
 
+    # Notify poster that their shift has been claimed
+    try:
+        poster_result = await db.execute(select(User).where(User.id == coverage.posting_employee_id))
+        poster = poster_result.scalar_one_or_none()
+        if poster and poster.phone:
+            shift_result = await db.execute(select(ScheduledShift).where(ScheduledShift.id == coverage.shift_id))
+            cov_shift = shift_result.scalar_one_or_none()
+            if cov_shift:
+                asyncio.create_task(notify_coverage_claimed(
+                    poster.phone,
+                    f"{poster.first_name} {poster.last_name}",
+                    f"{current_user.first_name} {current_user.last_name}",
+                    cov_shift.date,
+                ))
+    except Exception:
+        logger.exception("Failed to send SMS for coverage claim %s", coverage.id)
+
     return CoverageRequestResponse(
         id=coverage.id, shift_id=coverage.shift_id,
         posting_employee_id=coverage.posting_employee_id,
@@ -295,6 +364,32 @@ async def review_coverage(
 
     await db.flush()
     await log_action(db, current_user.id, "review_coverage", "shift_coverage_request", coverage.id)
+
+    # Notify poster and claimer about coverage decision
+    try:
+        shift_result = await db.execute(select(ScheduledShift).where(ScheduledShift.id == coverage.shift_id))
+        cov_shift = shift_result.scalar_one_or_none()
+        shift_date = cov_shift.date if cov_shift else None
+        if shift_date:
+            sms_tasks = []
+            if coverage.posting_employee and coverage.posting_employee.phone:
+                sms_tasks.append(notify_coverage_decision(
+                    coverage.posting_employee.phone,
+                    f"{coverage.posting_employee.first_name} {coverage.posting_employee.last_name}",
+                    data.status.value,
+                    shift_date,
+                ))
+            if coverage.claiming_employee and coverage.claiming_employee.phone:
+                sms_tasks.append(notify_coverage_decision(
+                    coverage.claiming_employee.phone,
+                    f"{coverage.claiming_employee.first_name} {coverage.claiming_employee.last_name}",
+                    data.status.value,
+                    shift_date,
+                ))
+            if sms_tasks:
+                asyncio.create_task(asyncio.gather(*sms_tasks, return_exceptions=True))
+    except Exception:
+        logger.exception("Failed to send SMS for coverage review %s", coverage.id)
 
     return CoverageRequestResponse(
         id=coverage.id, shift_id=coverage.shift_id,

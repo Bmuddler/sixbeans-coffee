@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -8,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.time_off import RequestStatus, TimeOffRequest, UnavailabilityRequest
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, user_locations
 from app.schemas.time_off import (
     TimeOffRequestCreate,
     TimeOffRequestResponse,
@@ -18,7 +20,9 @@ from app.schemas.time_off import (
     UnavailabilityReviewRequest,
 )
 from app.services.audit_service import log_action
-from app.services.notification_service import notify_time_off_decision
+from app.services.notification_service import notify_time_off_decision, notify_time_off_submitted
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -41,6 +45,38 @@ async def create_time_off_request(
     await db.flush()
 
     await log_action(db, current_user.id, "create_time_off_request", "time_off_request", req.id)
+
+    # Notify managers at the employee's locations about the time off request
+    try:
+        loc_ids_result = await db.execute(
+            select(user_locations.c.location_id).where(user_locations.c.user_id == current_user.id)
+        )
+        loc_ids = [row[0] for row in loc_ids_result.all()]
+        if loc_ids:
+            manager_result = await db.execute(
+                select(User).where(
+                    User.id.in_(
+                        select(user_locations.c.user_id).where(user_locations.c.location_id.in_(loc_ids))
+                    ),
+                    User.role.in_([UserRole.manager, UserRole.owner]),
+                )
+            )
+            managers = manager_result.scalars().all()
+            employee_name = f"{current_user.first_name} {current_user.last_name}"
+            tasks = [
+                notify_time_off_submitted(
+                    m.phone,
+                    f"{m.first_name} {m.last_name}",
+                    employee_name,
+                    req.start_date,
+                    req.end_date,
+                )
+                for m in managers if m.phone
+            ]
+            if tasks:
+                asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+    except Exception:
+        logger.exception("Failed to send SMS for time off request %s", req.id)
 
     return TimeOffRequestResponse(
         id=req.id, employee_id=req.employee_id, start_date=req.start_date,
@@ -112,10 +148,18 @@ async def review_time_off_request(
         new_values={"status": data.status.value},
     )
 
-    # Notify employee
-    if req.employee and req.employee.phone:
-        dates = f"{req.start_date} to {req.end_date}"
-        await notify_time_off_decision(req.employee.phone, data.status.value, dates)
+    # Notify employee about decision via SMS
+    try:
+        if req.employee and req.employee.phone:
+            asyncio.create_task(notify_time_off_decision(
+                req.employee.phone,
+                f"{req.employee.first_name} {req.employee.last_name}",
+                data.status.value,
+                req.start_date,
+                req.end_date,
+            ))
+    except Exception:
+        logger.exception("Failed to send SMS for time off review %s", req.id)
 
     return TimeOffRequestResponse(
         id=req.id, employee_id=req.employee_id, start_date=req.start_date,

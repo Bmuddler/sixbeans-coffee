@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -7,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
+from app.models.location import Location
 from app.models.schedule import ScheduledShift, ShiftTemplate
 from app.models.user import User, UserRole
 from app.schemas.schedule import (
@@ -20,8 +23,11 @@ from app.schemas.schedule import (
     WeekScheduleResponse,
 )
 from app.services.audit_service import log_action
+from app.services.notification_service import notify_schedule_change, notify_shift_deleted
 from app.services.schedule_service import copy_week_schedule, get_unavailable_employees
 from app.utils.permissions import require_location_access
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -149,6 +155,26 @@ async def create_shift(
     await db.flush()
 
     await log_action(db, current_user.id, "create_shift", "scheduled_shift", shift.id)
+
+    # Notify assigned employee about new shift
+    if shift.employee_id:
+        try:
+            emp_result = await db.execute(select(User).where(User.id == shift.employee_id))
+            employee = emp_result.scalar_one_or_none()
+            if employee and employee.phone:
+                loc_result = await db.execute(select(Location.name).where(Location.id == shift.location_id))
+                location_name = loc_result.scalar() or "Unknown"
+                asyncio.create_task(notify_schedule_change(
+                    employee.phone,
+                    f"{employee.first_name} {employee.last_name}",
+                    "created",
+                    shift.date,
+                    shift.start_time,
+                    shift.end_time,
+                ))
+        except Exception:
+            logger.exception("Failed to send SMS for new shift %s", shift.id)
+
     return ScheduledShiftResponse(
         id=shift.id, template_id=shift.template_id, location_id=shift.location_id,
         employee_id=shift.employee_id, date=shift.date, start_time=shift.start_time,
@@ -182,6 +208,27 @@ async def update_shift(
         db, current_user.id, "update_shift", "scheduled_shift", shift.id,
         old_values=old_values,
     )
+
+    # Notify assigned employee about shift update
+    if shift.employee_id:
+        try:
+            # Reload employee if not already loaded
+            if not shift.employee:
+                emp_result = await db.execute(select(User).where(User.id == shift.employee_id))
+                employee = emp_result.scalar_one_or_none()
+            else:
+                employee = shift.employee
+            if employee and employee.phone:
+                asyncio.create_task(notify_schedule_change(
+                    employee.phone,
+                    f"{employee.first_name} {employee.last_name}",
+                    "updated",
+                    shift.date,
+                    shift.start_time,
+                    shift.end_time,
+                ))
+        except Exception:
+            logger.exception("Failed to send SMS for updated shift %s", shift.id)
 
     emp_name = f"{shift.employee.first_name} {shift.employee.last_name}" if shift.employee else None
     return ScheduledShiftResponse(
@@ -268,13 +315,32 @@ async def delete_shift(
     current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(ScheduledShift).where(ScheduledShift.id == shift_id))
+    result = await db.execute(
+        select(ScheduledShift).options(selectinload(ScheduledShift.employee))
+        .where(ScheduledShift.id == shift_id)
+    )
     shift = result.scalar_one_or_none()
     if not shift:
         raise HTTPException(status_code=404, detail="Shift not found")
     require_location_access(current_user, shift.location_id)
+
+    # Capture shift info before deletion for SMS notification
+    deleted_employee = shift.employee
+    deleted_date = shift.date
+
     await db.delete(shift)
     await log_action(db, current_user.id, "delete_shift", "scheduled_shift", shift_id)
+
+    # Notify employee about deleted shift
+    if deleted_employee and deleted_employee.phone:
+        try:
+            asyncio.create_task(notify_shift_deleted(
+                deleted_employee.phone,
+                f"{deleted_employee.first_name} {deleted_employee.last_name}",
+                deleted_date,
+            ))
+        except Exception:
+            logger.exception("Failed to send SMS for deleted shift %s", shift_id)
 
 
 @router.post("/copy-week", response_model=WeekScheduleResponse)

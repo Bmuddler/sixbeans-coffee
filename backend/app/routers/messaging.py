@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -17,6 +19,9 @@ from app.schemas.messaging import (
     RecipientInfo,
 )
 from app.services.audit_service import log_action
+from app.services.notification_service import notify_new_message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -91,6 +96,26 @@ async def send_message(
         .where(Message.id == msg.id)
     )
     msg = result.scalar_one()
+
+    # Send SMS notifications to recipients with phone numbers
+    sender_name = f"{current_user.first_name} {current_user.last_name}"
+    preview = data.content
+    try:
+        recipient_user_ids = [r.user_id for r in msg.recipients if r.user_id != current_user.id]
+        if recipient_user_ids:
+            recipient_result = await db.execute(
+                select(User).where(User.id.in_(recipient_user_ids))
+            )
+            recipient_users = recipient_result.scalars().all()
+            tasks = [
+                notify_new_message(u.phone, sender_name, preview)
+                for u in recipient_users if u.phone
+            ]
+            if tasks:
+                asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+    except Exception:
+        logger.exception("Failed to send SMS notifications for message %s", msg.id)
+
     return _build_message_response(msg)
 
 
