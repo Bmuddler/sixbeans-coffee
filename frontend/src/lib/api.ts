@@ -561,6 +561,9 @@ export const supplyOrders = {
   updateStatus: (id: number, status: string) =>
     api.patch(`/supply-orders/orders/${id}/status`, { status }).then((r) => r.data),
 
+  deleteOrder: (id: number) =>
+    api.delete(`/supply-orders/orders/${id}`).then((r) => r.data),
+
   createCatalogItem: (data: { name: string; category: string; description?: string; price?: number }) =>
     api.post('/supply-orders/catalog', data).then((r) => r.data),
 

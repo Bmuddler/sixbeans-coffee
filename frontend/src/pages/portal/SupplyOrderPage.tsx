@@ -41,7 +41,7 @@ interface OrderRecord {
   status: string;
   notes?: string;
   created_at: string;
-  items: { supply_item_id: number; name?: string; quantity: number; price?: number }[];
+  items: { supply_item_id: number; item_name?: string; item_price?: number; quantity: number }[];
   total?: number;
 }
 
@@ -201,6 +201,16 @@ export function SupplyOrderPage() {
       toast.success('Item copied');
     },
     onError: () => toast.error('Failed to copy item'),
+  });
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: supplyOrders.deleteOrder,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-orders'] });
+      setSelectedOrder(null);
+      toast.success('Order deleted');
+    },
+    onError: () => toast.error('Failed to delete order'),
   });
 
   // ---- Derived ----
@@ -610,6 +620,10 @@ export function SupplyOrderPage() {
           allLocations={allLocations ?? []}
           selectedOrder={selectedOrder}
           onSelectOrder={setSelectedOrder}
+          isOwner={!!isOwner}
+          onDeleteOrder={(id) => {
+            if (confirm('Delete this order?')) deleteOrderMutation.mutate(id);
+          }}
         />
       ) : (
         /* Manage Catalog (owner only) */
@@ -1037,18 +1051,26 @@ function CartPanel({
 // Order History Sub-component
 // ============================================================
 
+function orderTotal(order: OrderRecord): number {
+  return (order.items ?? []).reduce((sum, item) => sum + (item.item_price ?? 0) * item.quantity, 0);
+}
+
 function OrderHistoryView({
   orders,
   loading,
   allLocations,
   selectedOrder,
   onSelectOrder,
+  isOwner,
+  onDeleteOrder,
 }: {
   orders: OrderRecord[];
   loading: boolean;
   allLocations: { id: number; name: string }[];
   selectedOrder: OrderRecord | null;
   onSelectOrder: (o: OrderRecord | null) => void;
+  isOwner: boolean;
+  onDeleteOrder: (id: number) => void;
 }) {
   const locationName = (id: number) => allLocations.find((l) => l.id === id)?.name ?? `Location ${id}`;
 
@@ -1091,7 +1113,7 @@ function OrderHistoryView({
                   {locationName(order.location_id)} &middot;{' '}
                   {new Date(order.created_at).toLocaleDateString()} &middot;{' '}
                   {order.items?.length ?? 0} items
-                  {order.total != null && ` \u00b7 ${formatPrice(order.total)}`}
+                  {` \u00b7 ${formatPrice(orderTotal(order))}`}
                 </p>
               </div>
               <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
@@ -1127,12 +1149,12 @@ function OrderHistoryView({
             <div className="border rounded-lg divide-y divide-gray-100">
               {selectedOrder.items?.map((item, i) => (
                 <div key={i} className="flex items-center justify-between px-3 py-2 text-sm">
-                  <span className="text-gray-900">{item.name ?? `Item #${item.supply_item_id}`}</span>
+                  <span className="text-gray-900">{item.item_name ?? `Item #${item.supply_item_id}`}</span>
                   <div className="flex items-center gap-3">
                     <span className="text-gray-500">x{item.quantity}</span>
-                    {item.price != null && (
+                    {item.item_price != null && (
                       <span className="font-medium text-gray-700">
-                        {formatPrice(item.price * item.quantity)}
+                        {formatPrice(item.item_price * item.quantity)}
                       </span>
                     )}
                   </div>
@@ -1140,13 +1162,21 @@ function OrderHistoryView({
               ))}
             </div>
 
-            {selectedOrder.total != null && (
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="font-semibold">Total</span>
-                <span className="text-lg font-bold text-[#5CB832]">
-                  {formatPrice(selectedOrder.total)}
-                </span>
-              </div>
+            <div className="flex justify-between items-center pt-2 border-t">
+              <span className="font-semibold">Total</span>
+              <span className="text-lg font-bold text-[#5CB832]">
+                {formatPrice(orderTotal(selectedOrder))}
+              </span>
+            </div>
+
+            {isOwner && (
+              <button
+                onClick={() => onDeleteOrder(selectedOrder.id)}
+                className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 mt-2"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Order
+              </button>
             )}
           </div>
         )}

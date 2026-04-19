@@ -342,6 +342,23 @@ async def update_order_status(
     return {"id": order.id, "status": order.status}
 
 
+@router.delete("/orders/{order_id}")
+async def delete_order(
+    order_id: int,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a supply order (owner only)."""
+    result = await db.execute(select(SupplyOrder).where(SupplyOrder.id == order_id))
+    order = result.scalar_one_or_none()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    await db.delete(order)
+    await db.flush()
+    return {"ok": True}
+
+
 def _serialize_order(order: SupplyOrder) -> dict:
     return {
         "id": order.id,
