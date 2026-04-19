@@ -26,9 +26,13 @@ class Settings(BaseSettings):
     twilio_auth_token: str = ""
     twilio_phone_number: str = ""
 
-    # Square
+    # Square (POS + supply ordering)
     square_access_token: str = ""
-    square_environment: str = "sandbox"
+    square_environment: str = "production"
+
+    # Gmail SMTP for supply reports
+    gmail_app_password: str = ""
+    gmail_from: str = ""
 
     # Anthropic (Claude)
     anthropic_api_key: str = ""

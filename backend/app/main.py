@@ -26,6 +26,7 @@ from app.routers import (
     payroll,
     schedules,
     shift_swap,
+    supply_reports,
     time_clock,
     time_off,
     users,
@@ -61,6 +62,7 @@ app.include_router(forms.router, prefix="/api/forms", tags=["Forms"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(applications.router, prefix="/api/applications", tags=["Applications"])
+app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["Supply Reports"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
