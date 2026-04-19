@@ -46,6 +46,7 @@ export function LandingPage() {
               <img src="/logo.png" alt="Six Beans Coffee Co." className="h-12 w-auto" />
             </a>
             <div className="hidden md:flex items-center gap-8">
+              <a href="#order" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">Order Ahead</a>
               <a href="#about" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">About</a>
               <a href="#locations" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">Locations</a>
               <a href="#careers" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">Careers</a>
@@ -60,6 +61,7 @@ export function LandingPage() {
         </div>
         {mobileNav && (
           <div className="md:hidden border-t border-gray-100 bg-white px-4 py-4 space-y-3">
+            <a href="#order" onClick={() => setMobileNav(false)} className="block text-sm font-medium text-gray-600">Order Ahead</a>
             <a href="#about" onClick={() => setMobileNav(false)} className="block text-sm font-medium text-gray-600">About</a>
             <a href="#locations" onClick={() => setMobileNav(false)} className="block text-sm font-medium text-gray-600">Locations</a>
             <a href="#careers" onClick={() => setMobileNav(false)} className="block text-sm font-medium text-gray-600">Careers</a>
@@ -86,11 +88,11 @@ export function LandingPage() {
               Incredibly good coffee and specialty drinks served through our convenient drive-thru, cozy cafes, and walk-up windows. Handcrafted with love in every cup.
             </p>
             <div className="mt-10 flex flex-wrap gap-4">
-              <a href="#locations" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-base font-bold text-white transition-all hover:scale-105 hover:shadow-lg hover:shadow-green-500/25" style={{ backgroundColor: '#5CB832' }}>
-                Find a Location <ArrowRight className="h-5 w-5" />
+              <a href="#order" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-base font-bold text-white transition-all hover:scale-105 hover:shadow-lg hover:shadow-green-500/25" style={{ backgroundColor: '#5CB832' }}>
+                Order Ahead <ArrowRight className="h-5 w-5" />
               </a>
-              <a href="#careers" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-base font-bold border-2 border-white/30 text-white hover:bg-white/10 transition-all">
-                We're Hiring <Briefcase className="h-5 w-5" />
+              <a href="#locations" className="inline-flex items-center gap-2 px-8 py-3.5 rounded-full text-base font-bold border-2 border-white/30 text-white hover:bg-white/10 transition-all">
+                Find a Location <MapPin className="h-5 w-5" />
               </a>
             </div>
           </div>
@@ -99,6 +101,65 @@ export function LandingPage() {
           <svg viewBox="0 0 1440 80" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full">
             <path d="M0 80L60 73.3C120 66.7 240 53.3 360 48.3C480 43.3 600 46.7 720 51.7C840 56.7 960 63.3 1080 63.3C1200 63.3 1320 56.7 1380 53.3L1440 50V80H0Z" fill="white" />
           </svg>
+        </div>
+      </section>
+
+      {/* ORDER AHEAD */}
+      <section id="order" className="py-20 sm:py-24 bg-white">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="rounded-3xl overflow-hidden" style={{ background: 'linear-gradient(135deg, #5CB832 0%, #4AA028 100%)' }}>
+            <div className="grid lg:grid-cols-2 gap-8 items-center p-8 sm:p-12 lg:p-16">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-5 text-sm font-semibold bg-white/20 text-white">
+                  <Star className="h-4 w-4" /> Rewards & Order Ahead
+                </div>
+                <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-tight">
+                  Skip the Line.<br />Order on the App.
+                </h2>
+                <p className="mt-5 text-lg text-white/85 leading-relaxed max-w-md">
+                  Download the <strong>Six Beans Coffee Co Rewards</strong> app to order ahead, earn points on every purchase, and get exclusive rewards. Your coffee, ready when you are.
+                </p>
+                <div className="mt-4 space-y-2 text-white/80 text-sm">
+                  <p className="flex items-center gap-2"><Coffee className="h-4 w-4 text-white" /> Order ahead from any location</p>
+                  <p className="flex items-center gap-2"><Star className="h-4 w-4 text-white" /> Earn points on every purchase</p>
+                  <p className="flex items-center gap-2"><Heart className="h-4 w-4 text-white" /> Exclusive rewards and freebies</p>
+                </div>
+                <div className="mt-8 flex flex-wrap gap-4">
+                  <a href="https://apps.apple.com/us/app/six-beans-coffee-co-rewards/id1357121183" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-black text-white font-semibold hover:bg-gray-900 transition-colors shadow-lg">
+                    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/></svg>
+                    <div className="text-left">
+                      <div className="text-[10px] leading-none opacity-80">Download on the</div>
+                      <div className="text-base leading-tight">App Store</div>
+                    </div>
+                  </a>
+                  <a href="https://play.google.com/store/apps/details?id=com.tapmango.sixbeanscoffee" target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-3 px-6 py-3 rounded-xl bg-black text-white font-semibold hover:bg-gray-900 transition-colors shadow-lg">
+                    <svg className="h-7 w-7" viewBox="0 0 24 24" fill="currentColor"><path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 01-.61-.92V2.734a1 1 0 01.609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.199l2.302 2.302a1 1 0 010 1.38l-2.302 2.302L15.396 13l2.302-2.492zM5.864 2.658L16.8 8.99l-2.302 2.303-8.634-8.635z"/></svg>
+                    <div className="text-left">
+                      <div className="text-[10px] leading-none opacity-80">Get it on</div>
+                      <div className="text-base leading-tight">Google Play</div>
+                    </div>
+                  </a>
+                </div>
+              </div>
+              <div className="hidden lg:flex items-center justify-center">
+                <div className="relative">
+                  <div className="w-64 h-[500px] rounded-[3rem] border-[8px] border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center">
+                    <div className="text-center text-white/60">
+                      <img src="/logo.png" alt="Six Beans" className="h-16 w-auto mx-auto mb-4 brightness-0 invert opacity-80" />
+                      <p className="text-sm font-medium">Order Ahead</p>
+                      <p className="text-xs mt-1 opacity-60">Earn Rewards</p>
+                    </div>
+                  </div>
+                  <div className="absolute -top-4 -right-4 bg-white rounded-2xl shadow-xl p-3 animate-bounce">
+                    <div className="flex items-center gap-2">
+                      <Star className="h-5 w-5 text-yellow-500" />
+                      <span className="text-sm font-bold" style={{ color: '#4A3428' }}>+25 pts</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
