@@ -39,6 +39,7 @@ class UserResponse(BaseModel):
     role: UserRole
     is_active: bool
     pin_last_four: str | None = None
+    adp_employee_code: str | None = None
     location_ids: list[int] = []
     created_at: datetime
     updated_at: datetime

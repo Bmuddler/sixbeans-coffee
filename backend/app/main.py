@@ -88,6 +88,9 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS locked_until TIMESTAMP"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS adp_employee_code VARCHAR(20)"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -154,6 +157,39 @@ async def startup():
 
         # Bulk-import employees from Homebase CSV data
         await seed_employees(session)
+
+        # Seed ADP employee codes (one-time)
+        adp_check = await session.execute(
+            select(User).where(User.adp_employee_code.isnot(None)).limit(1)
+        )
+        if adp_check.scalar_one_or_none() is None:
+            ADP_CODES = {
+                "Aguilar, Adelia": "100", "Allaway, Ally": "5", "Castillo, Delilah": "145",
+                "Contreras, Gabriela": "108", "Gonzalez, Madison": "84", "Gutierrez, Jayden": "147",
+                "Hernandez, Amelie": "140", "Hernandez, Elizabeth": "141", "Herrarte, Sofia": "129",
+                "Herrera Jr., Gustavo": "143", "Hines, Zoey": "131", "Hough, Hannah": "122",
+                "Limon, Zamantha": "65", "Lowery, Makayla": "121", "matai, dejanae": "138",
+                "Miranda, Alyssa": "80", "Monroy, Anthony": "110", "Munoz, Johanna": "71",
+                "Nicklason, Abby": "114", "Nicklason, Chloe": "133", "Nicklason, Jessica": "96",
+                "Nicklason, Micah": "91", "Palumbo, Mia": "146", "Pineda, Alissa": "35",
+                "Ponce, Jose": "137", "Privett, Kaitlin": "126", "abbey, ": "111",
+                "Sadach, Giada": "128", "Sandoval, Cristina": "130", "Solis, Britney": "149",
+                "Soto, Natalie": "124", "Thomas, Abigail": "136", "Tinajero, Alexia": "148",
+                "Villatoro, Kailee": "127", "Youngs, Ciara": "88",
+            }
+            all_users = (await session.execute(select(User))).scalars().all()
+            matched = 0
+            for user in all_users:
+                for name_key, code in ADP_CODES.items():
+                    last_part, first_part = name_key.split(", ", 1)
+                    if (user.last_name.strip().lower() == last_part.strip().lower()
+                            and user.first_name.strip().lower() == first_part.strip().lower()):
+                        user.adp_employee_code = code
+                        matched += 1
+                        break
+            if matched:
+                await session.commit()
+                logger.info(f"Seeded ADP codes for {matched} employees.")
 
 
 @app.get("/api/health")

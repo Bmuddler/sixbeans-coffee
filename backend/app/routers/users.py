@@ -51,6 +51,7 @@ async def list_users(
                 id=u.id, email=u.email, phone=u.phone, first_name=u.first_name,
                 last_name=u.last_name, role=u.role, is_active=u.is_active,
                 pin_last_four=u.pin_last_four,
+                adp_employee_code=u.adp_employee_code,
                 location_ids=[loc.id for loc in u.locations],
                 created_at=u.created_at, updated_at=u.updated_at,
             )
@@ -67,6 +68,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         first_name=current_user.first_name, last_name=current_user.last_name,
         role=current_user.role, is_active=current_user.is_active,
         pin_last_four=current_user.pin_last_four,
+        adp_employee_code=current_user.adp_employee_code,
         location_ids=[loc.id for loc in current_user.locations],
         created_at=current_user.created_at, updated_at=current_user.updated_at,
     )
@@ -90,6 +92,7 @@ async def get_user(
         first_name=user.first_name, last_name=user.last_name,
         role=user.role, is_active=user.is_active,
         pin_last_four=user.pin_last_four,
+        adp_employee_code=user.adp_employee_code,
         location_ids=[loc.id for loc in user.locations],
         created_at=user.created_at, updated_at=user.updated_at,
     )
@@ -136,6 +139,7 @@ async def create_user(
         first_name=user.first_name, last_name=user.last_name,
         role=user.role, is_active=user.is_active,
         pin_last_four=user.pin_last_four,
+        adp_employee_code=user.adp_employee_code,
         location_ids=[loc.id for loc in user.locations],
         created_at=user.created_at, updated_at=user.updated_at,
     )
@@ -184,6 +188,7 @@ async def update_user(
         first_name=user.first_name, last_name=user.last_name,
         role=user.role, is_active=user.is_active,
         pin_last_four=user.pin_last_four,
+        adp_employee_code=user.adp_employee_code,
         location_ids=[loc.id for loc in user.locations],
         created_at=user.created_at, updated_at=user.updated_at,
     )
