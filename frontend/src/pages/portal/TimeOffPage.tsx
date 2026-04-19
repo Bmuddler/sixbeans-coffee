@@ -165,9 +165,7 @@ export function TimeOffPage() {
         });
         days.forEach((d) => {
           const key = format(d, 'yyyy-MM-dd');
-          const name = req.user
-            ? `${req.user.first_name} ${req.user.last_name.charAt(0)}.`
-            : `Employee #${req.user_id}`;
+          const name = req.employee_name ?? (req.user ? `${req.user.first_name} ${req.user.last_name.charAt(0)}.` : `Employee #${req.employee_id ?? req.user_id}`);
           const existing = map.get(key) || [];
           existing.push(name);
           map.set(key, existing);
@@ -292,9 +290,7 @@ export function TimeOffPage() {
                     >
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-gray-900">
-                          {req.user
-                            ? `${req.user.first_name} ${req.user.last_name}`
-                            : `Employee #${req.user_id}`}
+                          {req.employee_name ?? (req.user ? `${req.user.first_name} ${req.user.last_name}` : `Employee #${req.employee_id ?? req.user_id}`)}
                         </p>
                         <p className="text-sm text-gray-600">
                           {format(parseISO(req.start_date), 'MMM d')} -{' '}
@@ -389,9 +385,7 @@ export function TimeOffPage() {
                   >
                     <div>
                       <p className="text-sm font-semibold text-gray-900">
-                        {ua.user
-                          ? `${ua.user.first_name} ${ua.user.last_name}`
-                          : `Employee #${ua.user_id}`}
+                        {ua.employee_name ?? (ua.user ? `${ua.user.first_name} ${ua.user.last_name}` : `Employee #${ua.employee_id ?? ua.user_id}`)}
                       </p>
                       <p className="text-sm text-gray-600">
                         {DAY_NAMES[ua.day_of_week]} | {ua.start_time} - {ua.end_time}
@@ -595,9 +589,7 @@ export function TimeOffPage() {
           <div className="space-y-4">
             <div className="rounded-lg bg-gray-50 p-3 text-sm">
               <p className="font-medium">
-                {reviewingRequest.user
-                  ? `${reviewingRequest.user.first_name} ${reviewingRequest.user.last_name}`
-                  : `Employee #${reviewingRequest.user_id}`}
+                {reviewingRequest.employee_name ?? (reviewingRequest.user ? `${reviewingRequest.user.first_name} ${reviewingRequest.user.last_name}` : `Employee #${reviewingRequest.employee_id ?? reviewingRequest.user_id}`)}
               </p>
               <p className="text-gray-600">
                 {format(parseISO(reviewingRequest.start_date), 'MMM d')} -{' '}
