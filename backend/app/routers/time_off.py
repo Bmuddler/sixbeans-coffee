@@ -20,7 +20,7 @@ from app.schemas.time_off import (
     UnavailabilityReviewRequest,
 )
 from app.services.audit_service import log_action
-from app.services.notification_service import notify_time_off_decision, notify_time_off_submitted
+from app.services.notification_service import notify_time_off_decision, notify_time_off_submitted, send_sms
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +194,36 @@ async def create_unavailability(
     await db.flush()
 
     await log_action(db, current_user.id, "create_unavailability", "unavailability_request", req.id)
+
+    # Notify managers about the unavailability request
+    try:
+        loc_ids_result = await db.execute(
+            select(user_locations.c.location_id).where(user_locations.c.user_id == current_user.id)
+        )
+        loc_ids = [row[0] for row in loc_ids_result.all()]
+        if loc_ids:
+            manager_result = await db.execute(
+                select(User).where(
+                    User.id.in_(
+                        select(user_locations.c.user_id).where(user_locations.c.location_id.in_(loc_ids))
+                    ),
+                    User.role.in_([UserRole.manager, UserRole.owner]),
+                    User.is_active.is_(True),
+                )
+            )
+            managers = manager_result.scalars().all()
+            emp_name = f"{current_user.first_name} {current_user.last_name}"
+            tasks = [
+                send_sms(
+                    m.phone,
+                    f"Six Beans: {emp_name} submitted an unavailability request for {req.day_of_week}. Log in to review.",
+                )
+                for m in managers if m.phone and m.id != current_user.id
+            ]
+            if tasks:
+                asyncio.create_task(asyncio.gather(*tasks, return_exceptions=True))
+    except Exception:
+        logger.exception("Failed to send SMS for unavailability request %s", req.id)
 
     return UnavailabilityResponse(
         id=req.id, employee_id=req.employee_id, day_of_week=req.day_of_week,
