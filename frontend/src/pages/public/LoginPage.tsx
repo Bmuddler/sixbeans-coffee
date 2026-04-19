@@ -69,21 +69,8 @@ export function LoginPage() {
         {/* Logo */}
         <div className="mb-8 text-center">
           <Link to="/" className="inline-flex flex-col items-center gap-3 group">
-            <div
-              className="flex h-16 w-16 items-center justify-center rounded-full shadow-md transition-transform group-hover:scale-105"
-              style={{ backgroundColor: '#6F4E37' }}
-            >
-              <Coffee className="h-9 w-9 text-white" />
-            </div>
-            <div>
-              <span
-                className="text-2xl font-bold"
-                style={{ color: '#6F4E37' }}
-              >
-                Six Beans Coffee Co.
-              </span>
-              <p className="mt-1 text-sm text-gray-500">Employee Portal</p>
-            </div>
+            <img src="/logo.png" alt="Six Beans Coffee Co." className="h-20 w-auto transition-transform group-hover:scale-105" />
+            <p className="text-sm text-gray-500">Employee Portal</p>
           </Link>
         </div>
 

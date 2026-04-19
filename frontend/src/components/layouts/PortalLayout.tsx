@@ -97,9 +97,8 @@ export function PortalLayout() {
   const SidebarContent = () => (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-5 border-b border-primary-600">
-        <Coffee className="h-7 w-7 text-secondary" />
-        <span className="text-lg font-bold text-white">Six Beans</span>
+      <div className="flex items-center justify-center px-4 py-4 border-b border-primary-600">
+        <img src="/logo.png" alt="Six Beans" className="h-10 w-auto brightness-0 invert" />
       </div>
 
       {/* User Info */}
@@ -194,7 +193,7 @@ export function PortalLayout() {
           >
             <Menu className="h-6 w-6" />
           </button>
-          <span className="text-lg font-semibold text-primary">Six Beans</span>
+          <img src="/logo.png" alt="Six Beans" className="h-8 w-auto" />
         </header>
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8">

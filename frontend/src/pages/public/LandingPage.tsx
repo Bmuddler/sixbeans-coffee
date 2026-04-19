@@ -42,11 +42,8 @@ export function LandingPage() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-md border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <a href="#" className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full flex items-center justify-center" style={{ backgroundColor: '#4A3428' }}>
-                <Coffee className="h-5 w-5 text-white" />
-              </div>
-              <span className="text-xl font-black tracking-tight" style={{ color: '#4A3428' }}>SIX BEANS</span>
+            <a href="#" className="flex items-center gap-2">
+              <img src="/logo.png" alt="Six Beans Coffee Co." className="h-12 w-auto" />
             </a>
             <div className="hidden md:flex items-center gap-8">
               <a href="#about" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">About</a>
@@ -277,11 +274,8 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center">
-                  <Coffee className="h-5 w-5 text-white" />
-                </div>
-                <span className="text-xl font-black text-white tracking-tight">SIX BEANS</span>
+              <div className="mb-4">
+                <img src="/logo.png" alt="Six Beans Coffee Co." className="h-14 w-auto brightness-0 invert" />
               </div>
               <p className="text-sm text-gray-400 leading-relaxed">Extraordinarily good coffee served across 6 locations in California's High Desert.</p>
               <div className="flex gap-4 mt-6">
