@@ -241,8 +241,11 @@ export const unavailability = {
   list: (params?: { user_id?: number; status?: RequestStatus }) =>
     api.get<UnavailabilityRequest[]>('/time-off/unavailability', { params }).then((r) => r.data),
 
-  create: (data: { day_of_week: number; start_time: string; end_time: string; reason?: string }) =>
-    api.post<UnavailabilityRequest>('/time-off/unavailability', data).then((r) => r.data),
+  create: (data: { day_of_week: number | string; start_time: string; end_time: string; reason?: string }) => {
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const dayStr = typeof data.day_of_week === 'number' ? dayNames[data.day_of_week] : data.day_of_week;
+    return api.post<UnavailabilityRequest>('/time-off/unavailability', { ...data, day_of_week: dayStr }).then((r) => r.data);
+  },
 
   review: (id: number, data: { status: RequestStatus }) =>
     api.patch<UnavailabilityRequest>(`/time-off/unavailability/${id}/review`, data).then((r) => r.data),
