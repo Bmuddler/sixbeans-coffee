@@ -69,6 +69,7 @@ SEED_LOCATIONS = [
     {"name": "Six Beans - Victorville", "address": "12875 Bear Valley Rd", "city": "Victorville", "state": "CA", "zip_code": "92392", "phone": "(760) 983-5028"},
     {"name": "Six Beans - Apple Valley (Yucca Loma)", "address": "13730 Apple Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92307", "phone": "(442) 292-2185"},
     {"name": "Six Beans - Victorville (7th St)", "address": "14213 7th St", "city": "Victorville", "state": "CA", "zip_code": "92395", "phone": "(442) 229-2222"},
+    {"name": "Six Beans - Warehouse", "address": "", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": ""},
 ]
 
 
@@ -97,6 +98,9 @@ async def startup():
         ))
         await conn.execute(text(
             "ALTER TABLE time_clocks ADD COLUMN IF NOT EXISTS auto_clockout_at TIMESTAMP"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_preferences TEXT"
         ))
 
     async with async_session() as session:

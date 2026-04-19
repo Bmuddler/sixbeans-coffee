@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Boolean, Table
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, Boolean, Table, Text
 from sqlalchemy.orm import relationship
 
 from app.models import Base
@@ -37,6 +37,7 @@ class User(Base):
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime, nullable=True)
     adp_employee_code = Column(String(20), nullable=True)
+    sms_preferences = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

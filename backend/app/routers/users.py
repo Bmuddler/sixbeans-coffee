@@ -1,4 +1,7 @@
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -101,6 +104,41 @@ async def update_me(
         location_ids=[loc.id for loc in current_user.locations],
         created_at=current_user.created_at, updated_at=current_user.updated_at,
     )
+
+
+class SmsPreferences(BaseModel):
+    sms_shift_reminders: bool = True
+    sms_schedule_changes: bool = True
+    sms_time_off_updates: bool = True
+    sms_swap_requests: bool = True
+    sms_announcements: bool = True
+    sms_messages: bool = True
+
+
+DEFAULT_SMS_PREFS = SmsPreferences()
+
+
+@router.get("/me/sms-preferences")
+async def get_sms_preferences(current_user: User = Depends(get_current_user)):
+    prefs = DEFAULT_SMS_PREFS.model_dump()
+    if getattr(current_user, 'sms_preferences', None):
+        try:
+            saved = json.loads(current_user.sms_preferences)
+            prefs.update(saved)
+        except Exception:
+            pass
+    return prefs
+
+
+@router.patch("/me/sms-preferences")
+async def update_sms_preferences(
+    data: SmsPreferences,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    current_user.sms_preferences = json.dumps(data.model_dump())
+    await db.flush()
+    return data.model_dump()
 
 
 @router.get("/{user_id}", response_model=UserResponse)

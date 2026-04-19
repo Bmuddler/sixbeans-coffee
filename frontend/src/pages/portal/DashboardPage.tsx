@@ -1097,37 +1097,6 @@ function getPayPeriod(): { start: string; end: string; label: string } {
   }
 }
 
-function BreakReminder({ clockIn }: { clockIn: string }) {
-  const clockInTime = new Date(ensureUtc(clockIn)).getTime();
-  const now = Date.now();
-  const hoursWorked = (now - clockInTime) / (1000 * 60 * 60);
-
-  if (hoursWorked >= 5 && hoursWorked < 5.5) {
-    return (
-      <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 mb-4">
-        <p className="text-sm font-medium text-red-800">Meal Break Required</p>
-        <p className="text-xs text-red-600">You've worked {hoursWorked.toFixed(1)} hours. California law requires a 30-minute unpaid meal break before 5 hours.</p>
-      </div>
-    );
-  }
-  if (hoursWorked >= 3.5 && hoursWorked < 4) {
-    return (
-      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4">
-        <p className="text-sm font-medium text-amber-800">Rest Break Reminder</p>
-        <p className="text-xs text-amber-600">You've worked {hoursWorked.toFixed(1)} hours. Consider taking your 10-minute paid rest break.</p>
-      </div>
-    );
-  }
-  if (hoursWorked >= 7 && hoursWorked < 7.5) {
-    return (
-      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4">
-        <p className="text-sm font-medium text-amber-800">Second Rest Break Reminder</p>
-        <p className="text-xs text-amber-600">You've worked {hoursWorked.toFixed(1)} hours. You're entitled to a second 10-minute paid rest break.</p>
-      </div>
-    );
-  }
-  return null;
-}
 
 function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: number; locationId: number; firstName: string }) {
   const week = getWeekRange();
@@ -1180,9 +1149,6 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
     .filter((l) => (useAuthStore.getState().user?.location_ids ?? []).includes(l.id))
     .map((l) => l.name.replace('Six Beans - ', ''));
 
-  // Check if currently clocked in for break reminder
-  const activeClock = (clockRecords?.items ?? []).find((r) => !r.clock_out);
-
   return (
     <div>
       <div className="page-header">
@@ -1198,9 +1164,6 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
           </div>
         </div>
       </div>
-
-      {/* Break Reminder */}
-      {activeClock && <BreakReminder clockIn={activeClock.clock_in} />}
 
       {/* Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { Save, Lock, Bell, User as UserIcon, Clock, AlertTriangle } from 'lucide-react';
@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
-import { api, auth, systemSettings } from '@/lib/api';
+import { api, auth, users as usersApi, systemSettings } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface ProfileForm {
@@ -123,6 +123,13 @@ export function SettingsPage() {
 
   const [passwordErrors, setPasswordErrors] = useState<Partial<PasswordForm>>({});
 
+  const queryClient = useQueryClient();
+
+  const { data: smsPrefsData } = useQuery({
+    queryKey: ['sms-preferences'],
+    queryFn: usersApi.getSmsPreferences,
+  });
+
   const [notifications, setNotifications] = useState<NotificationPrefs>({
     sms_shift_reminders: true,
     sms_schedule_changes: true,
@@ -130,6 +137,35 @@ export function SettingsPage() {
     sms_swap_requests: true,
     sms_announcements: true,
     sms_payroll_ready: true,
+  });
+
+  useEffect(() => {
+    if (smsPrefsData) {
+      setNotifications({
+        sms_shift_reminders: smsPrefsData.sms_shift_reminders ?? true,
+        sms_schedule_changes: smsPrefsData.sms_schedule_changes ?? true,
+        sms_time_off_updates: smsPrefsData.sms_time_off_updates ?? true,
+        sms_swap_requests: smsPrefsData.sms_swap_requests ?? true,
+        sms_announcements: smsPrefsData.sms_announcements ?? true,
+        sms_payroll_ready: smsPrefsData.sms_messages ?? true,
+      });
+    }
+  }, [smsPrefsData]);
+
+  const saveSmsPrefsMutation = useMutation({
+    mutationFn: () => usersApi.updateSmsPreferences({
+      sms_shift_reminders: notifications.sms_shift_reminders,
+      sms_schedule_changes: notifications.sms_schedule_changes,
+      sms_time_off_updates: notifications.sms_time_off_updates,
+      sms_swap_requests: notifications.sms_swap_requests,
+      sms_announcements: notifications.sms_announcements,
+      sms_messages: notifications.sms_payroll_ready,
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sms-preferences'] });
+      toast.success('Notification preferences saved');
+    },
+    onError: () => toast.error('Failed to save preferences'),
   });
 
   const profileMutation = useMutation({
@@ -424,7 +460,8 @@ export function SettingsPage() {
             <div className="pt-4">
               <Button
                 variant="secondary"
-                onClick={() => toast.success('Notification preferences saved')}
+                onClick={() => saveSmsPrefsMutation.mutate()}
+                loading={saveSmsPrefsMutation.isPending}
               >
                 Save Preferences
               </Button>

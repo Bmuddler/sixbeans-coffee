@@ -107,6 +107,12 @@ export const users = {
 
   delete: (id: number) =>
     api.delete(`/users/${id}`).then((r) => r.data),
+
+  getSmsPreferences: () =>
+    api.get('/users/me/sms-preferences').then((r) => r.data),
+
+  updateSmsPreferences: (data: Record<string, boolean>) =>
+    api.patch('/users/me/sms-preferences', data).then((r) => r.data),
 };
 
 // ============================================================

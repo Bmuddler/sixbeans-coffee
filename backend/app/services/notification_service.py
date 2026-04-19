@@ -1,11 +1,25 @@
 """Twilio SMS notification integration."""
 
+import json
 import logging
 from datetime import date, time
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def user_wants_sms(user, notification_type: str) -> bool:
+    if not user or not getattr(user, 'phone', None):
+        return False
+    prefs_str = getattr(user, 'sms_preferences', None)
+    if not prefs_str:
+        return True
+    try:
+        prefs = json.loads(prefs_str)
+        return prefs.get(notification_type, True)
+    except Exception:
+        return True
 
 
 def _format_phone(phone: str | None) -> str | None:
