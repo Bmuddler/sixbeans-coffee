@@ -1080,8 +1080,58 @@ export function DashboardPage() {
 // Employee-only Dashboard Page (no owner/manager API calls)
 // ============================================================
 
+function getPayPeriod(): { start: string; end: string; label: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+  if (day <= 14) {
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month, 14);
+    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0], label: `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` };
+  } else {
+    const start = new Date(year, month, 15);
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const end = new Date(year, month, lastDay);
+    return { start: start.toISOString().split('T')[0], end: end.toISOString().split('T')[0], label: `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` };
+  }
+}
+
+function BreakReminder({ clockIn }: { clockIn: string }) {
+  const clockInTime = new Date(ensureUtc(clockIn)).getTime();
+  const now = Date.now();
+  const hoursWorked = (now - clockInTime) / (1000 * 60 * 60);
+
+  if (hoursWorked >= 5 && hoursWorked < 5.5) {
+    return (
+      <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 mb-4">
+        <p className="text-sm font-medium text-red-800">Meal Break Required</p>
+        <p className="text-xs text-red-600">You've worked {hoursWorked.toFixed(1)} hours. California law requires a 30-minute unpaid meal break before 5 hours.</p>
+      </div>
+    );
+  }
+  if (hoursWorked >= 3.5 && hoursWorked < 4) {
+    return (
+      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4">
+        <p className="text-sm font-medium text-amber-800">Rest Break Reminder</p>
+        <p className="text-xs text-amber-600">You've worked {hoursWorked.toFixed(1)} hours. Consider taking your 10-minute paid rest break.</p>
+      </div>
+    );
+  }
+  if (hoursWorked >= 7 && hoursWorked < 7.5) {
+    return (
+      <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-4">
+        <p className="text-sm font-medium text-amber-800">Second Rest Break Reminder</p>
+        <p className="text-xs text-amber-600">You've worked {hoursWorked.toFixed(1)} hours. You're entitled to a second 10-minute paid rest break.</p>
+      </div>
+    );
+  }
+  return null;
+}
+
 function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: number; locationId: number; firstName: string }) {
   const week = getWeekRange();
+  const payPeriod = getPayPeriod();
 
   const { data: nextShifts, isLoading: shiftsLoading } = useQuery({
     queryKey: ['my-shifts'],
@@ -1090,12 +1140,12 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
 
   const { data: clockRecords } = useQuery({
     queryKey: ['my-clock-week', week],
-    queryFn: () =>
-      timeClock.getRecords({
-        user_id: userId,
-        start_date: week.start_date,
-        end_date: week.end_date,
-      }),
+    queryFn: () => timeClock.getRecords({ user_id: userId, start_date: week.start_date, end_date: week.end_date }),
+  });
+
+  const { data: payPeriodRecords } = useQuery({
+    queryKey: ['my-clock-period', payPeriod.start, payPeriod.end],
+    queryFn: () => timeClock.getRecords({ user_id: userId, start_date: payPeriod.start, end_date: payPeriod.end }),
   });
 
   const { data: unreadData } = useQuery({
@@ -1104,57 +1154,66 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
     refetchInterval: 60000,
   });
 
+  const { data: locationsList } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => locationsApi.list(),
+  });
+
   if (shiftsLoading) {
     return <LoadingSpinner className="py-20" label="Loading dashboard..." />;
   }
 
   const now = new Date();
-  const nextShift = nextShifts
-    ?.filter((s) => new Date(ensureUtc(s.end_time)) > now)
-    ?.sort((a, b) => new Date(ensureUtc(a.start_time)).getTime() - new Date(ensureUtc(b.start_time)).getTime())?.[0];
+  const nextShift = nextShifts?.sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time))?.[0];
 
-  // Calculate total hours this week from clock records
   const weeklyHours = (clockRecords?.items ?? []).reduce((total, record) => {
-    const clockIn = new Date(ensureUtc(record.clock_in)).getTime();
-    const clockOut = record.clock_out ? new Date(ensureUtc(record.clock_out)).getTime() : Date.now();
-    return total + (clockOut - clockIn) / (1000 * 60 * 60);
+    return total + (record.total_hours ?? 0);
+  }, 0);
+
+  const periodHours = (payPeriodRecords?.items ?? []).reduce((total, record) => {
+    return total + (record.total_hours ?? 0);
   }, 0);
 
   const unreadCount = unreadData?.unread_count ?? 0;
+
+  const myLocationNames = (locationsList ?? [])
+    .filter((l) => (useAuthStore.getState().user?.location_ids ?? []).includes(l.id))
+    .map((l) => l.name.replace('Six Beans - ', ''));
+
+  // Check if currently clocked in for break reminder
+  const activeClock = (clockRecords?.items ?? []).find((r) => !r.clock_out);
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Welcome back, {firstName}!</h1>
-          <p className="page-subtitle">Here is what is happening today.</p>
+          <div className="flex items-center gap-2 mt-1">
+            {myLocationNames.length > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-sm text-gray-500">
+                <MapPin className="h-4 w-4" style={{ color: '#5CB832' }} />
+                {myLocationNames.join(' · ')}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
+      {/* Break Reminder */}
+      {activeClock && <BreakReminder clockIn={activeClock.clock_in} />}
+
       {/* Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
         {/* Next Shift */}
         <Card>
           <div className="flex items-center gap-4">
-            <div className="rounded-lg p-3 bg-purple-50 text-purple-600">
-              <Calendar className="h-6 w-6" />
-            </div>
+            <div className="rounded-lg p-3 bg-purple-50 text-purple-600"><Calendar className="h-6 w-6" /></div>
             <div>
               <p className="text-sm text-gray-500">Next Shift</p>
               {nextShift ? (
                 <>
-                  <p className="text-lg font-bold text-gray-900">
-                    {formatDate(nextShift.date ?? nextShift.start_time)}
-                  </p>
-                  <p className="text-sm text-gray-500">
-                    {formatTime(nextShift.start_time)} - {formatTime(nextShift.end_time)}
-                  </p>
-                  {nextShift.location && (
-                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
-                      <MapPin className="h-3 w-3" />
-                      {nextShift.location.name}
-                    </p>
-                  )}
+                  <p className="text-lg font-bold text-gray-900">{formatDate(nextShift.date)}</p>
+                  <p className="text-xs text-gray-500">{nextShift.start_time?.slice(0,5)} - {nextShift.end_time?.slice(0,5)}</p>
                 </>
               ) : (
                 <p className="text-sm text-gray-400">No upcoming shifts</p>
@@ -1166,12 +1225,22 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
         {/* Hours This Week */}
         <Card>
           <div className="flex items-center gap-4">
-            <div className="rounded-lg p-3 bg-green-50 text-green-600">
-              <Clock className="h-6 w-6" />
-            </div>
+            <div className="rounded-lg p-3 bg-green-50 text-green-600"><Clock className="h-6 w-6" /></div>
             <div>
               <p className="text-sm text-gray-500">Hours This Week</p>
               <p className="text-2xl font-bold text-gray-900">{weeklyHours.toFixed(1)}</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Pay Period Hours */}
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg p-3 bg-emerald-50 text-emerald-600"><TrendingUp className="h-6 w-6" /></div>
+            <div>
+              <p className="text-sm text-gray-500">Pay Period Hours</p>
+              <p className="text-2xl font-bold text-gray-900">{periodHours.toFixed(1)}</p>
+              <p className="text-[10px] text-gray-400">{payPeriod.label}</p>
             </div>
           </div>
         </Card>
@@ -1181,17 +1250,11 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
           <Link to="/portal/messages" className="flex items-center gap-4">
             <div className="rounded-lg p-3 bg-blue-50 text-blue-600 relative">
               <Bell className="h-6 w-6" />
-              {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
-                  {unreadCount}
-                </span>
-              )}
+              {unreadCount > 0 && <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">{unreadCount}</span>}
             </div>
             <div>
               <p className="text-sm text-gray-500">Messages</p>
-              <p className="text-lg font-bold text-gray-900">
-                {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
-              </p>
+              <p className="text-lg font-bold text-gray-900">{unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}</p>
             </div>
           </Link>
         </Card>
@@ -1200,38 +1263,13 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
       {/* Quick Actions */}
       <Card title="Quick Actions" className="mb-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Link
-            to="/portal/time-clock"
-            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Clock className="h-4 w-4" />
-            Clock In
-          </Link>
-          <Link
-            to="/portal/schedule"
-            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Calendar className="h-4 w-4" />
-            View Schedule
-          </Link>
-          <Link
-            to="/portal/time-off"
-            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <FileText className="h-4 w-4" />
-            Request Time Off
-          </Link>
-          <Link
-            to="/portal/messages"
-            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Bell className="h-4 w-4" />
-            Messages
-          </Link>
+          <Link to="/portal/time-clock" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Clock className="h-4 w-4" />Clock In</Link>
+          <Link to="/portal/schedule" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Calendar className="h-4 w-4" />View Schedule</Link>
+          <Link to="/portal/time-off" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><FileText className="h-4 w-4" />Request Time Off</Link>
+          <Link to="/portal/messages" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Bell className="h-4 w-4" />Messages</Link>
         </div>
       </Card>
 
-      {/* Full employee dashboard with shifts, clock, etc. */}
       <EmployeeDashboard userId={userId} locationId={locationId} />
     </div>
   );

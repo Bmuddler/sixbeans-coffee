@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
-import { messages as messagesApi } from '@/lib/api';
+import { messages as messagesApi, locations as locationsApi } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface NavItem {
@@ -85,6 +85,19 @@ export function PortalLayout() {
   });
   const unreadCount = unreadData?.unread_count ?? 0;
 
+  const { data: allLocations } = useQuery({
+    queryKey: ['locations'],
+    queryFn: locationsApi.list,
+  });
+
+  const myLocationName = useMemo(() => {
+    if (!allLocations || !user?.location_ids?.length) return null;
+    const names = allLocations
+      .filter((l) => user.location_ids!.includes(l.id))
+      .map((l) => l.name.replace('Six Beans - ', ''));
+    return names.length > 0 ? names.join(' · ') : null;
+  }, [allLocations, user?.location_ids]);
+
   const filteredNavItems = navItems.filter(
     (item) => !item.roles || (user && item.roles.includes(user.role)),
   );
@@ -107,6 +120,12 @@ export function PortalLayout() {
           {user?.first_name} {user?.last_name}
         </p>
         <p className="text-xs text-primary-200 capitalize">{user?.role}</p>
+        {myLocationName && (
+          <p className="text-[10px] text-primary-300 mt-1 flex items-center gap-1 truncate">
+            <MapPin className="h-3 w-3 flex-shrink-0" />
+            {myLocationName}
+          </p>
+        )}
       </div>
 
       {/* Navigation */}
