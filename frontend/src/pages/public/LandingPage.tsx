@@ -13,6 +13,8 @@ import {
   X,
   Smartphone,
 } from 'lucide-react';
+import { applications } from '@/lib/api';
+import toast from 'react-hot-toast';
 
 const LOCATIONS = [
   { name: 'Apple Valley', address: '21788 Bear Valley Rd', city: 'Apple Valley, CA 92308', phone: '(760) 946-9008', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '21788+Bear+Valley+Rd+Apple+Valley+CA' },
@@ -33,6 +35,7 @@ const POSITIONS = [
 export function LandingPage() {
   const [mobileNav, setMobileNav] = useState(false);
   const [appForm, setAppForm] = useState({ name: '', email: '', phone: '', position: 'Barista', location: 'Apple Valley', message: '' });
+  const [submitting, setSubmitting] = useState(false);
 
   return (
     <div className="min-h-screen bg-white">
@@ -323,8 +326,29 @@ export function LandingPage() {
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Location</label><select value={appForm.location} onChange={(e) => setAppForm({ ...appForm, location: e.target.value })} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm">{LOCATIONS.map((l) => <option key={l.name}>{l.name}</option>)}</select></div>
                 </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Tell us about yourself</label><textarea value={appForm.message} onChange={(e) => setAppForm({ ...appForm, message: e.target.value })} rows={3} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:ring-2 focus:outline-none focus:ring-green-500 focus:border-green-500" placeholder="Experience, availability, anything you'd like us to know..." /></div>
-                <button className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-base font-bold text-white transition-all hover:scale-[1.02] hover:shadow-lg" style={{ backgroundColor: '#5CB832' }}>
-                  Submit Application <Send className="h-4 w-4" />
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={async () => {
+                    if (!appForm.name || !appForm.email || !appForm.phone) {
+                      toast.error('Please fill in all required fields.');
+                      return;
+                    }
+                    setSubmitting(true);
+                    try {
+                      await applications.submit(appForm);
+                      toast.success("Application submitted! We'll be in touch.");
+                      setAppForm({ name: '', email: '', phone: '', position: 'Barista', location: 'Apple Valley', message: '' });
+                    } catch {
+                      toast.error('Failed to submit application. Please try again.');
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="w-full flex items-center justify-center gap-2 rounded-full py-3 text-base font-bold text-white transition-all hover:scale-[1.02] hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundColor: '#5CB832' }}
+                >
+                  {submitting ? 'Submitting...' : 'Submit Application'} <Send className="h-4 w-4" />
                 </button>
                 <p className="text-xs text-gray-400 text-center">We'll reach out within 48 hours!</p>
               </div>

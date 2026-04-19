@@ -137,7 +137,7 @@ export function TimeClockPage() {
   });
 
   const clockOutMutation = useMutation({
-    mutationFn: () => timeClock.clockOut(activeClock!.id),
+    mutationFn: () => timeClock.clockOut(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
       queryClient.invalidateQueries({ queryKey: ['weeklyTimeClock'] });
@@ -148,7 +148,7 @@ export function TimeClockPage() {
 
   const startBreakMutation = useMutation({
     mutationFn: (breakType: string) =>
-      timeClock.startBreak(activeClock!.id, { break_type: breakType }),
+      timeClock.startBreak({ break_type: breakType }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
       toast.success('Break started');
@@ -157,7 +157,7 @@ export function TimeClockPage() {
   });
 
   const endBreakMutation = useMutation({
-    mutationFn: () => timeClock.endBreak(activeClock!.id),
+    mutationFn: () => timeClock.endBreak(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
       toast.success('Break ended');

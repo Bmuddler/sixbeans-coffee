@@ -168,20 +168,33 @@ export const timeClock = {
   clockIn: (data: { location_id: number; notes?: string }) =>
     api.post<TimeClock>('/time-clock/clock-in', data).then((r) => r.data),
 
-  clockOut: (id: number) =>
-    api.post<TimeClock>(`/time-clock/${id}/clock-out`).then((r) => r.data),
+  clockOut: () =>
+    api.post<TimeClock>('/time-clock/clock-out').then((r) => r.data),
 
-  startBreak: (id: number, data: { break_type: string }) =>
-    api.post<TimeClock>(`/time-clock/${id}/break/start`, data).then((r) => r.data),
+  startBreak: (data: { break_type: string }) =>
+    api.post('/time-clock/break/start', data).then((r) => r.data),
 
-  endBreak: (id: number) =>
-    api.post<TimeClock>(`/time-clock/${id}/break/end`).then((r) => r.data),
+  endBreak: () =>
+    api.post('/time-clock/break/end').then((r) => r.data),
 
   getRecords: (params: { user_id?: number; location_id?: number; start_date?: string; end_date?: string; page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<TimeClock>>('/time-clock', { params }).then((r) => r.data),
+    api.get('/time-clock/entries', {
+      params: {
+        employee_id: params.user_id,
+        location_id: params.location_id,
+        start_date: params.start_date,
+        end_date: params.end_date,
+        page: params.page,
+        per_page: params.per_page,
+      },
+    }).then((r) => {
+      const data = r.data as any;
+      const items = data.entries ?? data.items ?? [];
+      return { items, total: data.total ?? items.length, page: data.page ?? 1, per_page: data.per_page ?? 25, total_pages: data.total_pages ?? Math.ceil((data.total ?? items.length) / (data.per_page ?? 25)) } as PaginatedResponse<TimeClock>;
+    }),
 
   adjustTime: (id: number, data: { clock_in?: string; clock_out?: string; notes?: string }) =>
-    api.patch<TimeClock>(`/time-clock/${id}`, data).then((r) => r.data),
+    api.patch<TimeClock>(`/time-clock/${id}/adjust`, data).then((r) => r.data),
 };
 
 // ============================================================
@@ -229,13 +242,21 @@ export const unavailability = {
 
 export const shiftSwaps = {
   list: (params?: { status?: RequestStatus; page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<ShiftSwapRequest>>('/shift-swaps', { params }).then((r) => r.data),
+    api.get<ShiftSwapRequest[]>('/shift-swap/swap', { params }).then((r) => {
+      const data = r.data as any;
+      const items = Array.isArray(data) ? data : (data.items ?? []);
+      return { items, total: items.length, page: 1, per_page: items.length, total_pages: 1 } as PaginatedResponse<ShiftSwapRequest>;
+    }),
 
   create: (data: { target_id: number; requester_shift_id: number; target_shift_id: number }) =>
-    api.post<ShiftSwapRequest>('/shift-swaps', data).then((r) => r.data),
+    api.post<ShiftSwapRequest>('/shift-swap/swap', {
+      target_employee_id: data.target_id,
+      requesting_shift_id: data.requester_shift_id,
+      target_shift_id: data.target_shift_id,
+    }).then((r) => r.data),
 
   review: (id: number, data: { status: RequestStatus }) =>
-    api.patch<ShiftSwapRequest>(`/shift-swaps/${id}/review`, data).then((r) => r.data),
+    api.patch<ShiftSwapRequest>(`/shift-swap/swap/${id}/review`, data).then((r) => r.data),
 };
 
 // ============================================================
@@ -244,16 +265,23 @@ export const shiftSwaps = {
 
 export const shiftCoverage = {
   list: (params?: { status?: RequestStatus; page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<ShiftCoverageRequest>>('/shift-coverage', { params }).then((r) => r.data),
+    api.get<ShiftCoverageRequest[]>('/shift-swap/coverage', { params }).then((r) => {
+      const data = r.data as any;
+      const items = Array.isArray(data) ? data : (data.items ?? []);
+      return { items, total: items.length, page: 1, per_page: items.length, total_pages: 1 } as PaginatedResponse<ShiftCoverageRequest>;
+    }),
 
   post: (data: { shift_id: number; reason: string }) =>
-    api.post<ShiftCoverageRequest>('/shift-coverage', data).then((r) => r.data),
+    api.post<ShiftCoverageRequest>('/shift-swap/coverage', {
+      shift_id: data.shift_id,
+      notes: data.reason,
+    }).then((r) => r.data),
 
   claim: (id: number) =>
-    api.post<ShiftCoverageRequest>(`/shift-coverage/${id}/claim`).then((r) => r.data),
+    api.post<ShiftCoverageRequest>(`/shift-swap/coverage/${id}/claim`).then((r) => r.data),
 
   review: (id: number, data: { status: RequestStatus }) =>
-    api.patch<ShiftCoverageRequest>(`/shift-coverage/${id}/review`, data).then((r) => r.data),
+    api.patch<ShiftCoverageRequest>(`/shift-swap/coverage/${id}/review`, data).then((r) => r.data),
 };
 
 // ============================================================
@@ -345,6 +373,21 @@ export const payroll = {
 
   aiValidate: (data: { period_start: string; period_end: string; location_id?: number }) =>
     api.post<{ issues: string[]; summary: string }>('/payroll/ai-validate', data).then((r) => r.data),
+
+  adpPreview: (params: { period_start: string; period_end: string }) =>
+    api.get('/payroll/adp-preview', { params }).then((r) => r.data),
+
+  adpExport: (params: { period_start: string; period_end: string }) => {
+    const token = localStorage.getItem('token');
+    return fetch(`${api.defaults.baseURL}/payroll/adp-export?period_start=${params.period_start}&period_end=${params.period_end}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    }).then((r) => r.blob()).then((blob) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `adp_payroll_${params.period_start}_${params.period_end}.csv`;
+      a.click();
+    });
+  },
 };
 
 // ============================================================
@@ -457,6 +500,15 @@ export const systemSettings = {
 
   update: (data: { early_clockin_minutes?: number; auto_clockout_minutes?: number }) =>
     api.patch('/settings', data).then((r) => r.data),
+};
+
+// ============================================================
+// Applications (Public Job Applications)
+// ============================================================
+
+export const applications = {
+  submit: (data: { name: string; email: string; phone: string; position: string; location: string; message: string }) =>
+    api.post('/applications/', data).then((r) => r.data),
 };
 
 export default api;

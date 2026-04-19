@@ -20,6 +20,7 @@ from app.schemas.time_clock import (
 )
 from app.services.audit_service import log_action
 from app.services.time_clock_service import (
+    auto_clock_out_expired_shifts,
     clock_in,
     clock_out,
     end_break,
@@ -28,6 +29,16 @@ from app.services.time_clock_service import (
 )
 
 router = APIRouter()
+
+
+@router.post("/auto-clockout")
+async def trigger_auto_clockout(
+    db: AsyncSession = Depends(get_db),
+):
+    """Trigger auto clock-out for employees whose shifts have ended.
+    Can be called by a cron job or external scheduler."""
+    clocked_out = await auto_clock_out_expired_shifts(db)
+    return {"auto_clocked_out": len(clocked_out)}
 
 
 def _to_response(entry: TimeClock, employee_name: str | None = None) -> TimeClockResponse:

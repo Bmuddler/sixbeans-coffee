@@ -524,7 +524,7 @@ export function ShiftSwapsPage() {
           <Select
             label="Your Shift"
             options={
-              myShifts?.map((s: ScheduledShift) => ({
+              myShifts?.shifts?.map((s: ScheduledShift) => ({
                 value: s.id,
                 label: `${format(parseISO(s.date), 'MMM d (EEE)')} ${s.start_time} - ${s.end_time}${s.role_label ? ` (${s.role_label})` : ''}`,
               })) || []
@@ -549,7 +549,7 @@ export function ShiftSwapsPage() {
             <Select
               label="Their Shift"
               options={
-                targetShifts?.map((s: ScheduledShift) => ({
+                targetShifts?.shifts?.map((s: ScheduledShift) => ({
                   value: s.id,
                   label: `${format(parseISO(s.date), 'MMM d (EEE)')} ${s.start_time} - ${s.end_time}${s.role_label ? ` (${s.role_label})` : ''}`,
                 })) || []
@@ -588,7 +588,7 @@ export function ShiftSwapsPage() {
           <Select
             label="Select Shift"
             options={
-              myShifts?.map((s: ScheduledShift) => ({
+              myShifts?.shifts?.map((s: ScheduledShift) => ({
                 value: s.id,
                 label: `${format(parseISO(s.date), 'MMM d (EEE)')} ${s.start_time} - ${s.end_time}`,
               })) || []

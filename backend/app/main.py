@@ -13,6 +13,7 @@ from app.services.auth_service import hash_password
 from app.seed_employees import seed_employees
 from app.models.system_settings import SystemSettings
 from app.routers import (
+    applications,
     audit,
     auth,
     cash_drawer,
@@ -59,6 +60,7 @@ app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
 app.include_router(forms.router, prefix="/api/forms", tags=["Forms"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
+app.include_router(applications.router, prefix="/api/applications", tags=["Applications"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},

@@ -52,6 +52,15 @@ export function PayrollPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [aiResults, setAiResults] = useState<{ issues: string[]; summary: string } | null>(null);
   const [aiModalOpen, setAiModalOpen] = useState(false);
+  const [adpPreviewData, setAdpPreviewData] = useState<{
+    period_start: string;
+    period_end: string;
+    employees: { name: string; adp_code: string; department: string; location: string; regular_hours: number; overtime_hours: number; total_hours: number }[];
+    warnings: string[];
+    total_regular: number;
+    total_overtime: number;
+  } | null>(null);
+  const [adpModalOpen, setAdpModalOpen] = useState(false);
 
   const { data: locationsList } = useQuery({
     queryKey: ['locations'],
@@ -132,6 +141,25 @@ export function PayrollPage() {
       toast.success('CSV exported');
     } catch {
       toast.error('Export failed');
+    }
+  };
+
+  const adpPreviewMutation = useMutation({
+    mutationFn: () =>
+      payrollApi.adpPreview({ period_start: periodStart, period_end: periodEnd }),
+    onSuccess: (data: any) => {
+      setAdpPreviewData(data);
+      setAdpModalOpen(true);
+    },
+    onError: () => toast.error('Failed to load ADP preview'),
+  });
+
+  const handleAdpExport = async () => {
+    try {
+      await payrollApi.adpExport({ period_start: periodStart, period_end: periodEnd });
+      toast.success('ADP CSV downloaded');
+    } catch {
+      toast.error('ADP export failed');
     }
   };
 
@@ -293,7 +321,24 @@ export function PayrollPage() {
             onClick={handleExport}
             icon={<Download className="h-4 w-4" />}
           >
-            Export to ADP CSV
+            Export CSV
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => adpPreviewMutation.mutate()}
+            loading={adpPreviewMutation.isPending}
+            icon={<DollarSign className="h-4 w-4" />}
+          >
+            ADP Preview
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleAdpExport}
+            icon={<Download className="h-4 w-4" />}
+          >
+            ADP Export CSV
           </Button>
           <button
             onClick={toggleAll}
@@ -398,6 +443,79 @@ export function PayrollPage() {
             )}
             <div className="flex justify-end">
               <Button onClick={() => setAiModalOpen(false)}>Close</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ADP Preview Modal */}
+      <Modal open={adpModalOpen} onClose={() => setAdpModalOpen(false)} title="ADP Payroll Preview" size="lg">
+        {adpPreviewData && (
+          <div className="space-y-4">
+            <div className="rounded-lg bg-gray-50 p-4">
+              <p className="text-sm text-gray-600">
+                Period: <strong>{adpPreviewData.period_start}</strong> - <strong>{adpPreviewData.period_end}</strong>
+              </p>
+              <div className="flex gap-6 mt-2">
+                <p className="text-sm">Total Regular: <strong>{adpPreviewData.total_regular.toFixed(2)}h</strong></p>
+                <p className="text-sm">Total Overtime: <strong>{adpPreviewData.total_overtime.toFixed(2)}h</strong></p>
+              </div>
+            </div>
+
+            {adpPreviewData.warnings.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-yellow-700 mb-2">
+                  <AlertTriangle className="inline h-4 w-4 text-yellow-500 mr-1" />
+                  Warnings ({adpPreviewData.warnings.length})
+                </p>
+                <ul className="space-y-1">
+                  {adpPreviewData.warnings.map((w, i) => (
+                    <li key={i} className="rounded border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+                      {w}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left">
+                    <th className="py-2 pr-4 font-medium text-gray-700">Employee</th>
+                    <th className="py-2 pr-4 font-medium text-gray-700">ADP Code</th>
+                    <th className="py-2 pr-4 font-medium text-gray-700">Dept</th>
+                    <th className="py-2 pr-4 font-medium text-gray-700 text-right">REG Hrs</th>
+                    <th className="py-2 pr-4 font-medium text-gray-700 text-right">OT Hrs</th>
+                    <th className="py-2 font-medium text-gray-700 text-right">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {adpPreviewData.employees.map((emp, i) => (
+                    <tr key={i} className="border-b border-gray-100">
+                      <td className="py-2 pr-4">{emp.name}</td>
+                      <td className="py-2 pr-4 text-gray-500">{emp.adp_code || '--'}</td>
+                      <td className="py-2 pr-4 text-gray-500">{emp.department || '--'}</td>
+                      <td className="py-2 pr-4 text-right">{emp.regular_hours.toFixed(2)}</td>
+                      <td className="py-2 pr-4 text-right">{emp.overtime_hours > 0 ? emp.overtime_hours.toFixed(2) : '--'}</td>
+                      <td className="py-2 text-right font-medium">{emp.total_hours.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setAdpModalOpen(false)}>Close</Button>
+              <Button
+                onClick={async () => {
+                  await handleAdpExport();
+                  setAdpModalOpen(false);
+                }}
+                icon={<Download className="h-4 w-4" />}
+              >
+                Export ADP CSV
+              </Button>
             </div>
           </div>
         )}
