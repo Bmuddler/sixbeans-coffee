@@ -73,7 +73,7 @@ export function MessagesPage() {
   const { data: messagesData, isLoading: messagesLoading } = useQuery({
     queryKey: ['messages', selectedLocationFilter],
     queryFn: () => messagesApi.list({ per_page: 50, location_id: selectedLocationFilter }),
-    refetchInterval: 10000,
+    refetchInterval: 5000,
   });
   const { data: announcements, isLoading: announcementsLoading } = useQuery({
     queryKey: ['announcements', selectedLocationFilter],
@@ -89,10 +89,9 @@ export function MessagesPage() {
   const sendMessageMutation = useMutation({
     mutationFn: (data: { body: string; location_id?: number; recipient_ids?: number[] }) => messagesApi.send(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['messages'] });
-      queryClient.invalidateQueries({ queryKey: ['unread-count'] });
+      queryClient.refetchQueries({ queryKey: ['messages'] });
+      queryClient.refetchQueries({ queryKey: ['unread-count'] });
       setMessageBody('');
-      toast.success('Message sent!');
     },
     onError: () => toast.error('Failed to send message.'),
   });
