@@ -28,7 +28,7 @@ export function LoginPage() {
       const res = await auth.login({ email, password });
       login(res.user, res.access_token);
       if (res.user.must_change_password) {
-        navigate('/portal/settings', { state: { forcePasswordChange: true } });
+        navigate('/portal/settings', { state: { forcePasswordChange: true, firstLogin: true } });
         toast('Please set a new password to continue.', { icon: '🔒' });
       } else {
         toast.success(`Welcome back, ${res.user.first_name}!`);

@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { useAuthStore } from '@/stores/authStore';
-import { users as usersApi, auth, systemSettings } from '@/lib/api';
+import { api, auth, systemSettings } from '@/lib/api';
 import { UserRole } from '@/types';
 
 interface ProfileForm {
@@ -15,6 +15,7 @@ interface ProfileForm {
   last_name: string;
   email: string;
   phone: string;
+  pin_last_four: string;
 }
 
 interface PasswordForm {
@@ -101,13 +102,17 @@ export function SettingsPage() {
   const setUser = useAuthStore((s) => s.setUser);
   const isOwner = user?.role === UserRole.OWNER;
   const location = useLocation();
-  const forcePasswordChange = (location.state as any)?.forcePasswordChange || user?.must_change_password;
+  const locationState = location.state as { forcePasswordChange?: boolean; firstLogin?: boolean } | null;
+  const forcePasswordChange = locationState?.forcePasswordChange || user?.must_change_password;
+  const firstLogin = locationState?.firstLogin;
+  const [passwordChanged, setPasswordChanged] = useState(false);
 
   const [profileForm, setProfileForm] = useState<ProfileForm>({
     first_name: user?.first_name ?? '',
     last_name: user?.last_name ?? '',
     email: user?.email ?? '',
     phone: user?.phone ?? '',
+    pin_last_four: user?.pin_last_four ?? '',
   });
 
   const [passwordForm, setPasswordForm] = useState<PasswordForm>({
@@ -130,14 +135,15 @@ export function SettingsPage() {
   const profileMutation = useMutation({
     mutationFn: () => {
       if (!user) throw new Error('Not authenticated');
-      return usersApi.update(user.id, {
+      return api.patch('/users/me', {
         first_name: profileForm.first_name,
         last_name: profileForm.last_name,
         email: profileForm.email,
         phone: profileForm.phone || undefined,
-      });
+        pin_last_four: profileForm.pin_last_four || undefined,
+      }).then((r) => r.data);
     },
-    onSuccess: (updatedUser) => {
+    onSuccess: (updatedUser: any) => {
       setUser(updatedUser);
       toast.success('Profile updated');
     },
@@ -150,6 +156,7 @@ export function SettingsPage() {
       setPasswordForm({ current_password: '', new_password: '', confirm_password: '' });
       setPasswordErrors({});
       if (user) setUser({ ...user, must_change_password: false });
+      setPasswordChanged(true);
       toast.success('Password updated successfully!');
     },
     onError: (err: any) => {
@@ -240,7 +247,17 @@ export function SettingsPage() {
         </div>
       </div>
 
-      {forcePasswordChange && (
+      {firstLogin && !passwordChanged && (
+        <div className="mb-6 rounded-lg border border-blue-200 bg-blue-50 p-4 flex items-start gap-3">
+          <span className="text-xl mt-0.5 flex-shrink-0" role="img" aria-label="wave">&#x1F44B;</span>
+          <div>
+            <p className="text-sm font-semibold text-blue-800">Welcome to Six Beans!</p>
+            <p className="text-sm text-blue-700 mt-1">Please set a secure password and check your PIN to get started.</p>
+          </div>
+        </div>
+      )}
+
+      {forcePasswordChange && !passwordChanged && (
         <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
           <div>
@@ -251,7 +268,8 @@ export function SettingsPage() {
       )}
 
       <div className="max-w-2xl space-y-6">
-        {/* Profile Information */}
+        {/* Profile Information - hidden when forced password change is active */}
+        {!(forcePasswordChange && !passwordChanged) && (
         <Card
           title="Profile Information"
           actions={
@@ -294,6 +312,16 @@ export function SettingsPage() {
               }
               helperText="Used for SMS notifications"
             />
+            <Input
+              label="Kiosk PIN (last 4 digits)"
+              type="text"
+              maxLength={4}
+              value={profileForm.pin_last_four}
+              onChange={(e) =>
+                setProfileForm((f) => ({ ...f, pin_last_four: e.target.value.replace(/\D/g, '').slice(0, 4) }))
+              }
+              helperText="Used for clock-in at store kiosks"
+            />
             <Button
               onClick={() => profileMutation.mutate()}
               loading={profileMutation.isPending}
@@ -303,6 +331,7 @@ export function SettingsPage() {
             </Button>
           </div>
         </Card>
+        )}
 
         {/* Change Password */}
         <Card
@@ -352,7 +381,8 @@ export function SettingsPage() {
           </div>
         </Card>
 
-        {/* Notification Preferences */}
+        {/* Notification Preferences - hidden when forced password change is active */}
+        {!(forcePasswordChange && !passwordChanged) && (
         <Card
           title="Notification Preferences"
           actions={
@@ -401,9 +431,10 @@ export function SettingsPage() {
             </div>
           </div>
         </Card>
+        )}
 
-        {/* Owner-only: System Settings */}
-        {isOwner && <SystemSettingsCard />}
+        {/* Owner-only: System Settings - hidden when forced password change is active */}
+        {isOwner && !(forcePasswordChange && !passwordChanged) && <SystemSettingsCard />}
       </div>
     </div>
   );

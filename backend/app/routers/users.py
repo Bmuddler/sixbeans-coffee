@@ -74,6 +74,35 @@ async def get_me(current_user: User = Depends(get_current_user)):
     )
 
 
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    user_data: UserUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Allow any authenticated user to update their own profile (limited fields)."""
+    allowed_fields = {"first_name", "last_name", "phone", "pin_last_four"}
+    update_data = user_data.model_dump(exclude_unset=True)
+
+    # Only apply allowed fields; ignore role, is_active, location_ids, email
+    for field, value in update_data.items():
+        if field in allowed_fields:
+            setattr(current_user, field, value)
+
+    await db.flush()
+    await db.refresh(current_user, attribute_names=["locations"])
+
+    return UserResponse(
+        id=current_user.id, email=current_user.email, phone=current_user.phone,
+        first_name=current_user.first_name, last_name=current_user.last_name,
+        role=current_user.role, is_active=current_user.is_active,
+        pin_last_four=current_user.pin_last_four,
+        adp_employee_code=current_user.adp_employee_code,
+        location_ids=[loc.id for loc in current_user.locations],
+        created_at=current_user.created_at, updated_at=current_user.updated_at,
+    )
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 async def get_user(
     user_id: int,

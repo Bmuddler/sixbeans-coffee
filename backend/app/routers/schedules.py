@@ -56,6 +56,31 @@ async def get_my_shifts(
     )
     shifts = result.scalars().all()
 
+    # For employees, only return shifts from published weeks.
+    # Batch-query all published weeks for the next 14 days across relevant locations.
+    if current_user.role == UserRole.employee:
+        location_ids = {s.location_id for s in shifts}
+        if location_ids:
+            # Compute all possible week starts within the 14-day window
+            week_starts = set()
+            for d in range(14):
+                day = today + timedelta(days=d)
+                week_starts.add(day - timedelta(days=day.weekday()))
+
+            pub_result = await db.execute(
+                select(WeekScheduleStatus).where(and_(
+                    WeekScheduleStatus.location_id.in_(location_ids),
+                    WeekScheduleStatus.week_start.in_(week_starts),
+                    WeekScheduleStatus.status == "published",
+                ))
+            )
+            published = {(ws.location_id, ws.week_start) for ws in pub_result.scalars().all()}
+
+            shifts = [
+                s for s in shifts
+                if (s.location_id, s.date - timedelta(days=s.date.weekday())) in published
+            ]
+
     return [
         ScheduledShiftResponse(
             id=s.id,
@@ -202,9 +227,15 @@ async def get_week_schedule(
         ))
     )
     week_stat = ws_result.scalar_one_or_none()
+    week_status = week_stat.status if week_stat else "draft"
+
+    # Employees can only see published weeks
+    if current_user.role == UserRole.employee and week_status != "published":
+        return WeekScheduleResponse(shifts=[], total=0, week_status="draft")
+
     return WeekScheduleResponse(
         shifts=responses, total=len(responses),
-        week_status=week_stat.status if week_stat else "draft",
+        week_status=week_status,
         published_at=week_stat.published_at if week_stat else None,
     )
 

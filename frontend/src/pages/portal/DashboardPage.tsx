@@ -688,6 +688,208 @@ function OwnerDashboard() {
 
 export function DashboardPage() {
   const user = useAuthStore((s) => s.user);
+
+  if (!user) return null;
+
+  const isEmployee = user.role === UserRole.EMPLOYEE;
+  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
+  const isOwner = user.role === UserRole.OWNER;
+  const locationId = user.primary_location_id ?? user.location_ids?.[0] ?? 1;
+
+  // Employees get a clean personal dashboard without owner/manager API calls
+  if (isEmployee) {
+    return (
+      <EmployeeDashboardPage userId={user.id} locationId={locationId} firstName={user.first_name} />
+    );
+  }
+
+  // Owner/Manager dashboard with summary stats
+  return (
+    <ManagerOwnerDashboardPage
+      user={user}
+      isOwner={isOwner}
+      isManager={isManager}
+      locationId={locationId}
+    />
+  );
+}
+
+// ============================================================
+// Employee-only Dashboard Page (no owner/manager API calls)
+// ============================================================
+
+function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: number; locationId: number; firstName: string }) {
+  const week = getWeekRange();
+
+  const { data: nextShifts, isLoading: shiftsLoading } = useQuery({
+    queryKey: ['my-shifts'],
+    queryFn: () => schedules.myShifts(),
+  });
+
+  const { data: clockRecords } = useQuery({
+    queryKey: ['my-clock-week', week],
+    queryFn: () =>
+      timeClock.getRecords({
+        user_id: userId,
+        start_date: week.start_date,
+        end_date: week.end_date,
+      }),
+  });
+
+  const { data: unreadData } = useQuery({
+    queryKey: ['unread-count'],
+    queryFn: () => messagesApi.getUnreadCount(),
+    refetchInterval: 60000,
+  });
+
+  if (shiftsLoading) {
+    return <LoadingSpinner className="py-20" label="Loading dashboard..." />;
+  }
+
+  const now = new Date();
+  const nextShift = nextShifts
+    ?.filter((s) => new Date(ensureUtc(s.end_time)) > now)
+    ?.sort((a, b) => new Date(ensureUtc(a.start_time)).getTime() - new Date(ensureUtc(b.start_time)).getTime())?.[0];
+
+  // Calculate total hours this week from clock records
+  const weeklyHours = (clockRecords?.items ?? []).reduce((total, record) => {
+    const clockIn = new Date(ensureUtc(record.clock_in)).getTime();
+    const clockOut = record.clock_out ? new Date(ensureUtc(record.clock_out)).getTime() : Date.now();
+    return total + (clockOut - clockIn) / (1000 * 60 * 60);
+  }, 0);
+
+  const unreadCount = unreadData?.unread_count ?? 0;
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">Welcome back, {firstName}!</h1>
+          <p className="page-subtitle">Here is what is happening today.</p>
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 mb-8">
+        {/* Next Shift */}
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg p-3 bg-purple-50 text-purple-600">
+              <Calendar className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Next Shift</p>
+              {nextShift ? (
+                <>
+                  <p className="text-lg font-bold text-gray-900">
+                    {formatDate(nextShift.date ?? nextShift.start_time)}
+                  </p>
+                  <p className="text-sm text-gray-500">
+                    {formatTime(nextShift.start_time)} - {formatTime(nextShift.end_time)}
+                  </p>
+                  {nextShift.location && (
+                    <p className="text-xs text-gray-400 flex items-center gap-1 mt-0.5">
+                      <MapPin className="h-3 w-3" />
+                      {nextShift.location.name}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-gray-400">No upcoming shifts</p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* Hours This Week */}
+        <Card>
+          <div className="flex items-center gap-4">
+            <div className="rounded-lg p-3 bg-green-50 text-green-600">
+              <Clock className="h-6 w-6" />
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Hours This Week</p>
+              <p className="text-2xl font-bold text-gray-900">{weeklyHours.toFixed(1)}</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Messages */}
+        <Card>
+          <Link to="/portal/messages" className="flex items-center gap-4">
+            <div className="rounded-lg p-3 bg-blue-50 text-blue-600 relative">
+              <Bell className="h-6 w-6" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white">
+                  {unreadCount}
+                </span>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Messages</p>
+              <p className="text-lg font-bold text-gray-900">
+                {unreadCount > 0 ? `${unreadCount} unread` : 'All caught up'}
+              </p>
+            </div>
+          </Link>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card title="Quick Actions" className="mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <Link
+            to="/portal/time-clock"
+            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Clock className="h-4 w-4" />
+            Clock In
+          </Link>
+          <Link
+            to="/portal/schedule"
+            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Calendar className="h-4 w-4" />
+            View Schedule
+          </Link>
+          <Link
+            to="/portal/time-off"
+            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            Request Time Off
+          </Link>
+          <Link
+            to="/portal/messages"
+            className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+          >
+            <Bell className="h-4 w-4" />
+            Messages
+          </Link>
+        </div>
+      </Card>
+
+      {/* Full employee dashboard with shifts, clock, etc. */}
+      <EmployeeDashboard userId={userId} locationId={locationId} />
+    </div>
+  );
+}
+
+// ============================================================
+// Manager/Owner Dashboard Page (with summary stats)
+// ============================================================
+
+function ManagerOwnerDashboardPage({
+  user,
+  isOwner,
+  isManager,
+  locationId,
+}: {
+  user: { id: number; first_name: string };
+  isOwner: boolean;
+  isManager: boolean;
+  locationId: number;
+}) {
   const { data: summary, isLoading } = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: dashboard.getSummary,
@@ -697,12 +899,6 @@ export function DashboardPage() {
   if (isLoading) {
     return <LoadingSpinner className="py-20" label="Loading dashboard..." />;
   }
-
-  if (!user) return null;
-
-  const isManager = user.role === UserRole.MANAGER || user.role === UserRole.OWNER;
-  const isOwner = user.role === UserRole.OWNER;
-  const locationId = user.primary_location_id ?? user.location_ids?.[0] ?? 1;
 
   const stats = [
     {
@@ -739,9 +935,7 @@ export function DashboardPage() {
           <p className="page-subtitle">
             {isOwner
               ? 'Here is your business overview.'
-              : isManager
-                ? 'Here is what is happening at your location.'
-                : 'Here is what is happening today.'}
+              : 'Here is what is happening at your location.'}
           </p>
         </div>
       </div>
