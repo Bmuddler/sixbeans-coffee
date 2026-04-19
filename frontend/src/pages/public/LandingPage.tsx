@@ -91,8 +91,11 @@ export function LandingPage() {
                 </a>
               </div>
             </div>
-            <div className="hidden lg:flex items-center justify-center">
-              <img src="/logo.png" alt="Six Beans Coffee Co." className="w-80 h-auto drop-shadow-2xl" />
+            <div className="hidden lg:block">
+              <div className="relative">
+                <img src="/hero1.jpg" alt="Espresso shots at Six Beans" className="rounded-3xl shadow-2xl w-full max-w-md ml-auto object-cover aspect-[4/5]" />
+                <img src="/latte1.jpg" alt="Six Beans latte" className="absolute -bottom-8 -left-8 w-48 h-48 rounded-2xl shadow-xl object-cover border-4 border-white" />
+              </div>
             </div>
           </div>
         </div>
@@ -169,17 +172,9 @@ export function LandingPage() {
       <section id="about" className="py-20 sm:py-28 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
-            <div className="flex items-center justify-center">
-              <div className="rounded-3xl p-10 w-full max-w-md text-center" style={{ backgroundColor: '#F5F0E8' }}>
-                <img src="/logo.png" alt="Six Beans" className="h-32 w-auto mx-auto mb-6" />
-                <p className="text-3xl font-black" style={{ color: '#4A3428' }}>Est. 2018</p>
-                <p className="text-sm text-gray-500 mt-2">Apple Valley, CA</p>
-                <div className="mt-6 flex justify-center gap-8">
-                  <div><p className="text-2xl font-black" style={{ color: '#5CB832' }}>6</p><p className="text-xs text-gray-500">Locations</p></div>
-                  <div><p className="text-2xl font-black" style={{ color: '#5CB832' }}>50+</p><p className="text-xs text-gray-500">Team Members</p></div>
-                  <div><p className="text-2xl font-black" style={{ color: '#5CB832' }}>7</p><p className="text-xs text-gray-500">Days a Week</p></div>
-                </div>
-              </div>
+            <div className="grid grid-cols-2 gap-4">
+              <img src="/hero2.jpg" alt="Six Beans branded cup" className="rounded-2xl shadow-lg object-cover aspect-[3/4] w-full" />
+              <img src="/espresso1.jpg" alt="Espresso pour" className="rounded-2xl shadow-lg object-cover aspect-[3/4] w-full mt-8" />
             </div>
             <div>
               <h2 className="text-4xl sm:text-5xl font-black tracking-tight" style={{ color: '#4A3428' }}>
@@ -224,6 +219,15 @@ export function LandingPage() {
               <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>
               @six.beans.coffee
             </a>
+          </div>
+
+          {/* Photo strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+            {['/drink1.jpg', '/drink2.jpg', '/drink3.jpg', '/drink4.jpg'].map((src, i) => (
+              <a key={i} href="https://www.instagram.com/sixbeanscoffee/" target="_blank" rel="noopener noreferrer" className="aspect-square rounded-xl overflow-hidden group">
+                <img src={src} alt="Six Beans Coffee" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+              </a>
+            ))}
           </div>
 
           {/* Live Instagram Embed */}
