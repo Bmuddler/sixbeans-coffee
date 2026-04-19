@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.location import Location
 from app.services.auth_service import hash_password
 from app.seed_employees import seed_employees
+from app.seed_supply_catalog import seed_supply_catalog
 from app.models.system_settings import SystemSettings
 from app.routers import (
     applications,
@@ -26,6 +27,7 @@ from app.routers import (
     payroll,
     schedules,
     shift_swap,
+    supply_orders,
     supply_reports,
     time_clock,
     time_off,
@@ -62,6 +64,7 @@ app.include_router(forms.router, prefix="/api/forms", tags=["Forms"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 app.include_router(applications.router, prefix="/api/applications", tags=["Applications"])
+app.include_router(supply_orders.router, prefix="/api/supply-orders", tags=["Supply Orders"])
 app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["Supply Reports"])
 
 SEED_LOCATIONS = [
@@ -170,6 +173,9 @@ async def startup():
 
         # Bulk-import employees from Homebase CSV data
         await seed_employees(session)
+
+        # Seed supply catalog from Square export
+        await seed_supply_catalog(session)
 
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(
