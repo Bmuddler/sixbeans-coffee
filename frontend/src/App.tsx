@@ -21,6 +21,8 @@ import { TimeOffPage } from '@/pages/portal/TimeOffPage';
 import { ShiftSwapsPage } from '@/pages/portal/ShiftSwapsPage';
 import { MessagesPage } from '@/pages/portal/MessagesPage';
 import { DocumentsPage } from '@/pages/portal/DocumentsPage';
+import { W4Form } from '@/pages/portal/forms/W4Form';
+import { EmergencyContactForm } from '@/pages/portal/forms/EmergencyContactForm';
 import { TimeClockPage } from '@/pages/portal/TimeClockPage';
 import { CashDrawerPage } from '@/pages/portal/CashDrawerPage';
 import { PayrollPage } from '@/pages/portal/PayrollPage';
@@ -58,6 +60,8 @@ export function App() {
         <Route path="/portal/shift-swaps" element={<ShiftSwapsPage />} />
         <Route path="/portal/messages" element={<MessagesPage />} />
         <Route path="/portal/documents" element={<DocumentsPage />} />
+        <Route path="/portal/documents/w4" element={<W4Form />} />
+        <Route path="/portal/documents/emergency-contact" element={<EmergencyContactForm />} />
         <Route path="/portal/time-clock" element={<TimeClockPage />} />
         <Route
           path="/portal/cash-drawer"

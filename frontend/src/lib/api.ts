@@ -402,6 +402,27 @@ export const audit = {
 };
 
 // ============================================================
+// Forms (Onboarding)
+// ============================================================
+
+export const forms = {
+  submit: (data: { form_type: string; form_data: Record<string, any> }) =>
+    api.post('/forms/', data).then((r) => r.data),
+
+  getMy: () =>
+    api.get('/forms/my').then((r) => r.data as any[]),
+
+  getAll: (params?: { form_type?: string; employee_id?: number }) =>
+    api.get('/forms/', { params }).then((r) => r.data as any[]),
+
+  getOne: (id: number) =>
+    api.get(`/forms/${id}`).then((r) => r.data),
+
+  getStatus: () =>
+    api.get('/forms/status').then((r) => r.data as any[]),
+};
+
+// ============================================================
 // System Settings
 // ============================================================
 

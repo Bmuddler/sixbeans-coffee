@@ -1,570 +1,172 @@
-import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import {
   FileText,
-  Search,
-  Upload,
-  FolderOpen,
-  BookOpen,
-  GraduationCap,
+  CheckCircle2,
+  AlertCircle,
   ClipboardList,
-  Shield,
-  Download,
-  Eye,
-  Calendar,
+  UserCheck,
   ChevronRight,
-  Plus,
-  X,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Badge } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Modal } from '@/components/ui/Modal';
-import { Select } from '@/components/ui/Select';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuthStore } from '@/stores/authStore';
+import { forms } from '@/lib/api';
 import { UserRole } from '@/types';
 
-// ============================================================
-// Document types (local, since this is a UI-ready page)
-// ============================================================
-
-interface Document {
-  id: number;
-  title: string;
-  description: string;
-  category: DocumentCategory;
-  lastUpdated: string;
-  fileType: 'pdf' | 'docx' | 'xlsx' | 'png' | 'link';
-  size?: string;
-  required?: boolean;
-}
-
-type DocumentCategory = 'onboarding' | 'policies' | 'training' | 'forms';
-
-const CATEGORY_META: Record<
-  DocumentCategory,
-  { label: string; icon: React.ReactNode; color: string }
-> = {
-  onboarding: {
-    label: 'Onboarding',
-    icon: <BookOpen className="h-5 w-5" />,
-    color: 'bg-blue-50 text-blue-600',
-  },
-  policies: {
-    label: 'Company Policies',
-    icon: <Shield className="h-5 w-5" />,
-    color: 'bg-purple-50 text-purple-600',
-  },
-  training: {
-    label: 'Training',
-    icon: <GraduationCap className="h-5 w-5" />,
-    color: 'bg-green-50 text-green-600',
-  },
-  forms: {
-    label: 'Forms',
-    icon: <ClipboardList className="h-5 w-5" />,
-    color: 'bg-amber-50 text-amber-600',
-  },
-};
-
-// Sample documents for the UI
-const SAMPLE_DOCUMENTS: Document[] = [
+const REQUIRED_FORMS = [
   {
-    id: 1,
-    title: 'Employee Handbook 2024',
-    description:
-      'Complete guide to company policies, benefits, and workplace expectations.',
-    category: 'onboarding',
-    lastUpdated: '2024-01-15',
-    fileType: 'pdf',
-    size: '2.4 MB',
-    required: true,
+    type: 'w4',
+    title: 'W-4 — Employee Withholding Certificate',
+    description: 'Federal tax withholding form required for all employees.',
+    icon: <FileText className="h-6 w-6" />,
+    path: '/portal/documents/w4',
   },
   {
-    id: 2,
-    title: 'New Hire Checklist',
-    description:
-      'Step-by-step checklist for your first week at Six Beans Coffee Co.',
-    category: 'onboarding',
-    lastUpdated: '2024-02-01',
-    fileType: 'pdf',
-    size: '340 KB',
-    required: true,
-  },
-  {
-    id: 3,
-    title: 'Direct Deposit Form',
-    description: 'Set up or update your direct deposit banking information.',
-    category: 'onboarding',
-    lastUpdated: '2024-01-10',
-    fileType: 'pdf',
-    size: '125 KB',
-  },
-  {
-    id: 4,
-    title: 'Code of Conduct',
-    description:
-      'Standards of behavior and professional conduct expected of all team members.',
-    category: 'policies',
-    lastUpdated: '2024-03-01',
-    fileType: 'pdf',
-    size: '890 KB',
-    required: true,
-  },
-  {
-    id: 5,
-    title: 'PTO & Leave Policy',
-    description:
-      'Guidelines for requesting time off, sick leave, and other absences.',
-    category: 'policies',
-    lastUpdated: '2024-01-20',
-    fileType: 'pdf',
-    size: '560 KB',
-  },
-  {
-    id: 6,
-    title: 'Cash Handling Procedures',
-    description:
-      'Proper procedures for opening/closing drawers, handling cash, and deposits.',
-    category: 'policies',
-    lastUpdated: '2024-02-15',
-    fileType: 'pdf',
-    size: '430 KB',
-  },
-  {
-    id: 7,
-    title: 'Food Safety & Hygiene',
-    description:
-      'Required food safety practices and health department compliance guidelines.',
-    category: 'policies',
-    lastUpdated: '2024-03-10',
-    fileType: 'pdf',
-    size: '1.1 MB',
-  },
-  {
-    id: 8,
-    title: 'Barista Training Manual',
-    description:
-      'Complete espresso, brewing, and drink preparation training guide.',
-    category: 'training',
-    lastUpdated: '2024-02-20',
-    fileType: 'pdf',
-    size: '5.2 MB',
-  },
-  {
-    id: 9,
-    title: 'POS System Guide',
-    description: 'How to use the Square POS system for transactions and orders.',
-    category: 'training',
-    lastUpdated: '2024-01-25',
-    fileType: 'pdf',
-    size: '3.1 MB',
-  },
-  {
-    id: 10,
-    title: 'Customer Service Standards',
-    description:
-      'Best practices for providing exceptional customer experiences.',
-    category: 'training',
-    lastUpdated: '2024-03-05',
-    fileType: 'pdf',
-    size: '780 KB',
-  },
-  {
-    id: 11,
-    title: 'Opening & Closing Procedures',
-    description:
-      'Step-by-step procedures for opening and closing each location.',
-    category: 'training',
-    lastUpdated: '2024-02-28',
-    fileType: 'pdf',
-    size: '620 KB',
-  },
-  {
-    id: 12,
-    title: 'W-4 Tax Withholding Form',
-    description: 'Federal tax withholding election form.',
-    category: 'forms',
-    lastUpdated: '2024-01-01',
-    fileType: 'pdf',
-    size: '210 KB',
-    required: true,
-  },
-  {
-    id: 13,
+    type: 'emergency_contact',
     title: 'Emergency Contact Form',
-    description: 'Update your emergency contact information.',
-    category: 'forms',
-    lastUpdated: '2024-01-01',
-    fileType: 'pdf',
-    size: '95 KB',
-    required: true,
-  },
-  {
-    id: 14,
-    title: 'Uniform Request Form',
-    description: 'Request company uniforms, aprons, and name tags.',
-    category: 'forms',
-    lastUpdated: '2024-02-10',
-    fileType: 'pdf',
-    size: '88 KB',
-  },
-  {
-    id: 15,
-    title: 'Incident Report Form',
-    description:
-      'Report workplace incidents, injuries, or safety concerns.',
-    category: 'forms',
-    lastUpdated: '2024-01-15',
-    fileType: 'pdf',
-    size: '150 KB',
+    description: 'Emergency contact and medical information.',
+    icon: <UserCheck className="h-6 w-6" />,
+    path: '/portal/documents/emergency-contact',
   },
 ];
 
-function formatFileType(ft: string) {
-  return ft.toUpperCase();
-}
-
 export function DocumentsPage() {
   const user = useAuthStore((s) => s.user);
-  const isManagerOrOwner =
-    user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
+  const isManagerOrOwner = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<DocumentCategory | 'all'>(
-    'all'
-  );
-  const [viewingDocument, setViewingDocument] = useState<Document | null>(null);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadTitle, setUploadTitle] = useState('');
-  const [uploadDescription, setUploadDescription] = useState('');
-  const [uploadCategory, setUploadCategory] = useState<string>('onboarding');
+  const { data: myForms, isLoading: myFormsLoading } = useQuery({
+    queryKey: ['my-forms'],
+    queryFn: forms.getMy,
+  });
 
-  const filteredDocuments = useMemo(() => {
-    let docs = SAMPLE_DOCUMENTS;
-    if (selectedCategory !== 'all') {
-      docs = docs.filter((d) => d.category === selectedCategory);
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      docs = docs.filter(
-        (d) =>
-          d.title.toLowerCase().includes(q) ||
-          d.description.toLowerCase().includes(q)
-      );
-    }
-    return docs;
-  }, [selectedCategory, searchQuery]);
+  const { data: allStatus, isLoading: statusLoading } = useQuery({
+    queryKey: ['form-status'],
+    queryFn: forms.getStatus,
+    enabled: isManagerOrOwner,
+  });
 
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = { all: SAMPLE_DOCUMENTS.length };
-    for (const doc of SAMPLE_DOCUMENTS) {
-      counts[doc.category] = (counts[doc.category] ?? 0) + 1;
-    }
-    return counts;
-  }, []);
+  const myCompletedTypes = new Set((myForms ?? []).map((f: any) => f.form_type));
+
+  const completedCount = allStatus?.filter((s: any) => s.w4_completed && s.emergency_contact_completed).length ?? 0;
+  const totalEmployees = allStatus?.length ?? 0;
+  const w4Count = allStatus?.filter((s: any) => s.w4_completed).length ?? 0;
+  const ecCount = allStatus?.filter((s: any) => s.emergency_contact_completed).length ?? 0;
 
   return (
     <div>
       <div className="page-header">
         <div>
           <h1 className="page-title">Documents</h1>
-          <p className="page-subtitle">
-            Onboarding documents, company policies, and resources.
-          </p>
+          <p className="page-subtitle">Onboarding forms and company documents.</p>
         </div>
-        {isManagerOrOwner && (
-          <Button
-            icon={<Upload className="h-4 w-4" />}
-            onClick={() => setShowUploadModal(true)}
-          >
-            Upload Document
-          </Button>
-        )}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-4">
-        {/* Sidebar - Categories */}
-        <div className="lg:col-span-1">
-          <Card title="Categories">
-            <nav className="space-y-1">
-              <button
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
-                  selectedCategory === 'all'
-                    ? 'bg-primary/10 text-primary font-medium'
-                    : 'text-gray-700 hover:bg-gray-50'
-                }`}
-                onClick={() => setSelectedCategory('all')}
-              >
-                <div className="flex items-center gap-2">
-                  <FolderOpen className="h-4 w-4" />
-                  All Documents
-                </div>
-                <span className="text-xs text-gray-400">
-                  {categoryCounts.all}
-                </span>
-              </button>
-
-              {(Object.keys(CATEGORY_META) as DocumentCategory[]).map(
-                (category) => (
-                  <button
-                    key={category}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm transition-colors ${
-                      selectedCategory === category
-                        ? 'bg-primary/10 text-primary font-medium'
-                        : 'text-gray-700 hover:bg-gray-50'
-                    }`}
-                    onClick={() => setSelectedCategory(category)}
-                  >
-                    <div className="flex items-center gap-2">
-                      {CATEGORY_META[category].icon}
-                      {CATEGORY_META[category].label}
-                    </div>
-                    <span className="text-xs text-gray-400">
-                      {categoryCounts[category] ?? 0}
-                    </span>
-                  </button>
-                )
-              )}
-            </nav>
-          </Card>
-        </div>
-
-        {/* Main Content - Document List */}
-        <div className="lg:col-span-3">
-          {/* Search */}
-          <div className="mb-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search documents..."
-                className="block w-full rounded-lg border border-gray-300 py-2 pl-10 pr-3 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-300"
-              />
-            </div>
-          </div>
-
-          {/* Document Grid */}
-          {filteredDocuments.length > 0 ? (
-            <div className="space-y-3">
-              {filteredDocuments.map((doc) => {
-                const catMeta = CATEGORY_META[doc.category];
-                return (
-                  <div
-                    key={doc.id}
-                    className="group flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm hover:border-primary/30 hover:shadow transition-all cursor-pointer"
-                    onClick={() => setViewingDocument(doc)}
-                  >
-                    <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-lg flex-shrink-0 ${catMeta.color}`}
-                    >
-                      <FileText className="h-6 w-6" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-gray-900 truncate">
-                          {doc.title}
-                        </h3>
-                        {doc.required && (
-                          <Badge variant="pending">Required</Badge>
-                        )}
-                      </div>
-                      <p className="text-sm text-gray-500 mt-0.5 line-clamp-1">
-                        {doc.description}
-                      </p>
-                      <div className="mt-1 flex items-center gap-3 text-xs text-gray-400">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="h-3 w-3" />
-                          Updated{' '}
-                          {new Date(doc.lastUpdated).toLocaleDateString([], {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </span>
-                        <span>{formatFileType(doc.fileType)}</span>
-                        {doc.size && <span>{doc.size}</span>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setViewingDocument(doc);
-                        }}
-                        title="View"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          // Download placeholder
-                        }}
-                        title="Download"
-                      >
-                        <Download className="h-4 w-4" />
-                      </button>
-                    </div>
+      {/* Required Forms */}
+      <Card title="Required Forms" className="mb-6">
+        <p className="text-sm text-gray-500 mb-4">Complete these forms as part of your onboarding. You can update them at any time.</p>
+        {myFormsLoading ? (
+          <LoadingSpinner size="sm" />
+        ) : (
+          <div className="space-y-3">
+            {REQUIRED_FORMS.map((form) => {
+              const isCompleted = myCompletedTypes.has(form.type);
+              return (
+                <Link
+                  key={form.type}
+                  to={form.path}
+                  className={`flex items-center gap-4 rounded-lg border p-4 transition-colors hover:border-primary/30 ${
+                    isCompleted ? 'bg-green-50/50 border-green-200' : 'bg-white border-gray-200'
+                  }`}
+                >
+                  <div className={`flex h-12 w-12 items-center justify-center rounded-lg ${isCompleted ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
+                    {form.icon}
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            <Card>
-              <EmptyState
-                icon={<Search className="h-12 w-12" />}
-                title="No Documents Found"
-                description={
-                  searchQuery
-                    ? `No documents match "${searchQuery}". Try a different search term.`
-                    : 'No documents in this category yet.'
-                }
-                action={
-                  searchQuery ? (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setSearchQuery('')}
-                    >
-                      Clear search
-                    </Button>
-                  ) : undefined
-                }
-              />
-            </Card>
-          )}
-        </div>
-      </div>
-
-      {/* Document Viewer Modal */}
-      <Modal
-        open={!!viewingDocument}
-        onClose={() => setViewingDocument(null)}
-        title={viewingDocument?.title ?? 'Document'}
-        size="lg"
-      >
-        {viewingDocument && (
-          <div>
-            <div className="mb-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Badge variant="info">
-                  {CATEGORY_META[viewingDocument.category].label}
-                </Badge>
-                {viewingDocument.required && (
-                  <Badge variant="pending">Required</Badge>
-                )}
-                <span className="text-xs text-gray-400">
-                  {formatFileType(viewingDocument.fileType)} - {viewingDocument.size}
-                </span>
-              </div>
-              <p className="text-sm text-gray-600">{viewingDocument.description}</p>
-              <p className="mt-2 text-xs text-gray-400">
-                Last updated:{' '}
-                {new Date(viewingDocument.lastUpdated).toLocaleDateString([], {
-                  month: 'long',
-                  day: 'numeric',
-                  year: 'numeric',
-                })}
-              </p>
-            </div>
-
-            {/* Document preview placeholder */}
-            <div className="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 p-12 text-center">
-              <FileText className="mx-auto h-16 w-16 text-gray-300" />
-              <p className="mt-4 text-sm font-medium text-gray-500">
-                Document Preview
-              </p>
-              <p className="mt-1 text-xs text-gray-400">
-                Document viewing will be available once file storage is
-                configured.
-              </p>
-            </div>
-
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                variant="ghost"
-                onClick={() => setViewingDocument(null)}
-              >
-                Close
-              </Button>
-              <Button icon={<Download className="h-4 w-4" />}>
-                Download
-              </Button>
-            </div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900">{form.title}</p>
+                      {isCompleted ? <Badge variant="approved">Completed</Badge> : <Badge variant="pending">Required</Badge>}
+                    </div>
+                    <p className="text-xs text-gray-500 mt-0.5">{form.description}</p>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-gray-400" />
+                </Link>
+              );
+            })}
           </div>
         )}
-      </Modal>
+      </Card>
 
-      {/* Upload Modal (Manager/Owner only) */}
-      <Modal
-        open={showUploadModal}
-        onClose={() => setShowUploadModal(false)}
-        title="Upload Document"
-      >
-        <div className="space-y-4">
-          <Input
-            label="Document Title"
-            value={uploadTitle}
-            onChange={(e) => setUploadTitle(e.target.value)}
-            placeholder="e.g., Updated Safety Guidelines"
-          />
-          <div className="w-full">
-            <label className="mb-1.5 block text-sm font-medium text-gray-700">
-              Description
-            </label>
-            <textarea
-              value={uploadDescription}
-              onChange={(e) => setUploadDescription(e.target.value)}
-              placeholder="Brief description of the document..."
-              rows={3}
-              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-300"
-            />
-          </div>
-          <Select
-            label="Category"
-            options={Object.entries(CATEGORY_META).map(([key, val]) => ({
-              value: key,
-              label: val.label,
-            }))}
-            value={uploadCategory}
-            onChange={(e) => setUploadCategory(e.target.value)}
-          />
+      {/* Manager/Owner: Completion Status */}
+      {isManagerOrOwner && (
+        <Card title="Employee Form Completion" className="mb-6" actions={<span className="text-sm text-gray-500">{completedCount}/{totalEmployees} fully complete</span>}>
+          {statusLoading ? (
+            <LoadingSpinner size="sm" />
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-4 mb-6">
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <p className="text-2xl font-bold text-gray-900">{totalEmployees}</p>
+                  <p className="text-xs text-gray-500">Total Employees</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <p className="text-2xl font-bold text-blue-600">{w4Count}</p>
+                  <p className="text-xs text-gray-500">W-4 Submitted</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-3 text-center">
+                  <p className="text-2xl font-bold text-purple-600">{ecCount}</p>
+                  <p className="text-xs text-gray-500">Emergency Contact</p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Employee</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">W-4</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold uppercase text-gray-500">Emergency Contact</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {(allStatus ?? []).map((emp: any) => (
+                      <tr key={emp.employee_id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2.5 text-sm text-gray-900">{emp.employee_name}</td>
+                        <td className="px-4 py-2.5 text-center">
+                          {emp.w4_completed ? <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" /> : <AlertCircle className="h-5 w-5 text-gray-300 mx-auto" />}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          {emp.emergency_contact_completed ? <CheckCircle2 className="h-5 w-5 text-green-500 mx-auto" /> : <AlertCircle className="h-5 w-5 text-gray-300 mx-auto" />}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </Card>
+      )}
 
-          {/* File upload area */}
-          <div className="rounded-lg border-2 border-dashed border-gray-300 p-8 text-center hover:border-primary/50 transition-colors cursor-pointer">
-            <Upload className="mx-auto h-8 w-8 text-gray-400" />
-            <p className="mt-2 text-sm font-medium text-gray-600">
-              Click to upload or drag and drop
-            </p>
-            <p className="mt-1 text-xs text-gray-400">
-              PDF, DOCX, XLSX up to 10MB
-            </p>
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <Button
-              variant="ghost"
-              onClick={() => setShowUploadModal(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              disabled={!uploadTitle.trim()}
-              icon={<Upload className="h-4 w-4" />}
-            >
-              Upload
-            </Button>
-          </div>
+      {/* Company Documents */}
+      <Card title="Company Documents">
+        <div className="space-y-3">
+          {[
+            { title: 'Employee Handbook', desc: 'Company policies, code of conduct, and guidelines.' },
+            { title: 'California Break Policy', desc: 'State-required break and meal period rules.' },
+            { title: 'Safety & Hygiene Standards', desc: 'Food safety and workplace hygiene requirements.' },
+            { title: 'Anti-Harassment Policy', desc: 'Workplace harassment prevention and reporting.' },
+          ].map((doc) => (
+            <div key={doc.title} className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
+              <ClipboardList className="h-5 w-5 text-gray-400 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">{doc.title}</p>
+                <p className="text-xs text-gray-500">{doc.desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
-      </Modal>
+      </Card>
     </div>
   );
 }

@@ -17,6 +17,7 @@ from app.routers import (
     auth,
     cash_drawer,
     dashboard,
+    forms,
     kiosk,
     locations,
     messaging,
@@ -54,6 +55,7 @@ app.include_router(payroll.router, prefix="/api/payroll", tags=["Payroll"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(kiosk.router, prefix="/api/kiosk", tags=["Kiosk"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit"])
+app.include_router(forms.router, prefix="/api/forms", tags=["Forms"])
 app.include_router(settings_router.router, prefix="/api/settings", tags=["Settings"])
 
 SEED_LOCATIONS = [
