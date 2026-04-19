@@ -61,6 +61,7 @@ class ScheduledShiftResponse(ScheduledShiftBase):
     created_at: datetime
     updated_at: datetime
     employee_name: str | None = None
+    location_name: str | None = None
 
     model_config = {"from_attributes": True}
 

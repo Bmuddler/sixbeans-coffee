@@ -43,6 +43,7 @@ class TimeClockResponse(BaseModel):
     clock_in: datetime
     clock_out: datetime | None = None
     auto_clocked_out: bool
+    auto_clockout_at: datetime | None = None
     is_unscheduled: bool = False
     total_hours: float | None = None
     status: ClockStatus

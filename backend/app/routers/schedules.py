@@ -33,6 +33,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+@router.get("/my-shifts", response_model=list[ScheduledShiftResponse])
+async def get_my_shifts(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's upcoming shifts for the next 14 days."""
+    today = date.today()
+    end_date = today + timedelta(days=14)
+
+    result = await db.execute(
+        select(ScheduledShift)
+        .options(selectinload(ScheduledShift.employee), selectinload(ScheduledShift.location))
+        .where(
+            and_(
+                ScheduledShift.employee_id == current_user.id,
+                ScheduledShift.date >= today,
+                ScheduledShift.date <= end_date,
+            )
+        )
+        .order_by(ScheduledShift.date, ScheduledShift.start_time)
+    )
+    shifts = result.scalars().all()
+
+    return [
+        ScheduledShiftResponse(
+            id=s.id,
+            template_id=s.template_id,
+            location_id=s.location_id,
+            employee_id=s.employee_id,
+            date=s.date,
+            start_time=s.start_time,
+            end_time=s.end_time,
+            status=s.status,
+            manager_notes=s.manager_notes,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            employee_name=f"{s.employee.first_name} {s.employee.last_name}" if s.employee else None,
+            location_name=s.location.name if s.location else None,
+        )
+        for s in shifts
+    ]
+
+
 async def _is_week_published(db: AsyncSession, location_id: int, shift_date: date) -> bool:
     week_start = shift_date - timedelta(days=shift_date.weekday())
     result = await db.execute(

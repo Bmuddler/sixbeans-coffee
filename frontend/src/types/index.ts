@@ -252,11 +252,13 @@ export interface AuditLog {
   id: number;
   user_id: number;
   action: string;
-  resource_type: string;
-  resource_id?: number;
-  details?: Record<string, unknown>;
+  entity_type: string;
+  entity_id?: number;
+  old_values?: string | null;
+  new_values?: string | null;
+  notes?: string | null;
   ip_address?: string;
-  user?: User;
+  user_name?: string | null;
   created_at: string;
 }
 

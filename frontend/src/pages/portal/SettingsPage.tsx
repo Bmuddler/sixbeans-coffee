@@ -165,10 +165,27 @@ export function SettingsPage() {
     }
     if (!passwordForm.new_password) {
       errors.new_password = 'New password is required';
-    } else if (passwordForm.new_password.length < 8) {
-      errors.new_password = 'Password must be at least 8 characters';
+    } else {
+      const pwdErrors: string[] = [];
+      if (passwordForm.new_password.length < 8) {
+        pwdErrors.push('at least 8 characters');
+      }
+      if (!/[A-Z]/.test(passwordForm.new_password)) {
+        pwdErrors.push('one uppercase letter');
+      }
+      if (!/[a-z]/.test(passwordForm.new_password)) {
+        pwdErrors.push('one lowercase letter');
+      }
+      if (!/[0-9]/.test(passwordForm.new_password)) {
+        pwdErrors.push('one number');
+      }
+      if (pwdErrors.length > 0) {
+        errors.new_password = `Password must contain ${pwdErrors.join(', ')}`;
+      }
     }
-    if (passwordForm.new_password !== passwordForm.confirm_password) {
+    if (!passwordForm.confirm_password) {
+      errors.confirm_password = 'Please confirm your new password';
+    } else if (passwordForm.new_password !== passwordForm.confirm_password) {
       errors.confirm_password = 'Passwords do not match';
     }
     setPasswordErrors(errors);

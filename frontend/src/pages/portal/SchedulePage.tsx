@@ -11,6 +11,8 @@ import {
   Trash2,
   Ban,
   Palmtree,
+  CalendarDays,
+  MapPin,
 } from 'lucide-react';
 import {
   format,
@@ -31,6 +33,7 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { api, schedules, users, locations as locationsApi, timeOff } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 import type { ScheduledShift, ShiftTemplate, User, Location, RequestStatus } from '@/types';
@@ -52,6 +55,130 @@ function shiftHours(start: string, end: string): number {
   const [sh, sm] = start.split(':').map(Number);
   const [eh, em] = end.split(':').map(Number);
   return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
+}
+
+function EmployeeScheduleView() {
+  const { user: currentUser } = useAuthStore();
+  const [currentWeekStart, setCurrentWeekStart] = useState(() =>
+    startOfWeek(new Date(), { weekStartsOn: 1 }),
+  );
+
+  const locationId = currentUser?.primary_location_id ?? currentUser?.location_ids?.[0];
+  const weekEnd = addDays(currentWeekStart, 6);
+  const nextWeekStart = addWeeks(currentWeekStart, 1);
+  const nextWeekEnd = addDays(nextWeekStart, 6);
+
+  const { data: locationsList } = useQuery({
+    queryKey: ['locations'],
+    queryFn: () => locationsApi.list(),
+  });
+
+  const locMap = useMemo(() => {
+    const m = new Map<number, string>();
+    locationsList?.forEach((l) => m.set(l.id, l.name));
+    return m;
+  }, [locationsList]);
+
+  // Fetch current week
+  const { data: thisWeekData, isLoading: loading1 } = useQuery({
+    queryKey: ['my-shifts-week1', locationId, format(currentWeekStart, 'yyyy-MM-dd')],
+    queryFn: () =>
+      schedules.listShifts({
+        location_id: locationId,
+        start_date: format(currentWeekStart, 'yyyy-MM-dd'),
+        end_date: format(weekEnd, 'yyyy-MM-dd'),
+      }),
+    enabled: !!locationId,
+  });
+
+  // Fetch next week
+  const { data: nextWeekData, isLoading: loading2 } = useQuery({
+    queryKey: ['my-shifts-week2', locationId, format(nextWeekStart, 'yyyy-MM-dd')],
+    queryFn: () =>
+      schedules.listShifts({
+        location_id: locationId,
+        start_date: format(nextWeekStart, 'yyyy-MM-dd'),
+        end_date: format(nextWeekEnd, 'yyyy-MM-dd'),
+      }),
+    enabled: !!locationId,
+  });
+
+  const myShifts = useMemo(() => {
+    const allShifts = [
+      ...(thisWeekData?.shifts ?? []),
+      ...(nextWeekData?.shifts ?? []),
+    ];
+    return allShifts
+      .filter((s) => s.employee_id === currentUser?.id)
+      .filter((s) => s.date >= format(new Date(), 'yyyy-MM-dd'))
+      .sort((a, b) => a.date.localeCompare(b.date) || a.start_time.localeCompare(b.start_time));
+  }, [thisWeekData, nextWeekData, currentUser?.id]);
+
+  const isLoading = loading1 || loading2;
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h1 className="page-title">My Upcoming Shifts</h1>
+          <p className="page-subtitle">Your scheduled shifts for the next 14 days.</p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <LoadingSpinner size="lg" label="Loading your shifts..." className="py-20" />
+      ) : myShifts.length > 0 ? (
+        <div className="space-y-3 max-w-2xl">
+          {myShifts.map((shift) => {
+            const shiftDate = parseISO(shift.date);
+            return (
+              <Card key={shift.id} className="flex items-center gap-4">
+                <div className="flex items-center justify-center h-14 w-14 rounded-lg bg-blue-50 flex-shrink-0">
+                  <div className="text-center">
+                    <p className="text-xs font-semibold text-blue-600 uppercase">
+                      {format(shiftDate, 'EEE')}
+                    </p>
+                    <p className="text-lg font-bold text-blue-800">{format(shiftDate, 'd')}</p>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {format(shiftDate, 'EEEE, MMMM d, yyyy')}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="flex items-center gap-1 text-sm text-gray-600">
+                      <Clock className="h-3.5 w-3.5" />
+                      {fmtTime(shift.start_time)} - {fmtTime(shift.end_time)}
+                    </span>
+                    <span className="flex items-center gap-1 text-sm text-gray-500">
+                      <MapPin className="h-3.5 w-3.5" />
+                      {locMap.get(shift.location_id) ?? `Location #${shift.location_id}`}
+                    </span>
+                  </div>
+                  {shift.manager_notes && (
+                    <p className="text-xs text-gray-500 italic mt-1">{shift.manager_notes}</p>
+                  )}
+                </div>
+                <div className="text-right flex-shrink-0">
+                  <p className="text-sm font-semibold text-gray-700">
+                    {shiftHours(shift.start_time, shift.end_time).toFixed(1)}h
+                  </p>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
+          <EmptyState
+            icon={<CalendarDays className="h-12 w-12" />}
+            title="No Upcoming Shifts"
+            description="No upcoming shifts scheduled. Check back later or contact your manager."
+          />
+        </Card>
+      )}
+    </div>
+  );
 }
 
 export function SchedulePage() {
@@ -247,6 +374,11 @@ export function SchedulePage() {
   };
 
   const totalWeekHours = gridData.dailyHours.reduce((a, b) => a + b, 0);
+
+  // Employees see a simpler "My Shifts" view
+  if (!isManager) {
+    return <EmployeeScheduleView />;
+  }
 
   return (
     <div>

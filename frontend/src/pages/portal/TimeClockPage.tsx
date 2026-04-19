@@ -9,6 +9,7 @@ import {
   Play,
   Edit3,
   Users,
+  BarChart3,
 } from 'lucide-react';
 import {
   format,
@@ -122,6 +123,16 @@ export function TimeClockPage() {
   const weeklyTotal = useMemo(() => {
     if (!weeklyRecords?.items) return 0;
     return weeklyRecords.items.reduce((sum, r) => sum + (r.total_hours ?? 0) * 60, 0);
+  }, [weeklyRecords]);
+
+  // My Hours Summary stats
+  const hoursSummary = useMemo(() => {
+    if (!weeklyRecords?.items) return null;
+    const totalHours = weeklyRecords.items.reduce((sum, r) => sum + (r.total_hours ?? 0), 0);
+    const regularHours = Math.min(totalHours, 40);
+    const overtimeHours = Math.max(0, totalHours - 40);
+    const shiftCount = weeklyRecords.items.filter((r) => r.clock_out).length;
+    return { totalHours, regularHours, overtimeHours, shiftCount };
   }, [weeklyRecords]);
 
   // Mutations
@@ -370,6 +381,42 @@ export function TimeClockPage() {
               </div>
             </div>
           </Card>
+
+          {/* My Hours Summary */}
+          {hoursSummary && (
+            <Card className="mb-6">
+              <div className="flex items-center gap-2 mb-4">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                <h3 className="text-lg font-semibold text-gray-900">My Hours Summary</h3>
+                <span className="text-sm text-gray-500 ml-auto">
+                  {format(weekStart, 'MMM d')} - {format(weekEnd, 'MMM d, yyyy')}
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div className="rounded-lg bg-blue-50 p-4 text-center">
+                  <p className="text-2xl font-bold text-blue-700">
+                    {hoursSummary.totalHours.toFixed(1)}
+                  </p>
+                  <p className="text-xs text-blue-600 font-medium mt-1">Total Hours</p>
+                </div>
+                <div className="rounded-lg bg-green-50 p-4 text-center">
+                  <p className="text-2xl font-bold text-green-700">
+                    {hoursSummary.regularHours.toFixed(1)}
+                    {hoursSummary.overtimeHours > 0 && (
+                      <span className="text-sm text-amber-600 ml-1">
+                        +{hoursSummary.overtimeHours.toFixed(1)} OT
+                      </span>
+                    )}
+                  </p>
+                  <p className="text-xs text-green-600 font-medium mt-1">Regular Hours</p>
+                </div>
+                <div className="rounded-lg bg-gray-50 p-4 text-center">
+                  <p className="text-2xl font-bold text-gray-700">{hoursSummary.shiftCount}</p>
+                  <p className="text-xs text-gray-500 font-medium mt-1">Completed Shifts</p>
+                </div>
+              </div>
+            </Card>
+          )}
 
           {/* Today's Log & Weekly Summary */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">

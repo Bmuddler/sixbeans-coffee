@@ -51,28 +51,32 @@ function ActionBadge({ action }: { action: string }) {
   return <Badge variant={variant}>{action.toUpperCase()}</Badge>;
 }
 
-function JsonDiff({ details }: { details: Record<string, unknown> }) {
-  const oldValues = details.old as Record<string, unknown> | undefined;
-  const newValues = details.new as Record<string, unknown> | undefined;
+function parseJsonStr(val: string | null | undefined): Record<string, unknown> | null {
+  if (!val) return null;
+  try { return JSON.parse(val); } catch { return null; }
+}
 
-  if (!oldValues && !newValues) {
-    return (
-      <pre className="text-xs bg-gray-50 rounded p-2 overflow-auto max-h-48">
-        {JSON.stringify(details, null, 2)}
-      </pre>
-    );
+function JsonDiff({ oldValues, newValues, notes }: { oldValues?: string | null; newValues?: string | null; notes?: string | null }) {
+  const oldParsed = parseJsonStr(oldValues);
+  const newParsed = parseJsonStr(newValues);
+
+  if (!oldParsed && !newParsed) {
+    if (notes) {
+      return <p className="text-xs text-gray-600">{notes}</p>;
+    }
+    return <p className="text-xs text-gray-400">No details available.</p>;
   }
 
   const allKeys = new Set([
-    ...Object.keys(oldValues ?? {}),
-    ...Object.keys(newValues ?? {}),
+    ...Object.keys(oldParsed ?? {}),
+    ...Object.keys(newParsed ?? {}),
   ]);
 
   return (
     <div className="space-y-1">
       {Array.from(allKeys).map((key) => {
-        const oldVal = oldValues?.[key];
-        const newVal = newValues?.[key];
+        const oldVal = oldParsed?.[key];
+        const newVal = newParsed?.[key];
         const changed = JSON.stringify(oldVal) !== JSON.stringify(newVal);
         if (!changed) return null;
         return (
@@ -93,6 +97,7 @@ function JsonDiff({ details }: { details: Record<string, unknown> }) {
           </div>
         );
       })}
+      {notes && <p className="text-xs text-gray-500 mt-1">{notes}</p>}
     </div>
   );
 }
@@ -125,7 +130,7 @@ export function AuditLogPage() {
         page,
         per_page: 25,
         action: actionFilter || undefined,
-        resource_type: entityFilter || undefined,
+        entity_type: entityFilter || undefined,
         user_id: userFilter || undefined,
       }),
   });
@@ -146,12 +151,13 @@ export function AuditLogPage() {
     if (!auditData?.items) return;
     const rows = auditData.items.map((log) => ({
       timestamp: format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss'),
-      user: log.user ? `${log.user.first_name} ${log.user.last_name}` : `User #${log.user_id}`,
+      user: log.user_name ?? `User #${log.user_id}`,
       action: log.action,
-      entity_type: log.resource_type,
-      entity_id: log.resource_id ?? '',
+      entity_type: log.entity_type,
+      entity_id: log.entity_id ?? '',
       ip_address: log.ip_address ?? '',
-      details: log.details ? JSON.stringify(log.details) : '',
+      old_values: log.old_values ?? '',
+      new_values: log.new_values ?? '',
     }));
 
     const headers = Object.keys(rows[0] ?? {});
@@ -283,7 +289,7 @@ export function AuditLogPage() {
                         onClick={() => toggleRow(log.id)}
                       >
                         <td className="px-4 py-3">
-                          {log.details ? (
+                          {(log.old_values || log.new_values || log.notes) ? (
                             isExpanded ? (
                               <ChevronUp className="h-4 w-4 text-gray-400" />
                             ) : (
@@ -295,30 +301,28 @@ export function AuditLogPage() {
                           {format(new Date(log.created_at), 'MMM d, yyyy h:mm:ss a')}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">
-                          {log.user
-                            ? `${log.user.first_name} ${log.user.last_name}`
-                            : `User #${log.user_id}`}
+                          {log.user_name ?? `User #${log.user_id}`}
                         </td>
                         <td className="px-4 py-3">
                           <ActionBadge action={log.action} />
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-700">
-                          {log.resource_type}
+                          {log.entity_type}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
-                          {log.resource_id ?? '--'}
+                          {log.entity_id ?? '--'}
                         </td>
                         <td className="px-4 py-3 text-sm text-gray-500">
                           {log.ip_address ?? '--'}
                         </td>
                       </tr>
-                      {isExpanded && log.details && (
+                      {isExpanded && (log.old_values || log.new_values || log.notes) && (
                         <tr key={`${log.id}-details`}>
                           <td colSpan={7} className="bg-gray-50 px-8 py-4">
                             <p className="text-xs font-semibold text-gray-500 uppercase mb-2">
                               Change Details
                             </p>
-                            <JsonDiff details={log.details} />
+                            <JsonDiff oldValues={log.old_values} newValues={log.new_values} notes={log.notes} />
                           </td>
                         </tr>
                       )}

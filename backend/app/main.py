@@ -95,6 +95,9 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS adp_employee_code VARCHAR(20)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE time_clocks ADD COLUMN IF NOT EXISTS auto_clockout_at TIMESTAMP"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS

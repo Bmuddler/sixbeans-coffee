@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import and_, func, select
@@ -46,6 +46,7 @@ def _to_response(entry: TimeClock, employee_name: str | None = None) -> TimeCloc
         id=entry.id, employee_id=entry.employee_id, location_id=entry.location_id,
         clock_in=entry.clock_in, clock_out=entry.clock_out,
         auto_clocked_out=entry.auto_clocked_out,
+        auto_clockout_at=entry.auto_clockout_at,
         is_unscheduled=getattr(entry, "is_unscheduled", False),
         total_hours=entry.total_hours,
         status=entry.status, notes=entry.notes,
@@ -166,6 +167,75 @@ async def list_entries(
         ],
         total=total, page=page, per_page=per_page,
     )
+
+
+@router.get("/my-summary")
+async def get_my_summary(
+    period_start: date = Query(...),
+    period_end: date = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current user's hours summary for a given period."""
+    from app.models.time_clock import BreakType
+    from app.utils.california_labor import DAILY_OVERTIME_THRESHOLD_HOURS, WEEKLY_OVERTIME_THRESHOLD_HOURS
+
+    result = await db.execute(
+        select(TimeClock)
+        .options(selectinload(TimeClock.breaks))
+        .where(
+            and_(
+                TimeClock.employee_id == current_user.id,
+                TimeClock.status == "clocked_out",
+                TimeClock.clock_in >= datetime.combine(period_start, datetime.min.time()),
+                TimeClock.clock_out <= datetime.combine(period_end + timedelta(days=1), datetime.min.time()),
+            )
+        )
+        .order_by(TimeClock.clock_in)
+    )
+    entries = result.unique().scalars().all()
+
+    total_hours = 0.0
+    overtime_hours = 0.0
+
+    # Group by date for daily OT
+    daily_hours: dict[date, float] = {}
+    for entry in entries:
+        day = entry.clock_in.date()
+        hours = entry.total_hours or 0.0
+        daily_hours[day] = daily_hours.get(day, 0.0) + hours
+        total_hours += hours
+
+    weekly_regular = 0.0
+    for day_total in daily_hours.values():
+        if day_total > DAILY_OVERTIME_THRESHOLD_HOURS:
+            daily_ot = day_total - DAILY_OVERTIME_THRESHOLD_HOURS
+            weekly_regular += DAILY_OVERTIME_THRESHOLD_HOURS
+        else:
+            daily_ot = 0.0
+            weekly_regular += day_total
+        overtime_hours += daily_ot
+
+    # Weekly overtime (over 40 not already counted as daily OT)
+    if weekly_regular > WEEKLY_OVERTIME_THRESHOLD_HOURS:
+        weekly_ot = weekly_regular - WEEKLY_OVERTIME_THRESHOLD_HOURS
+        overtime_hours += weekly_ot
+        regular_hours = WEEKLY_OVERTIME_THRESHOLD_HOURS
+    else:
+        regular_hours = weekly_regular
+
+    entry_responses = [
+        _to_response(e, f"{current_user.first_name} {current_user.last_name}")
+        for e in entries
+    ]
+
+    return {
+        "total_hours": round(total_hours, 2),
+        "regular_hours": round(regular_hours, 2),
+        "overtime_hours": round(overtime_hours, 2),
+        "total_shifts": len(entries),
+        "entries": entry_responses,
+    }
 
 
 @router.patch("/{entry_id}/adjust", response_model=TimeClockResponse)

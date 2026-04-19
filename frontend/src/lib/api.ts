@@ -158,6 +158,9 @@ export const schedules = {
 
   getAvailability: (params: { location_id: number; date: string }) =>
     api.get<User[]>('/schedules/availability', { params }).then((r) => r.data),
+
+  myShifts: () =>
+    api.get('/schedules/my-shifts').then((r) => r.data as ScheduledShift[]),
 };
 
 // ============================================================
@@ -195,6 +198,9 @@ export const timeClock = {
 
   adjustTime: (id: number, data: { clock_in?: string; clock_out?: string; notes?: string }) =>
     api.patch<TimeClock>(`/time-clock/${id}/adjust`, data).then((r) => r.data),
+
+  mySummary: (params: { period_start: string; period_end: string }) =>
+    api.get('/time-clock/my-summary', { params }).then((r) => r.data),
 };
 
 // ============================================================
@@ -440,8 +446,20 @@ export const kiosk = {
 // ============================================================
 
 export const audit = {
-  list: (params?: { user_id?: number; action?: string; resource_type?: string; page?: number; per_page?: number }) =>
-    api.get<PaginatedResponse<AuditLog>>('/audit', { params }).then((r) => r.data),
+  list: (params?: { user_id?: number; action?: string; entity_type?: string; page?: number; per_page?: number }) =>
+    api.get('/audit', { params }).then((r) => {
+      const data = r.data as any;
+      const items = data.items ?? [];
+      const total = data.total ?? 0;
+      const per_page = data.per_page ?? 25;
+      return {
+        items,
+        total,
+        page: data.page ?? 1,
+        per_page,
+        total_pages: Math.ceil(total / per_page),
+      } as PaginatedResponse<AuditLog>;
+    }),
 };
 
 // ============================================================

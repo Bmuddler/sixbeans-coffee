@@ -57,6 +57,7 @@ async def clock_in(
     shift = result.scalar_one_or_none()
 
     is_unscheduled = False
+    auto_clockout_at = None
     if shift:
         shift_start = datetime.combine(today, shift.start_time)
         minutes_before = (shift_start - now).total_seconds() / 60
@@ -64,6 +65,9 @@ async def clock_in(
             raise ValueError(
                 f"Cannot clock in more than {early_clockin_limit} minutes before shift start"
             )
+        # Calculate auto clock-out time: shift end + buffer
+        auto_clockout_minutes = sys_settings.auto_clockout_minutes if sys_settings else 0
+        auto_clockout_at = datetime.combine(today, shift.end_time) + timedelta(minutes=auto_clockout_minutes)
     else:
         is_unscheduled = True
 
@@ -73,6 +77,7 @@ async def clock_in(
         clock_in=now,
         status=ClockStatus.clocked_in,
         is_unscheduled=is_unscheduled,
+        auto_clockout_at=auto_clockout_at,
     )
     db.add(entry)
     await db.flush()
@@ -190,42 +195,26 @@ async def end_break(
 
 
 async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
-    """Auto clock-out employees whose shifts have ended. Run periodically."""
+    """Auto clock-out employees whose auto_clockout_at has passed. Run periodically."""
     now = datetime.utcnow()
-    today = now.date()
-
-    # Load auto-clockout buffer from system settings
-    settings_result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
-    sys_settings = settings_result.scalar_one_or_none()
-    auto_clockout_buffer = sys_settings.auto_clockout_minutes if sys_settings else 0
 
     result = await db.execute(
         select(TimeClock)
         .options(selectinload(TimeClock.breaks))
         .where(
-            TimeClock.status.in_([ClockStatus.clocked_in, ClockStatus.on_break])
+            and_(
+                TimeClock.status.in_([ClockStatus.clocked_in, ClockStatus.on_break]),
+                TimeClock.auto_clockout_at.isnot(None),
+                TimeClock.auto_clockout_at <= now,
+            )
         )
     )
     active_entries = result.scalars().all()
 
     clocked_out = []
     for entry in active_entries:
-        # Find corresponding shift
-        shift_result = await db.execute(
-            select(ScheduledShift).where(
-                and_(
-                    ScheduledShift.employee_id == entry.employee_id,
-                    ScheduledShift.location_id == entry.location_id,
-                    ScheduledShift.date == today,
-                )
-            )
-        )
-        shift = shift_result.scalar_one_or_none()
-        if shift:
-            shift_end = datetime.combine(today, shift.end_time) + timedelta(minutes=auto_clockout_buffer)
-            if now >= shift_end:
-                await clock_out(db, entry.employee_id, now=shift_end, auto=True)
-                clocked_out.append(entry)
+        await clock_out(db, entry.employee_id, now=entry.auto_clockout_at, auto=True)
+        clocked_out.append(entry)
 
     return clocked_out
 
