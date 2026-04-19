@@ -213,6 +213,16 @@ export function SupplyOrderPage() {
     onError: () => toast.error('Failed to delete order'),
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) => supplyOrders.updateStatus(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-orders'] });
+      setSelectedOrder(null);
+      toast.success('Order status updated');
+    },
+    onError: () => toast.error('Failed to update order status'),
+  });
+
   // ---- Derived ----
 
   const catalogItems: CatalogItem[] = useMemo(() => {
@@ -624,6 +634,7 @@ export function SupplyOrderPage() {
           onDeleteOrder={(id) => {
             if (confirm('Delete this order?')) deleteOrderMutation.mutate(id);
           }}
+          onUpdateStatus={(id, status) => updateStatusMutation.mutate({ id, status })}
         />
       ) : (
         /* Manage Catalog (owner only) */
@@ -1071,6 +1082,7 @@ function OrderHistoryView({
   onSelectOrder: (o: OrderRecord | null) => void;
   isOwner: boolean;
   onDeleteOrder: (id: number) => void;
+  onUpdateStatus: (id: number, status: string) => void;
 }) {
   const locationName = (id: number) => allLocations.find((l) => l.id === id)?.name ?? `Location ${id}`;
 
@@ -1170,13 +1182,32 @@ function OrderHistoryView({
             </div>
 
             {isOwner && (
-              <button
-                onClick={() => onDeleteOrder(selectedOrder.id)}
-                className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 mt-2"
-              >
-                <Trash2 className="h-4 w-4" />
-                Delete Order
-              </button>
+              <div className="flex items-center gap-2 pt-2 border-t flex-wrap">
+                {selectedOrder.status === 'pending' && (
+                  <Button
+                    size="sm"
+                    onClick={() => onUpdateStatus(selectedOrder.id, 'confirmed')}
+                  >
+                    Confirm Order
+                  </Button>
+                )}
+                {(selectedOrder.status === 'pending' || selectedOrder.status === 'confirmed') && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => onUpdateStatus(selectedOrder.id, 'delivered')}
+                  >
+                    Mark Delivered
+                  </Button>
+                )}
+                <button
+                  onClick={() => onDeleteOrder(selectedOrder.id)}
+                  className="flex items-center gap-1.5 text-sm text-red-500 hover:text-red-700 ml-auto"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Delete
+                </button>
+              </div>
             )}
           </div>
         )}
