@@ -59,8 +59,12 @@ async def send_message(
     if data.is_announcement and current_user.role == UserRole.employee:
         raise HTTPException(status_code=403, detail="Only managers/owners can send announcements")
 
-    if data.location_id is None and not data.is_direct and not data.recipient_ids and current_user.role != UserRole.owner:
-        raise HTTPException(status_code=403, detail="Only owners can send company-wide messages")
+    if data.location_id is None and not data.recipient_ids and current_user.role == UserRole.employee:
+        # Auto-assign employee's first location if none specified
+        if current_user.locations:
+            data.location_id = current_user.locations[0].id
+        else:
+            raise HTTPException(status_code=400, detail="Please select a recipient or location")
 
     msg = Message(
         sender_id=current_user.id,

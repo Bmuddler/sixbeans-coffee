@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.location import Location
-from app.models.user import User, UserRole
+from app.models.user import User, UserRole, user_locations
 from app.schemas.user import UserCreate, UserListResponse, UserResponse, UserUpdate
 from app.services.audit_service import log_action
 from app.services.auth_service import hash_password
@@ -24,7 +24,7 @@ async def list_users(
     location_id: int | None = None,
     role: UserRole | None = None,
     is_active: bool | None = None,
-    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(User).options(selectinload(User.locations))
@@ -36,8 +36,21 @@ async def list_users(
     if is_active is not None:
         query = query.where(User.is_active == is_active)
 
+    # Employees see coworkers at their locations + managers + owners
+    if current_user.role == UserRole.employee:
+        from sqlalchemy import or_
+        loc_ids = [loc.id for loc in current_user.locations]
+        if loc_ids:
+            query = query.where(
+                or_(
+                    User.id.in_(
+                        select(user_locations.c.user_id).where(user_locations.c.location_id.in_(loc_ids))
+                    ),
+                    User.role.in_([UserRole.owner, UserRole.manager]),
+                )
+            )
     # Manager can only see users at their locations
-    if current_user.role == UserRole.manager:
+    elif current_user.role == UserRole.manager:
         loc_ids = [loc.id for loc in current_user.locations]
         query = query.join(User.locations).where(Location.id.in_(loc_ids))
 
