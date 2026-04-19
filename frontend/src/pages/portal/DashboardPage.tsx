@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
@@ -13,15 +14,15 @@ import {
   CheckCircle2,
   XCircle,
   FileText,
-  ClipboardList,
   CreditCard,
   ShieldCheck,
+  Phone,
+  Coffee,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { EmptyState } from '@/components/ui/EmptyState';
 import {
   dashboard,
   locations as locationsApi,
@@ -34,6 +35,7 @@ import {
   messages as messagesApi,
 } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
+import { formatTime as formatTimeTz } from '@/lib/timezone';
 import { UserRole, type ScheduledShift, type LocationDashboardData } from '@/types';
 
 function ensureUtc(s: string) {
@@ -301,53 +303,137 @@ function EmployeeDashboard({ userId, locationId }: { userId: number; locationId:
 }
 
 // ============================================================
-// Manager Dashboard Section
+// Manager Dashboard Section (uses /dashboard/manager endpoint)
 // ============================================================
 
-function ManagerDashboard({ locationId }: { locationId: number }) {
-  const { data: locationData, isLoading } = useQuery({
-    queryKey: ['location-dashboard', locationId],
-    queryFn: () => dashboard.getLocationData(locationId),
+function ManagerDashboard({ locationId, isOwner }: { locationId: number; isOwner: boolean }) {
+  const queryClient = useQueryClient();
+
+  const { data: allLocations } = useQuery({
+    queryKey: ['all-locations'],
+    queryFn: locationsApi.list,
+    enabled: isOwner,
+  });
+
+  const [selectedLocationId, setSelectedLocationId] = useState<number>(locationId);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['manager-dashboard', selectedLocationId],
+    queryFn: () => dashboard.getManagerDashboard(selectedLocationId),
     refetchInterval: 30000,
+    enabled: selectedLocationId > 0,
   });
 
   const { data: pendingTimeOffData } = useQuery({
     queryKey: ['pending-time-off-manager'],
     queryFn: () => timeOff.list({ status: 'pending' as never }),
+    refetchInterval: 30000,
   });
 
   const { data: pendingSwapsData } = useQuery({
     queryKey: ['pending-swaps-manager'],
     queryFn: () => shiftSwaps.list({ status: 'pending' as never }),
+    refetchInterval: 30000,
   });
 
   const { data: pendingCoverageData } = useQuery({
     queryKey: ['pending-coverage-manager'],
     queryFn: () => shiftCoverage.list({ status: 'pending' as never }),
+    refetchInterval: 30000,
   });
 
-  if (isLoading) return null;
+  const reviewTimeOffMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'approved' | 'denied' }) =>
+      timeOff.review(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-time-off-manager'] });
+      queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
+    },
+  });
 
-  const pendingTimeOff = pendingTimeOffData?.items?.length ?? 0;
-  const pendingSwaps = pendingSwapsData?.items?.length ?? 0;
-  const pendingCoverage = pendingCoverageData?.items?.length ?? 0;
-  const totalPending = pendingTimeOff + pendingSwaps + pendingCoverage;
+  const reviewSwapMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'approved' | 'denied' }) =>
+      shiftSwaps.review(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-swaps-manager'] });
+      queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
+    },
+  });
+
+  const reviewCoverageMutation = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: 'approved' | 'denied' }) =>
+      shiftCoverage.review(id, { status }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['pending-coverage-manager'] });
+      queryClient.invalidateQueries({ queryKey: ['manager-dashboard'] });
+    },
+  });
+
+  const pendingTimeOffItems = pendingTimeOffData?.items ?? [];
+  const pendingSwapItems = pendingSwapsData?.items ?? [];
+  const pendingCoverageItems = pendingCoverageData?.items ?? [];
+
+  const [approvalTab, setApprovalTab] = useState<'timeoff' | 'swaps' | 'coverage'>('timeoff');
+
+  if (isLoading) {
+    return <LoadingSpinner className="py-12" label="Loading manager dashboard..." />;
+  }
+
+  if (isError) {
+    return (
+      <Card className="mb-6">
+        <div className="flex items-center gap-3 text-red-600">
+          <AlertCircle className="h-5 w-5" />
+          <p className="text-sm">Failed to load manager dashboard. Please try again.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  const todaySummary = data?.today_summary ?? {};
+  const workingNow = data?.working_now ?? [];
+  const onBreak = data?.on_break ?? [];
+  const lateEmployees = data?.late_employees ?? [];
+  const drawerData = data?.cash_drawer ?? null;
+  const overtimeAlerts = data?.overtime_alerts ?? [];
+  const availableToCall = data?.available_to_call ?? [];
 
   return (
     <div className="mb-6">
-      <h2 className="text-lg font-semibold text-gray-900 mb-4">Manager Overview</h2>
+      {/* Location Selector (owner only) */}
+      {isOwner && allLocations && allLocations.length > 1 && (
+        <div className="mb-6">
+          <label htmlFor="location-select" className="block text-sm font-medium text-gray-700 mb-1">
+            Location
+          </label>
+          <select
+            id="location-select"
+            value={selectedLocationId}
+            onChange={(e) => setSelectedLocationId(Number(e.target.value))}
+            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            {allLocations.map((loc) => (
+              <option key={loc.id} value={loc.id}>
+                {loc.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
-      {/* Staffing & Approvals */}
+      <h2 className="text-lg font-semibold text-gray-900 mb-4">Manager Dashboard</h2>
+
+      {/* Row 1: Summary Cards */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
         <Card>
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-blue-50 p-2.5">
-              <Users className="h-5 w-5 text-blue-600" />
+              <Calendar className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500">Today&apos;s Shifts</p>
+              <p className="text-xs text-gray-500">Scheduled Today</p>
               <p className="text-xl font-bold text-gray-900">
-                {locationData?.today_shifts?.length ?? 0}
+                {todaySummary.scheduled_count ?? 0}
               </p>
             </div>
           </div>
@@ -360,7 +446,7 @@ function ManagerDashboard({ locationId }: { locationId: number }) {
             <div>
               <p className="text-xs text-gray-500">Clocked In</p>
               <p className="text-xl font-bold text-gray-900">
-                {locationData?.clocked_in?.length ?? 0}
+                {todaySummary.clocked_in_count ?? 0}
               </p>
             </div>
           </div>
@@ -368,135 +454,411 @@ function ManagerDashboard({ locationId }: { locationId: number }) {
         <Card>
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-yellow-50 p-2.5">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
+              <Coffee className="h-5 w-5 text-yellow-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500">Pending Approvals</p>
-              <p className="text-xl font-bold text-gray-900">{totalPending}</p>
+              <p className="text-xs text-gray-500">On Break</p>
+              <p className="text-xl font-bold text-gray-900">
+                {todaySummary.on_break_count ?? 0}
+              </p>
             </div>
           </div>
         </Card>
         <Card>
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-purple-50 p-2.5">
-              <CreditCard className="h-5 w-5 text-purple-600" />
+              <TrendingUp className="h-5 w-5 text-purple-600" />
             </div>
             <div>
-              <p className="text-xs text-gray-500">Cash Drawer</p>
+              <p className="text-xs text-gray-500">Hours Today</p>
               <p className="text-xl font-bold text-gray-900">
-                {locationData?.open_drawer ? 'Open' : 'Closed'}
+                {typeof todaySummary.total_hours_today === 'number'
+                  ? todaySummary.total_hours_today.toFixed(1)
+                  : '0.0'}
               </p>
             </div>
           </div>
         </Card>
       </div>
 
-      {/* Approval Queue & Today's Staff */}
+      {/* Row 2: Who's Working Now + Cash Drawer */}
       <div className="grid gap-6 lg:grid-cols-2 mb-6">
-        <Card title="Approval Queue">
-          <div className="space-y-2">
-            <Link
-              to="/portal/time-off"
-              className="flex items-center justify-between rounded-lg p-3 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Calendar className="h-5 w-5 text-yellow-500" />
-                <span className="text-sm text-gray-700">Time Off Requests</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {pendingTimeOff > 0 && <Badge variant="pending">{pendingTimeOff}</Badge>}
-                <ArrowRight className="h-4 w-4 text-gray-400" />
-              </div>
-            </Link>
-            <Link
-              to="/portal/shift-swaps"
-              className="flex items-center justify-between rounded-lg p-3 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Users className="h-5 w-5 text-blue-500" />
-                <span className="text-sm text-gray-700">Shift Swaps</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {pendingSwaps > 0 && <Badge variant="pending">{pendingSwaps}</Badge>}
-                <ArrowRight className="h-4 w-4 text-gray-400" />
-              </div>
-            </Link>
-            <Link
-              to="/portal/shift-swaps"
-              className="flex items-center justify-between rounded-lg p-3 hover:bg-gray-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <ClipboardList className="h-5 w-5 text-indigo-500" />
-                <span className="text-sm text-gray-700">Coverage Requests</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {pendingCoverage > 0 && <Badge variant="pending">{pendingCoverage}</Badge>}
-                <ArrowRight className="h-4 w-4 text-gray-400" />
-              </div>
-            </Link>
+        <Card title="Who's Working Now">
+          <div className="space-y-3">
+            {/* Clocked In */}
+            {workingNow.length > 0 ? (
+              workingNow.map((emp: any) => (
+                <div key={emp.id ?? emp.user_id} className="flex items-center gap-3">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-green-500 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {emp.first_name ?? emp.name} {emp.last_name ?? ''}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      Since {emp.clock_in ? formatTimeTz(emp.clock_in) : 'N/A'}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-400">No one clocked in right now.</p>
+            )}
+
+            {/* On Break */}
+            {onBreak.length > 0 &&
+              onBreak.map((emp: any) => (
+                <div key={emp.id ?? emp.user_id} className="flex items-center gap-3">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-yellow-500 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {emp.first_name ?? emp.name} {emp.last_name ?? ''}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {emp.break_type ?? 'Break'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+            {/* Late / Not Clocked In */}
+            {lateEmployees.length > 0 &&
+              lateEmployees.map((emp: any) => (
+                <div key={emp.id ?? emp.user_id} className="flex items-center gap-3">
+                  <span className="flex h-2.5 w-2.5 rounded-full bg-red-500 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {emp.first_name ?? emp.name} {emp.last_name ?? ''}
+                    </p>
+                    <p className="text-xs text-red-600">
+                      {emp.minutes_late
+                        ? `${emp.minutes_late} min late`
+                        : emp.shift_time
+                          ? formatTimeTz(emp.shift_time)
+                          : 'Not clocked in'}
+                    </p>
+                  </div>
+                </div>
+              ))}
+
+            {workingNow.length === 0 && onBreak.length === 0 && lateEmployees.length === 0 && (
+              <p className="text-sm text-gray-400">No one scheduled right now.</p>
+            )}
           </div>
         </Card>
 
-        <Card title="Today's Staff">
-          {locationData?.today_shifts && locationData.today_shifts.length > 0 ? (
-            <ul className="divide-y divide-gray-100">
-              {locationData.today_shifts.slice(0, 6).map((shift) => (
-                <li key={shift.id} className="flex items-center justify-between py-2.5">
-                  <div>
-                    <p className="text-sm font-medium text-gray-900">
-                      {shift.user
-                        ? `${shift.user.first_name} ${shift.user.last_name}`
-                        : `Employee #${shift.user_id}`}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {formatTime(shift.start_time)} - {formatTime(shift.end_time)}
-                      {shift.role_label && ` (${shift.role_label})`}
-                    </p>
-                  </div>
-                  <Badge
-                    variant={
-                      shift.status === 'in_progress'
-                        ? 'approved'
-                        : shift.status === 'completed'
-                          ? 'info'
-                          : 'pending'
-                    }
-                  >
-                    {shift.status === 'in_progress' ? 'Active' : shift.status}
-                  </Badge>
-                </li>
-              ))}
-            </ul>
+        <Card title="Cash Drawer">
+          {drawerData && drawerData.is_open ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-green-500" />
+                <span className="text-sm font-medium text-green-700">Drawer Open</span>
+              </div>
+              <div className="space-y-1 text-sm text-gray-600">
+                <p>
+                  Opening amount:{' '}
+                  <span className="font-medium text-gray-900">
+                    ${(drawerData.opening_amount ?? drawerData.starting_cash ?? 0).toFixed(2)}
+                  </span>
+                </p>
+                {drawerData.expected_closing != null && (
+                  <p>
+                    Expected:{' '}
+                    <span className="font-medium text-gray-900">
+                      ${drawerData.expected_closing.toFixed(2)}
+                    </span>
+                  </p>
+                )}
+                <p>
+                  Opened by:{' '}
+                  <span className="font-medium text-gray-900">
+                    {drawerData.opened_by_name ?? 'Unknown'}
+                  </span>
+                </p>
+                {(drawerData.expenses_total != null && drawerData.expenses_total > 0) && (
+                  <p>
+                    Expenses:{' '}
+                    <span className="font-medium text-red-600">
+                      ${drawerData.expenses_total.toFixed(2)}
+                    </span>
+                  </p>
+                )}
+              </div>
+              <Link to="/portal/cash-drawer">
+                <Button variant="ghost" size="sm">
+                  Manage <ArrowRight className="h-3 w-3" />
+                </Button>
+              </Link>
+            </div>
           ) : (
-            <p className="text-sm text-gray-500">No shifts scheduled for today.</p>
+            <div className="flex flex-col items-center justify-center py-6 text-gray-400">
+              <CreditCard className="h-8 w-8 mb-2" />
+              <p className="text-sm">No drawer open</p>
+            </div>
           )}
         </Card>
       </div>
 
-      {/* Cash Drawer Status */}
-      {locationData?.open_drawer && (
-        <Card title="Cash Drawer Status">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500">
-                Opened by{' '}
-                {locationData.open_drawer.opener
-                  ? `${locationData.open_drawer.opener.first_name} ${locationData.open_drawer.opener.last_name}`
-                  : 'Unknown'}{' '}
-                at {formatTime(locationData.open_drawer.open_time)}
-              </p>
-              <p className="text-sm text-gray-500">
-                Starting cash: ${locationData.open_drawer.starting_cash.toFixed(2)}
-              </p>
+      {/* Row 3: Overtime Alerts + Available to Call */}
+      <div className="grid gap-6 lg:grid-cols-2 mb-6">
+        <Card title="Overtime Alerts">
+          {overtimeAlerts.length > 0 ? (
+            <ul className="divide-y divide-gray-100">
+              {overtimeAlerts.map((alert: any) => (
+                <li key={alert.id ?? alert.user_id} className="flex items-center justify-between py-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">
+                      {alert.first_name ?? alert.name} {alert.last_name ?? ''}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {typeof alert.hours_this_week === 'number'
+                        ? `${alert.hours_this_week.toFixed(1)}h this week`
+                        : ''}
+                    </p>
+                  </div>
+                  <span
+                    className={`text-sm font-semibold ${
+                      (alert.projected_total ?? alert.hours_this_week ?? 0) > 40
+                        ? 'text-red-600'
+                        : 'text-yellow-600'
+                    }`}
+                  >
+                    {typeof alert.projected_total === 'number'
+                      ? `${alert.projected_total.toFixed(1)}h projected`
+                      : typeof alert.hours_this_week === 'number'
+                        ? `${alert.hours_this_week.toFixed(1)}h`
+                        : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex items-center gap-2 py-4 text-sm text-green-600">
+              <CheckCircle2 className="h-5 w-5" />
+              No overtime concerns this week
             </div>
-            <Link to="/portal/cash-drawer">
-              <Button variant="ghost" size="sm">
-                Manage <ArrowRight className="h-3 w-3" />
-              </Button>
-            </Link>
-          </div>
+          )}
         </Card>
-      )}
+
+        <Card title="Available to Call">
+          {availableToCall.length > 0 ? (
+            <ul className="divide-y divide-gray-100">
+              {availableToCall.map((emp: any) => (
+                <li key={emp.id ?? emp.user_id} className="flex items-center justify-between py-3">
+                  <p className="text-sm font-medium text-gray-900">
+                    {emp.first_name ?? emp.name} {emp.last_name ?? ''}
+                  </p>
+                  {emp.phone ? (
+                    <a
+                      href={`tel:${emp.phone}`}
+                      className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      {emp.phone}
+                    </a>
+                  ) : (
+                    <span className="text-xs text-gray-400">No phone</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="flex items-center gap-2 py-4 text-sm text-gray-500">
+              <Users className="h-5 w-5" />
+              Everyone is scheduled or off today
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Row 4: Pending Approvals */}
+      <Card title="Pending Approvals" className="mb-6">
+        {/* Tab buttons */}
+        <div className="flex gap-2 mb-4">
+          <button
+            onClick={() => setApprovalTab('timeoff')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              approvalTab === 'timeoff'
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Time Off
+            {pendingTimeOffItems.length > 0 && (
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-xs">
+                {pendingTimeOffItems.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setApprovalTab('swaps')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              approvalTab === 'swaps'
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Shift Swaps
+            {pendingSwapItems.length > 0 && (
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-xs">
+                {pendingSwapItems.length}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setApprovalTab('coverage')}
+            className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+              approvalTab === 'coverage'
+                ? 'bg-primary text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Coverage
+            {pendingCoverageItems.length > 0 && (
+              <span className="ml-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-white/20 text-xs">
+                {pendingCoverageItems.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Time Off tab */}
+        {approvalTab === 'timeoff' && (
+          <div>
+            {pendingTimeOffItems.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {pendingTimeOffItems.map((req: any) => (
+                  <li key={req.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {req.user
+                          ? `${req.user.first_name} ${req.user.last_name}`
+                          : req.employee_name ?? `Employee #${req.user_id ?? req.employee_id}`}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {req.start_date} - {req.end_date}
+                        {req.reason && ` - ${req.reason}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={reviewTimeOffMutation.isPending}
+                        onClick={() => reviewTimeOffMutation.mutate({ id: req.id, status: 'approved' })}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={reviewTimeOffMutation.isPending}
+                        onClick={() => reviewTimeOffMutation.mutate({ id: req.id, status: 'denied' })}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400 py-2">No pending time off requests.</p>
+            )}
+          </div>
+        )}
+
+        {/* Shift Swaps tab */}
+        {approvalTab === 'swaps' && (
+          <div>
+            {pendingSwapItems.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {pendingSwapItems.map((swap: any) => (
+                  <li key={swap.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {swap.requester
+                          ? `${swap.requester.first_name} ${swap.requester.last_name}`
+                          : `Employee #${swap.requester_id}`}
+                        {' <> '}
+                        {swap.target
+                          ? `${swap.target.first_name} ${swap.target.last_name}`
+                          : `Employee #${swap.target_id}`}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {swap.requesting_shift?.date ?? swap.date ?? ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={reviewSwapMutation.isPending}
+                        onClick={() => reviewSwapMutation.mutate({ id: swap.id, status: 'approved' })}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={reviewSwapMutation.isPending}
+                        onClick={() => reviewSwapMutation.mutate({ id: swap.id, status: 'denied' })}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400 py-2">No pending shift swaps.</p>
+            )}
+          </div>
+        )}
+
+        {/* Coverage tab */}
+        {approvalTab === 'coverage' && (
+          <div>
+            {pendingCoverageItems.length > 0 ? (
+              <ul className="divide-y divide-gray-100">
+                {pendingCoverageItems.map((cov: any) => (
+                  <li key={cov.id} className="flex items-center justify-between py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">
+                        {cov.requester
+                          ? `${cov.requester.first_name} ${cov.requester.last_name}`
+                          : cov.employee_name ?? `Employee #${cov.requester_id ?? cov.user_id}`}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {cov.shift?.date ?? cov.date ?? ''}
+                        {cov.notes && ` - ${cov.notes}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        loading={reviewCoverageMutation.isPending}
+                        onClick={() => reviewCoverageMutation.mutate({ id: cov.id, status: 'approved' })}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="sm"
+                        loading={reviewCoverageMutation.isPending}
+                        onClick={() => reviewCoverageMutation.mutate({ id: cov.id, status: 'denied' })}
+                      >
+                        <XCircle className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-400 py-2">No pending coverage requests.</p>
+            )}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
@@ -958,9 +1320,9 @@ function ManagerOwnerDashboardPage({
       {/* Owner-specific sections */}
       {isOwner && <OwnerDashboard />}
 
-      {/* Manager-specific sections */}
-      {isManager && !isOwner && (
-        <ManagerDashboard locationId={locationId} />
+      {/* Manager dashboard (for both managers and owners) */}
+      {isManager && (
+        <ManagerDashboard locationId={locationId} isOwner={isOwner} />
       )}
 
       {/* Employee sections (shown for all roles) */}

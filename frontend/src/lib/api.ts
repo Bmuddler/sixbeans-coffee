@@ -406,6 +406,9 @@ export const dashboard = {
 
   getLocationData: (locationId: number) =>
     api.get<LocationDashboardData>(`/dashboard/location/${locationId}`).then((r) => r.data),
+
+  getManagerDashboard: (locationId: number) =>
+    api.get(`/dashboard/manager`, { params: { location_id: locationId } }).then((r) => r.data),
 };
 
 // ============================================================
