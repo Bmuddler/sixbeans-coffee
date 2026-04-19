@@ -538,4 +538,25 @@ export const applications = {
     api.post('/applications/', data).then((r) => r.data),
 };
 
+// ============================================================
+// Supply Orders
+// ============================================================
+
+export const supplyOrders = {
+  getCatalog: () =>
+    api.get('/supply-orders/catalog').then((r) => r.data),
+
+  submitOrder: (data: { location_id: number; notes?: string; items: { supply_item_id: number; quantity: number }[] }) =>
+    api.post('/supply-orders/orders', data).then((r) => r.data),
+
+  getOrders: () =>
+    api.get('/supply-orders/orders').then((r) => r.data as any[]),
+
+  getOrder: (id: number) =>
+    api.get(`/supply-orders/orders/${id}`).then((r) => r.data),
+
+  updateStatus: (id: number, status: string) =>
+    api.patch(`/supply-orders/orders/${id}/status`, { status }).then((r) => r.data),
+};
+
 export default api;

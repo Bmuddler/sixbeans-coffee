@@ -30,6 +30,7 @@ import { EmployeesPage } from '@/pages/portal/EmployeesPage';
 import { LocationsPage } from '@/pages/portal/LocationsPage';
 import { AuditLogPage } from '@/pages/portal/AuditLogPage';
 import { SettingsPage } from '@/pages/portal/SettingsPage';
+import { SupplyOrderPage } from '@/pages/portal/SupplyOrderPage';
 
 export function App() {
   return (
@@ -98,6 +99,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
               <AuditLogPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/supply-orders"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.MANAGER, UserRole.OWNER]}>
+              <SupplyOrderPage />
             </ProtectedRoute>
           }
         />
