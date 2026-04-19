@@ -137,28 +137,41 @@ export function LandingPage() {
               </div>
               <div className="hidden lg:flex items-center justify-center">
                 <div className="relative">
-                  <img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/2b/5a/3e/2b5a3e3f-7987-06b8-ad58-58e9e3c5c7e3/AppIcon-0-0-1x_U007emarketing-0-7-0-85-220.png/460x0w.webp" alt="Six Beans App" className="w-28 h-28 rounded-3xl shadow-2xl mx-auto mb-6" />
-                  <div className="w-64 h-[420px] rounded-[3rem] border-[8px] border-white/20 bg-white/10 backdrop-blur-sm overflow-hidden">
-                    <div className="bg-white/95 m-2 rounded-[2.2rem] h-[calc(100%-16px)] flex flex-col items-center justify-center px-6">
-                      <img src="/logo.png" alt="Six Beans" className="h-16 w-auto rounded-lg mb-4" />
-                      <p className="text-lg font-bold text-center" style={{ color: '#4A3428' }}>Order Ahead</p>
-                      <p className="text-xs text-gray-500 text-center mt-1">Earn rewards with every sip</p>
-                      <div className="mt-6 w-full space-y-2">
-                        <div className="rounded-xl p-3 flex items-center gap-3" style={{ backgroundColor: '#F5F0E8' }}>
-                          <Coffee className="h-5 w-5" style={{ color: '#5CB832' }} />
-                          <div><p className="text-xs font-bold" style={{ color: '#4A3428' }}>Iced Caramel Latte</p><p className="text-[10px] text-gray-500">Grande · Extra shot</p></div>
-                        </div>
-                        <div className="rounded-xl p-3 flex items-center gap-3" style={{ backgroundColor: '#F5F0E8' }}>
-                          <Coffee className="h-5 w-5" style={{ color: '#5CB832' }} />
-                          <div><p className="text-xs font-bold" style={{ color: '#4A3428' }}>Mocha Frappe</p><p className="text-[10px] text-gray-500">Grande · Whip</p></div>
-                        </div>
+                  <div className="w-72 rounded-[2.5rem] border-[6px] border-white/20 bg-white shadow-2xl overflow-hidden">
+                    <div className="px-6 pt-8 pb-4 text-center" style={{ backgroundColor: '#4A3428' }}>
+                      <img src="/logo.png" alt="Six Beans" className="h-14 w-auto mx-auto mb-3" />
+                      <p className="text-white text-sm font-bold">Order Ahead</p>
+                      <p className="text-white/60 text-xs">Skip the line, earn rewards</p>
+                    </div>
+                    <div className="p-4 space-y-3">
+                      <div className="rounded-xl p-3 flex items-center gap-3 border border-gray-100 hover:shadow-sm transition-shadow">
+                        <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#F5F0E8' }}><Coffee className="h-5 w-5" style={{ color: '#5CB832' }} /></div>
+                        <div className="flex-1"><p className="text-sm font-bold" style={{ color: '#4A3428' }}>Iced Caramel Latte</p><p className="text-[11px] text-gray-400">Grande · Extra shot</p></div>
+                        <p className="text-sm font-bold" style={{ color: '#5CB832' }}>$6.50</p>
                       </div>
+                      <div className="rounded-xl p-3 flex items-center gap-3 border border-gray-100 hover:shadow-sm transition-shadow">
+                        <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#F5F0E8' }}><Coffee className="h-5 w-5" style={{ color: '#5CB832' }} /></div>
+                        <div className="flex-1"><p className="text-sm font-bold" style={{ color: '#4A3428' }}>Mocha Frappe</p><p className="text-[11px] text-gray-400">Grande · Whip cream</p></div>
+                        <p className="text-sm font-bold" style={{ color: '#5CB832' }}>$7.25</p>
+                      </div>
+                      <div className="rounded-xl p-3 flex items-center gap-3 border border-gray-100 hover:shadow-sm transition-shadow">
+                        <div className="h-10 w-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: '#F5F0E8' }}><Coffee className="h-5 w-5" style={{ color: '#5CB832' }} /></div>
+                        <div className="flex-1"><p className="text-sm font-bold" style={{ color: '#4A3428' }}>Cold Brew</p><p className="text-[11px] text-gray-400">Large · Vanilla sweet cream</p></div>
+                        <p className="text-sm font-bold" style={{ color: '#5CB832' }}>$5.75</p>
+                      </div>
+                      <button className="w-full rounded-full py-2.5 text-sm font-bold text-white" style={{ backgroundColor: '#5CB832' }}>
+                        Add to Order
+                      </button>
+                    </div>
+                    <div className="px-6 py-3 border-t border-gray-100 flex items-center justify-between">
+                      <div className="flex items-center gap-1.5"><Star className="h-4 w-4 text-yellow-500" /><span className="text-xs font-bold" style={{ color: '#4A3428' }}>125 pts</span></div>
+                      <span className="text-[10px] text-gray-400">Free drink at 200!</span>
                     </div>
                   </div>
-                  <div className="absolute -top-2 -right-6 bg-white rounded-2xl shadow-xl p-3 animate-bounce">
-                    <div className="flex items-center gap-2">
-                      <Star className="h-5 w-5 text-yellow-500" />
-                      <span className="text-sm font-bold" style={{ color: '#4A3428' }}>+25 pts</span>
+                  <div className="absolute -top-3 -right-4 bg-white rounded-2xl shadow-xl p-2.5 animate-bounce">
+                    <div className="flex items-center gap-1.5">
+                      <Star className="h-4 w-4 text-yellow-500" />
+                      <span className="text-xs font-bold" style={{ color: '#4A3428' }}>+25 pts</span>
                     </div>
                   </div>
                 </div>
