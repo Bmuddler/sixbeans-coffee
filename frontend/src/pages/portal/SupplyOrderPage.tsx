@@ -252,6 +252,12 @@ export function SupplyOrderPage() {
     return locs.map((l) => ({ value: l.id, label: l.name }));
   }, [allLocations, user?.location_ids]);
 
+  useEffect(() => {
+    if (!locationId && locationOptions.length > 0) {
+      setLocationId(locationOptions[0].value);
+    }
+  }, [locationId, locationOptions]);
+
   // ---- Handlers ----
 
   const toggleCheck = useCallback((item: CatalogItem) => {
