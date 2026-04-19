@@ -43,7 +43,7 @@ export function LandingPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <a href="#" className="flex items-center gap-2">
-              <img src="/logo.png" alt="Six Beans Coffee Co." className="h-12 w-auto" />
+              <img src="/logo.png" alt="Six Beans Coffee Co." className="h-12 w-auto rounded-lg" style={{ mixBlendMode: 'multiply' }} />
             </a>
             <div className="hidden md:flex items-center gap-8">
               <a href="#order" className="text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors">Order Ahead</a>
@@ -145,7 +145,7 @@ export function LandingPage() {
                 <div className="relative">
                   <div className="w-64 h-[500px] rounded-[3rem] border-[8px] border-white/20 bg-white/10 backdrop-blur-sm flex items-center justify-center">
                     <div className="text-center text-white/60">
-                      <img src="/logo.png" alt="Six Beans" className="h-16 w-auto mx-auto mb-4 brightness-0 invert opacity-80" />
+                      <img src="/logo.png" alt="Six Beans" className="h-16 w-auto mx-auto mb-4 rounded-lg opacity-90" />
                       <p className="text-sm font-medium">Order Ahead</p>
                       <p className="text-xs mt-1 opacity-60">Earn Rewards</p>
                     </div>
@@ -336,7 +336,7 @@ export function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
             <div>
               <div className="mb-4">
-                <img src="/logo.png" alt="Six Beans Coffee Co." className="h-14 w-auto brightness-0 invert" />
+                <img src="/logo.png" alt="Six Beans Coffee Co." className="h-14 w-auto rounded-lg" />
               </div>
               <p className="text-sm text-gray-400 leading-relaxed">Extraordinarily good coffee served across 6 locations in California's High Desert.</p>
               <div className="flex gap-4 mt-6">

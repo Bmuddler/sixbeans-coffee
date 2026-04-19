@@ -98,7 +98,7 @@ export function PortalLayout() {
     <>
       {/* Logo */}
       <div className="flex items-center justify-center px-4 py-4 border-b border-primary-600">
-        <img src="/logo.png" alt="Six Beans" className="h-10 w-auto brightness-0 invert" />
+        <img src="/logo.png" alt="Six Beans" className="h-10 w-auto rounded" />
       </div>
 
       {/* User Info */}
