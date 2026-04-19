@@ -75,6 +75,7 @@ SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley (Yucca Loma)", "address": "13730 Apple Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92307", "phone": "(442) 292-2185"},
     {"name": "Six Beans - Victorville (7th St)", "address": "14213 7th St", "city": "Victorville", "state": "CA", "zip_code": "92395", "phone": "(442) 229-2222"},
     {"name": "Six Beans - Warehouse", "address": "", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": ""},
+    {"name": "Six Beans - Bakery", "address": "", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": ""},
 ]
 
 
@@ -127,11 +128,32 @@ async def startup():
             logger.info("Locations synced.")
 
         # Set owners to not require password change
-        from app.models.user import UserRole
+        from app.models.user import UserRole, user_locations
         await session.execute(
             text("UPDATE users SET must_change_password = FALSE WHERE role = 'owner'")
         )
         await session.commit()
+
+        # Assign Adelia to Bakery location
+        adelia = (await session.execute(
+            select(User).where(User.email == "adeliasarah@gmail.com")
+        )).scalar_one_or_none()
+        bakery_loc = (await session.execute(
+            select(Location).where(Location.name == "Six Beans - Bakery")
+        )).scalar_one_or_none()
+        if adelia and bakery_loc:
+            existing = (await session.execute(
+                select(user_locations).where(
+                    user_locations.c.user_id == adelia.id,
+                    user_locations.c.location_id == bakery_loc.id,
+                )
+            )).first()
+            if not existing:
+                await session.execute(
+                    user_locations.insert().values(user_id=adelia.id, location_id=bakery_loc.id)
+                )
+                await session.commit()
+                logger.info("Adelia assigned to Bakery location.")
 
         # Seed default SystemSettings if none exists
         settings_result = await session.execute(select(SystemSettings).where(SystemSettings.id == 1))
