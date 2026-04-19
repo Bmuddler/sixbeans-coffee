@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   Users,
@@ -75,7 +75,6 @@ const today = new Date().toISOString().split('T')[0];
 // ============================================================
 
 function EmployeeDashboard({ userId, locationId }: { userId: number; locationId: number }) {
-  const queryClient = useQueryClient();
   const week = getWeekRange();
 
   const { data: myShifts, isLoading: shiftsLoading } = useQuery({
@@ -115,16 +114,6 @@ function EmployeeDashboard({ userId, locationId }: { userId: number; locationId:
   });
 
   const activeClock = clockRecords?.items?.find((c) => !c.clock_out);
-
-  const clockInMutation = useMutation({
-    mutationFn: () => timeClock.clockIn({ location_id: locationId }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-clock'] }),
-  });
-
-  const clockOutMutation = useMutation({
-    mutationFn: (id: number) => timeClock.clockOut(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['my-clock'] }),
-  });
 
   const todayShifts = myShifts?.filter((s) => s.date === today) ?? [];
   const upcomingShifts = myShifts?.filter((s) => s.date > today).slice(0, 5) ?? [];
@@ -170,34 +159,16 @@ function EmployeeDashboard({ userId, locationId }: { userId: number; locationId:
         <Card title="Time Clock">
           <div className="flex flex-col items-center py-4">
             {activeClock ? (
-              <>
-                <div className="mb-3 text-center">
-                  <p className="text-sm text-gray-500">Clocked in since</p>
-                  <p className="text-lg font-semibold text-green-700">
-                    {formatTime(activeClock.clock_in)}
-                  </p>
-                </div>
-                <Button
-                  variant="danger"
-                  icon={<Clock className="h-4 w-4" />}
-                  loading={clockOutMutation.isPending}
-                  onClick={() => clockOutMutation.mutate(activeClock.id)}
-                >
-                  Clock Out
-                </Button>
-              </>
+              <div className="mb-3 text-center">
+                <p className="text-sm text-gray-500">Clocked in since</p>
+                <p className="text-lg font-semibold text-green-700">
+                  {formatTime(activeClock.clock_in)}
+                </p>
+              </div>
             ) : (
-              <>
-                <p className="mb-3 text-sm text-gray-500">You are not clocked in.</p>
-                <Button
-                  icon={<Clock className="h-4 w-4" />}
-                  loading={clockInMutation.isPending}
-                  onClick={() => clockInMutation.mutate()}
-                >
-                  Clock In
-                </Button>
-              </>
+              <p className="mb-3 text-sm text-gray-500">You are not clocked in.</p>
             )}
+            <p className="text-xs text-gray-400">Use the kiosk at your store to clock in and out.</p>
           </div>
         </Card>
       </div>
@@ -1226,7 +1197,7 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
       {/* Quick Actions */}
       <Card title="Quick Actions" className="mb-6">
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <Link to="/portal/time-clock" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Clock className="h-4 w-4" />Clock In</Link>
+          <Link to="/portal/time-clock" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Clock className="h-4 w-4" />My Hours</Link>
           <Link to="/portal/schedule" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Calendar className="h-4 w-4" />View Schedule</Link>
           <Link to="/portal/time-off" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><FileText className="h-4 w-4" />Request Time Off</Link>
           <Link to="/portal/messages" className="flex items-center gap-2 rounded-lg border border-gray-100 p-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"><Bell className="h-4 w-4" />Messages</Link>

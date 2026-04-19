@@ -2,11 +2,6 @@ import { useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Clock,
-  LogIn,
-  LogOut,
-  Coffee,
-  Pause,
-  Play,
   Edit3,
   Users,
   BarChart3,
@@ -134,47 +129,6 @@ export function TimeClockPage() {
     const shiftCount = weeklyRecords.items.filter((r) => r.clock_out).length;
     return { totalHours, regularHours, overtimeHours, shiftCount };
   }, [weeklyRecords]);
-
-  // Mutations
-  const clockInMutation = useMutation({
-    mutationFn: () =>
-      timeClock.clockIn({ location_id: currentUser!.primary_location_id }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
-      queryClient.invalidateQueries({ queryKey: ['weeklyTimeClock'] });
-      toast.success('Clocked in!');
-    },
-    onError: () => toast.error('Failed to clock in'),
-  });
-
-  const clockOutMutation = useMutation({
-    mutationFn: () => timeClock.clockOut(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
-      queryClient.invalidateQueries({ queryKey: ['weeklyTimeClock'] });
-      toast.success('Clocked out!');
-    },
-    onError: () => toast.error('Failed to clock out'),
-  });
-
-  const startBreakMutation = useMutation({
-    mutationFn: (breakType: string) =>
-      timeClock.startBreak({ break_type: breakType }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
-      toast.success('Break started');
-    },
-    onError: () => toast.error('Failed to start break'),
-  });
-
-  const endBreakMutation = useMutation({
-    mutationFn: () => timeClock.endBreak(),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['myTimeClock'] });
-      toast.success('Break ended');
-    },
-    onError: () => toast.error('Failed to end break'),
-  });
 
   const adjustMutation = useMutation({
     mutationFn: () =>
@@ -324,60 +278,7 @@ export function TimeClockPage() {
                 )}
               </div>
               <div className="flex flex-col sm:flex-row gap-3">
-                {!activeClock ? (
-                  <Button
-                    size="lg"
-                    icon={<LogIn className="h-5 w-5" />}
-                    onClick={() => clockInMutation.mutate()}
-                    loading={clockInMutation.isPending}
-                  >
-                    Clock In
-                  </Button>
-                ) : (
-                  <>
-                    {activeBreak ? (
-                      <Button
-                        size="lg"
-                        variant="secondary"
-                        icon={<Play className="h-5 w-5" />}
-                        onClick={() => endBreakMutation.mutate()}
-                        loading={endBreakMutation.isPending}
-                      >
-                        End Break
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          size="lg"
-                          variant="secondary"
-                          icon={<Coffee className="h-5 w-5" />}
-                          onClick={() => startBreakMutation.mutate('paid')}
-                          loading={startBreakMutation.isPending}
-                        >
-                          10 min Break
-                        </Button>
-                        <Button
-                          size="lg"
-                          variant="secondary"
-                          icon={<Pause className="h-5 w-5" />}
-                          onClick={() => startBreakMutation.mutate('unpaid')}
-                          loading={startBreakMutation.isPending}
-                        >
-                          30 min Break
-                        </Button>
-                      </>
-                    )}
-                    <Button
-                      size="lg"
-                      variant="danger"
-                      icon={<LogOut className="h-5 w-5" />}
-                      onClick={() => clockOutMutation.mutate()}
-                      loading={clockOutMutation.isPending}
-                    >
-                      Clock Out
-                    </Button>
-                  </>
-                )}
+                <p className="text-sm text-gray-500">Use the kiosk at your store to clock in and out.</p>
               </div>
             </div>
           </Card>

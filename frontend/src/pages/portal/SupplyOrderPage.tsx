@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
-import { ShoppingCart, X, Minus, Plus, Trash2, Package, History, ChevronRight } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ShoppingCart, X, Minus, Plus, Trash2, Package, History, ChevronRight, Edit3, Copy, PlusCircle, Settings } from 'lucide-react';
 import { clsx } from 'clsx';
 import { toast } from 'react-hot-toast';
 import { useAuthStore } from '@/stores/authStore';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { Badge } from '@/components/ui/Badge';
 import { Select } from '@/components/ui/Select';
+import { Input } from '@/components/ui/Input';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 // ============================================================
@@ -48,20 +49,7 @@ interface OrderRecord {
 // Constants
 // ============================================================
 
-const CATEGORIES = [
-  'Food and Milks',
-  'Frappe Powders',
-  'Syrups and Sauces',
-  'Sweeteners and Extracts',
-  'Cups and Lids',
-  'Coffee and Teas',
-  'Merchandise',
-  'Seasonal',
-  'Bakery Only',
-  'Coins and Cash',
-  'Cleaning Supplies',
-  'Disposables',
-];
+// Categories are derived dynamically from the catalog response
 
 const CART_STORAGE_KEY = 'sixbeans_supply_cart';
 
@@ -102,12 +90,14 @@ function statusBadgeVariant(status: string): 'pending' | 'approved' | 'denied' |
 
 export function SupplyOrderPage() {
   const { user } = useAuthStore();
+  const queryClient = useQueryClient();
+  const isOwner = user?.role === 'owner';
 
   // View toggle
-  const [view, setView] = useState<'order' | 'history'>('order');
+  const [view, setView] = useState<'order' | 'history' | 'manage'>('order');
 
   // Category
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0]);
+  const [activeCategory, setActiveCategory] = useState<string>('');
 
   // Selection state: which items are checked and their quantities
   const [checked, setChecked] = useState<Record<number, boolean>>({});
@@ -128,6 +118,12 @@ export function SupplyOrderPage() {
 
   // Order detail
   const [selectedOrder, setSelectedOrder] = useState<OrderRecord | null>(null);
+
+  // Catalog management (owner only)
+  const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [itemForm, setItemForm] = useState({ name: '', category: '', description: '', price: '' });
+  const [manageCategory, setManageCategory] = useState<string>('');
 
   // Persist cart
   useEffect(() => {
@@ -167,12 +163,78 @@ export function SupplyOrderPage() {
     },
   });
 
+  // Catalog CRUD mutations (owner)
+  const createItemMutation = useMutation({
+    mutationFn: supplyOrders.createCatalogItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
+      setShowAddItem(false);
+      setItemForm({ name: '', category: '', description: '', price: '' });
+      toast.success('Item added');
+    },
+    onError: () => toast.error('Failed to add item'),
+  });
+
+  const updateItemMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => supplyOrders.updateCatalogItem(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
+      setEditingItem(null);
+      toast.success('Item updated');
+    },
+    onError: () => toast.error('Failed to update item'),
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: supplyOrders.deleteCatalogItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
+      toast.success('Item removed');
+    },
+    onError: () => toast.error('Failed to remove item'),
+  });
+
+  const copyItemMutation = useMutation({
+    mutationFn: supplyOrders.copyCatalogItem,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
+      toast.success('Item copied');
+    },
+    onError: () => toast.error('Failed to copy item'),
+  });
+
   // ---- Derived ----
 
   const catalogItems: CatalogItem[] = useMemo(() => {
     if (!catalog) return [];
-    return Array.isArray(catalog) ? catalog : (catalog as any).items ?? [];
+    if (Array.isArray(catalog)) return catalog;
+    const cats = (catalog as any).categories;
+    if (Array.isArray(cats)) {
+      return cats.flatMap((cat: any) =>
+        (cat.items ?? []).map((item: any) => ({ ...item, category: cat.name }))
+      );
+    }
+    return [];
   }, [catalog]);
+
+  const categories = useMemo(() => {
+    const unique = [...new Set(catalogItems.map((item) => item.category))];
+    return unique.sort();
+  }, [catalogItems]);
+
+  useEffect(() => {
+    if (categories.length > 0 && !activeCategory) {
+      setActiveCategory(categories[0]);
+    }
+    if (categories.length > 0 && !manageCategory) {
+      setManageCategory(categories[0]);
+    }
+  }, [categories, activeCategory, manageCategory]);
+
+  const manageCategoryItems = useMemo(
+    () => catalogItems.filter((item) => !manageCategory || item.category === manageCategory),
+    [catalogItems, manageCategory],
+  );
 
   const categoryItems = useMemo(
     () => catalogItems.filter((item) => item.category === activeCategory),
@@ -350,6 +412,20 @@ export function SupplyOrderPage() {
               <History className="h-4 w-4" />
               Order History
             </button>
+            {isOwner && (
+              <button
+                onClick={() => setView('manage')}
+                className={clsx(
+                  'flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium transition-colors',
+                  view === 'manage'
+                    ? 'bg-[#5CB832] text-white'
+                    : 'bg-white text-gray-600 hover:bg-gray-50',
+                )}
+              >
+                <Settings className="h-4 w-4" />
+                Manage Catalog
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -361,7 +437,7 @@ export function SupplyOrderPage() {
             {/* Category tabs */}
             <div className="mb-4 -mx-1 overflow-x-auto scrollbar-thin">
               <div className="flex gap-1 px-1 pb-1">
-                {CATEGORIES.map((cat) => (
+                {categories.map((cat) => (
                   <button
                     key={cat}
                     onClick={() => {
@@ -520,7 +596,7 @@ export function SupplyOrderPage() {
             </div>
           )}
         </div>
-      ) : (
+      ) : view === 'history' ? (
         /* Order History */
         <OrderHistoryView
           orders={orders ?? []}
@@ -529,6 +605,221 @@ export function SupplyOrderPage() {
           selectedOrder={selectedOrder}
           onSelectOrder={setSelectedOrder}
         />
+      ) : (
+        /* Manage Catalog (owner only) */
+        <div>
+          {/* Category filter + Add button */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <div className="flex gap-1 flex-wrap flex-1">
+              <button
+                onClick={() => setManageCategory('')}
+                className={clsx(
+                  'whitespace-nowrap px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+                  !manageCategory ? 'bg-[#5CB832] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                )}
+              >
+                All
+              </button>
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setManageCategory(cat)}
+                  className={clsx(
+                    'whitespace-nowrap px-3 py-1.5 rounded-full text-sm font-medium transition-colors',
+                    manageCategory === cat ? 'bg-[#5CB832] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200',
+                  )}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+            <Button
+              icon={<PlusCircle className="h-4 w-4" />}
+              onClick={() => {
+                setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '' });
+                setShowAddItem(true);
+              }}
+            >
+              Add Item
+            </Button>
+          </div>
+
+          {/* Items list */}
+          <Card padding={false}>
+            <div className="divide-y divide-gray-100">
+              {manageCategoryItems.length === 0 ? (
+                <div className="py-12 text-center text-gray-500">No items in this category</div>
+              ) : (
+                manageCategoryItems.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
+                      <p className="text-xs text-gray-500">
+                        {item.category} {item.description ? `\u00b7 ${item.description}` : ''}
+                      </p>
+                      <p className="text-sm font-medium text-[#5CB832]">
+                        {item.price != null ? formatPrice(item.price) : 'No price'}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingItem(item);
+                          setItemForm({
+                            name: item.name,
+                            category: item.category,
+                            description: item.description || '',
+                            price: item.price != null ? String(item.price) : '',
+                          });
+                        }}
+                        className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
+                        title="Edit"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => copyItemMutation.mutate(item.id)}
+                        className="p-1.5 rounded text-gray-400 hover:text-purple-600 hover:bg-purple-50"
+                        title="Copy"
+                      >
+                        <Copy className="h-4 w-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Remove "${item.name}" from the catalog?`)) {
+                            deleteItemMutation.mutate(item.id);
+                          }
+                        }}
+                        className="p-1.5 rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                        title="Remove"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </Card>
+
+          {/* Add Item Modal */}
+          <Modal open={showAddItem} onClose={() => setShowAddItem(false)} title="Add Catalog Item">
+            <div className="space-y-3">
+              <Input
+                label="Name"
+                value={itemForm.name}
+                onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Item name"
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={itemForm.category}
+                  onChange={(e) => setItemForm((f) => ({ ...f, category: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832]"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  <option value="__new__">+ New Category</option>
+                </select>
+                {itemForm.category === '__new__' && (
+                  <Input
+                    className="mt-2"
+                    placeholder="New category name"
+                    value=""
+                    onChange={(e) => setItemForm((f) => ({ ...f, category: e.target.value }))}
+                  />
+                )}
+              </div>
+              <Input
+                label="Description"
+                value={itemForm.description}
+                onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
+                placeholder="e.g. Case of 6"
+              />
+              <Input
+                label="Price"
+                type="number"
+                step="0.01"
+                value={itemForm.price}
+                onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
+                placeholder="0.00"
+              />
+              <Button
+                className="w-full"
+                onClick={() => {
+                  if (!itemForm.name.trim() || !itemForm.category.trim()) {
+                    toast.error('Name and category are required');
+                    return;
+                  }
+                  createItemMutation.mutate({
+                    name: itemForm.name.trim(),
+                    category: itemForm.category.trim(),
+                    description: itemForm.description.trim() || undefined,
+                    price: itemForm.price ? parseFloat(itemForm.price) : undefined,
+                  });
+                }}
+                loading={createItemMutation.isPending}
+              >
+                Add Item
+              </Button>
+            </div>
+          </Modal>
+
+          {/* Edit Item Modal */}
+          <Modal open={!!editingItem} onClose={() => setEditingItem(null)} title="Edit Catalog Item">
+            <div className="space-y-3">
+              <Input
+                label="Name"
+                value={itemForm.name}
+                onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))}
+              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  value={itemForm.category}
+                  onChange={(e) => setItemForm((f) => ({ ...f, category: e.target.value }))}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832]"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+              <Input
+                label="Description"
+                value={itemForm.description}
+                onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
+              />
+              <Input
+                label="Price"
+                type="number"
+                step="0.01"
+                value={itemForm.price}
+                onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
+              />
+              <Button
+                className="w-full"
+                onClick={() => {
+                  if (!editingItem) return;
+                  updateItemMutation.mutate({
+                    id: editingItem.id,
+                    data: {
+                      name: itemForm.name.trim(),
+                      category: itemForm.category.trim(),
+                      description: itemForm.description.trim() || undefined,
+                      price: itemForm.price ? parseFloat(itemForm.price) : undefined,
+                    },
+                  });
+                }}
+                loading={updateItemMutation.isPending}
+              >
+                Save Changes
+              </Button>
+            </div>
+          </Modal>
+        </div>
       )}
 
       {/* Review / Submit Modal */}

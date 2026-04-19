@@ -560,6 +560,18 @@ export const supplyOrders = {
 
   updateStatus: (id: number, status: string) =>
     api.patch(`/supply-orders/orders/${id}/status`, { status }).then((r) => r.data),
+
+  createCatalogItem: (data: { name: string; category: string; description?: string; price?: number }) =>
+    api.post('/supply-orders/catalog', data).then((r) => r.data),
+
+  updateCatalogItem: (id: number, data: { name?: string; category?: string; description?: string; price?: number; is_active?: boolean }) =>
+    api.patch(`/supply-orders/catalog/${id}`, data).then((r) => r.data),
+
+  deleteCatalogItem: (id: number) =>
+    api.delete(`/supply-orders/catalog/${id}`).then((r) => r.data),
+
+  copyCatalogItem: (id: number) =>
+    api.post(`/supply-orders/catalog/${id}/copy`).then((r) => r.data),
 };
 
 export default api;
