@@ -234,20 +234,22 @@ export function LandingPage() {
             </a>
           </div>
 
-          {/* Photo strip */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
-            {['/drink1.jpg', '/drink2.jpg', '/drink3.jpg', '/drink4.jpg'].map((src, i) => (
-              <a key={i} href="https://www.instagram.com/sixbeanscoffee/" target="_blank" rel="noopener noreferrer" className="aspect-square rounded-xl overflow-hidden group">
-                <img src={src} alt="Six Beans Coffee" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+          {/* Photo grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { src: '/hero1.jpg', alt: 'Espresso shots' },
+              { src: '/drink1.jpg', alt: 'Six Beans drinks' },
+              { src: '/hero2.jpg', alt: 'Branded cup' },
+              { src: '/drink2.jpg', alt: 'Coffee pour' },
+              { src: '/espresso1.jpg', alt: 'Espresso close-up' },
+              { src: '/drink3.jpg', alt: 'Iced coffee' },
+              { src: '/latte1.jpg', alt: 'Latte art' },
+              { src: '/drink4.jpg', alt: 'Coffee vibes' },
+            ].map((photo, i) => (
+              <a key={i} href="https://www.instagram.com/sixbeanscoffee/" target="_blank" rel="noopener noreferrer" className="aspect-square rounded-xl overflow-hidden group shadow-sm">
+                <img src={photo.src} alt={photo.alt} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
               </a>
             ))}
-          </div>
-
-          {/* Live Instagram Embed */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
-            <iframe src="https://www.instagram.com/p/C4PB3HyxXTP/embed" className="w-full rounded-xl border-0" style={{ minHeight: '480px' }} allowTransparency={true} scrolling="no" />
-            <iframe src="https://www.instagram.com/p/C3nLV0kx3Yv/embed" className="w-full rounded-xl border-0" style={{ minHeight: '480px' }} allowTransparency={true} scrolling="no" />
-            <iframe src="https://www.instagram.com/p/C3KXjqYRc4Z/embed" className="w-full rounded-xl border-0" style={{ minHeight: '480px' }} allowTransparency={true} scrolling="no" />
           </div>
 
           <a href="https://www.instagram.com/sixbeanscoffee/" target="_blank" rel="noopener noreferrer" className="mt-8 inline-flex items-center gap-2 px-8 py-3 rounded-full text-white font-bold transition-all hover:scale-105" style={{ backgroundColor: '#5CB832' }}>
