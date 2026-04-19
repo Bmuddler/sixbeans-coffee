@@ -402,6 +402,31 @@ export const audit = {
 };
 
 // ============================================================
+// Company Documents
+// ============================================================
+
+export const companyDocs = {
+  list: () =>
+    api.get('/documents/').then((r) => r.data as any[]),
+
+  upload: (file: File, title: string, category: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title);
+    formData.append('category', category);
+    return api.post('/documents/', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+
+  downloadUrl: (docId: number) =>
+    `${api.defaults.baseURL}/documents/${docId}/download`,
+
+  delete: (docId: number) =>
+    api.delete(`/documents/${docId}`),
+};
+
+// ============================================================
 // Forms (Onboarding)
 // ============================================================
 

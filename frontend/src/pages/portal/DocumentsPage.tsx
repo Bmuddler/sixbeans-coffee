@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useState, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import {
   FileText,
@@ -7,12 +8,23 @@ import {
   ClipboardList,
   UserCheck,
   ChevronRight,
+  Upload,
+  Download,
+  Trash2,
+  Plus,
+  File,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Select } from '@/components/ui/Select';
+import { Modal } from '@/components/ui/Modal';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { useAuthStore } from '@/stores/authStore';
-import { forms } from '@/lib/api';
+import { forms, companyDocs } from '@/lib/api';
+import { formatTime } from '@/lib/timezone';
 import { UserRole } from '@/types';
 
 const REQUIRED_FORMS = [
@@ -32,14 +44,88 @@ const REQUIRED_FORMS = [
   },
 ];
 
+const DOC_CATEGORIES = [
+  { value: 'Onboarding', label: 'Onboarding' },
+  { value: 'Company Policies', label: 'Company Policies' },
+  { value: 'Training', label: 'Training' },
+  { value: 'Forms', label: 'Forms' },
+  { value: 'Other', label: 'Other' },
+];
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export function DocumentsPage() {
   const user = useAuthStore((s) => s.user);
+  const queryClient = useQueryClient();
   const isManagerOrOwner = user?.role === UserRole.MANAGER || user?.role === UserRole.OWNER;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadTitle, setUploadTitle] = useState('');
+  const [uploadCategory, setUploadCategory] = useState('Onboarding');
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
 
   const { data: myForms, isLoading: myFormsLoading } = useQuery({
     queryKey: ['my-forms'],
     queryFn: forms.getMy,
   });
+
+  const { data: docsList, isLoading: docsLoading } = useQuery({
+    queryKey: ['company-docs'],
+    queryFn: companyDocs.list,
+  });
+
+  const uploadMutation = useMutation({
+    mutationFn: () => {
+      if (!uploadFile) throw new Error('No file selected');
+      return companyDocs.upload(uploadFile, uploadTitle, uploadCategory);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company-docs'] });
+      setShowUploadModal(false);
+      setUploadTitle('');
+      setUploadCategory('Onboarding');
+      setUploadFile(null);
+      toast.success('Document uploaded!');
+    },
+    onError: () => toast.error('Failed to upload document'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => companyDocs.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['company-docs'] });
+      toast.success('Document deleted');
+    },
+    onError: () => toast.error('Failed to delete document'),
+  });
+
+  const handleUpload = () => {
+    if (!uploadFile || !uploadTitle.trim()) {
+      toast.error('Please provide a title and select a file');
+      return;
+    }
+    uploadMutation.mutate();
+  };
+
+  const handleDownload = async (docId: number, filename: string) => {
+    try {
+      const token = localStorage.getItem('token');
+      const url = companyDocs.downloadUrl(docId);
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch {
+      toast.error('Failed to download');
+    }
+  };
 
   const { data: allStatus, isLoading: statusLoading } = useQuery({
     queryKey: ['form-status'],
@@ -149,24 +235,73 @@ export function DocumentsPage() {
       )}
 
       {/* Company Documents */}
-      <Card title="Company Documents">
-        <div className="space-y-3">
-          {[
-            { title: 'Employee Handbook', desc: 'Company policies, code of conduct, and guidelines.' },
-            { title: 'California Break Policy', desc: 'State-required break and meal period rules.' },
-            { title: 'Safety & Hygiene Standards', desc: 'Food safety and workplace hygiene requirements.' },
-            { title: 'Anti-Harassment Policy', desc: 'Workplace harassment prevention and reporting.' },
-          ].map((doc) => (
-            <div key={doc.title} className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 transition-colors">
-              <ClipboardList className="h-5 w-5 text-gray-400 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-gray-900">{doc.title}</p>
-                <p className="text-xs text-gray-500">{doc.desc}</p>
+      <Card
+        title="Company Documents"
+        actions={isManagerOrOwner ? (
+          <Button size="sm" icon={<Upload className="h-4 w-4" />} onClick={() => setShowUploadModal(true)}>Upload Document</Button>
+        ) : undefined}
+      >
+        {docsLoading ? (
+          <LoadingSpinner size="sm" />
+        ) : (docsList ?? []).length > 0 ? (
+          <div className="space-y-2">
+            {(docsList ?? []).map((doc: any) => (
+              <div key={doc.id} className="flex items-center gap-3 rounded-lg border border-gray-200 p-3 hover:bg-gray-50 transition-colors group">
+                <File className="h-5 w-5 text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{doc.title}</p>
+                  <p className="text-xs text-gray-500">
+                    {doc.category} · {formatFileSize(doc.file_size)} · {doc.filename}
+                    {doc.uploaded_by_name && ` · Uploaded by ${doc.uploaded_by_name}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => handleDownload(doc.id, doc.filename)} className="rounded p-1.5 text-gray-400 hover:bg-gray-100 hover:text-primary" title="Download">
+                    <Download className="h-4 w-4" />
+                  </button>
+                  {isManagerOrOwner && (
+                    <button onClick={() => { if (confirm(`Delete "${doc.title}"?`)) deleteMutation.mutate(doc.id); }} className="rounded p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity" title="Delete">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-gray-500 py-4 text-center">
+            {isManagerOrOwner ? 'No documents uploaded yet. Click "Upload Document" to add one.' : 'No company documents available yet.'}
+          </p>
+        )}
       </Card>
+
+      {/* Upload Modal */}
+      <Modal open={showUploadModal} onClose={() => setShowUploadModal(false)} title="Upload Company Document">
+        <div className="space-y-4">
+          <Input label="Document Title *" value={uploadTitle} onChange={(e) => setUploadTitle(e.target.value)} placeholder="e.g., Employee Handbook" />
+          <Select label="Category" options={DOC_CATEGORIES} value={uploadCategory} onChange={(e) => setUploadCategory(e.target.value)} />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">File *</label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt"
+              onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
+            />
+            <p className="text-xs text-gray-400 mt-1">PDF, Word, images, or text files. Max 10MB.</p>
+          </div>
+          {uploadFile && (
+            <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
+              <p><strong>{uploadFile.name}</strong> ({formatFileSize(uploadFile.size)})</p>
+            </div>
+          )}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setShowUploadModal(false)}>Cancel</Button>
+            <Button onClick={handleUpload} loading={uploadMutation.isPending} disabled={!uploadFile || !uploadTitle.trim()}>Upload</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

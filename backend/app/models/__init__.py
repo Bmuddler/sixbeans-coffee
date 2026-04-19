@@ -18,3 +18,4 @@ from app.models.audit_log import AuditLog  # noqa: E402, F401
 from app.models.system_settings import SystemSettings  # noqa: E402, F401
 from app.models.week_status import WeekScheduleStatus  # noqa: E402, F401
 from app.models.form_submission import FormSubmission  # noqa: E402, F401
+from app.models.company_document import CompanyDocument  # noqa: E402, F401
