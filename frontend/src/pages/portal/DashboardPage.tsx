@@ -1297,7 +1297,7 @@ function ManagerOwnerDashboardPage({
           <p className="page-subtitle">
             {isOwner
               ? 'Here is your business overview.'
-              : 'Here is what is happening at your location.'}
+              : 'Your location and personal overview.'}
           </p>
         </div>
       </div>
@@ -1325,8 +1325,8 @@ function ManagerOwnerDashboardPage({
         <ManagerDashboard locationId={locationId} isOwner={isOwner} />
       )}
 
-      {/* Employee sections (shown for all roles) */}
-      <EmployeeDashboard userId={user.id} locationId={locationId} />
+      {/* Personal shift/clock sections for managers (they work shifts too) */}
+      {!isOwner && <EmployeeDashboard userId={user.id} locationId={locationId} />}
     </div>
   );
 }
