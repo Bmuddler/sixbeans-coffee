@@ -35,9 +35,7 @@ export function App() {
   return (
     <Routes>
       {/* Public routes */}
-      <Route element={<PublicLayout />}>
-        <Route path="/" element={<LandingPage />} />
-      </Route>
+      <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
 
       {/* Kiosk - separate layout, no nav */}
