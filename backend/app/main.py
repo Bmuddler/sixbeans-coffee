@@ -108,6 +108,12 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_preferences TEXT"
         ))
+        await conn.execute(text(
+            "ALTER TABLE time_off_requests ADD COLUMN IF NOT EXISTS start_time TIME"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE time_off_requests ADD COLUMN IF NOT EXISTS end_time TIME"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS

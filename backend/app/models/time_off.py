@@ -20,6 +20,8 @@ class TimeOffRequest(Base):
     employee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
+    start_time = Column(Time, nullable=True)
+    end_time = Column(Time, nullable=True)
     reason = Column(String(500), nullable=True)
     status = Column(Enum(RequestStatus), default=RequestStatus.pending, nullable=False)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)

@@ -8,6 +8,8 @@ from app.models.time_off import RequestStatus
 class TimeOffRequestCreate(BaseModel):
     start_date: date
     end_date: date
+    start_time: time | None = None
+    end_time: time | None = None
     reason: str | None = None
 
 
@@ -21,6 +23,8 @@ class TimeOffRequestResponse(BaseModel):
     employee_id: int
     start_date: date
     end_date: date
+    start_time: time | None = None
+    end_time: time | None = None
     reason: str | None = None
     status: RequestStatus
     reviewed_by: int | None = None

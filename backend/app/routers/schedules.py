@@ -233,10 +233,17 @@ async def get_week_schedule(
     if current_user.role == UserRole.employee and week_status != "published":
         return WeekScheduleResponse(shifts=[], total=0, week_status="draft")
 
+    # Format unavailable data as {date_str: {emp_id_str: [reasons]}}
+    unavailable_formatted = {}
+    for d, emps in unavailable_by_date.items():
+        if emps:
+            unavailable_formatted[d.isoformat()] = {str(eid): reasons for eid, reasons in emps.items()}
+
     return WeekScheduleResponse(
         shifts=responses, total=len(responses),
         week_status=week_status,
         published_at=week_stat.published_at if week_stat else None,
+        unavailable=unavailable_formatted,
     )
 
 

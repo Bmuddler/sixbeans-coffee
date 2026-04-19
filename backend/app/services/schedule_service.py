@@ -75,8 +75,15 @@ async def get_unavailable_employees(
         )
     )
     for req in result.scalars().all():
+        time_info = ""
+        st = getattr(req, 'start_time', None)
+        et = getattr(req, 'end_time', None)
+        if st and et:
+            time_info = f" ({st.strftime('%I:%M%p')}-{et.strftime('%I:%M%p')})"
+        elif st:
+            time_info = f" (from {st.strftime('%I:%M%p')})"
         unavailable.setdefault(req.employee_id, []).append(
-            f"Time off: {req.reason or 'No reason given'}"
+            f"Time off{time_info}: {req.reason or 'No reason given'}"
         )
 
     # Check unavailability

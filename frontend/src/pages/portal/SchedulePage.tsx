@@ -322,8 +322,14 @@ export function SchedulePage() {
     return { empMap, openShifts, totalOpenCount, dailyHours };
   }, [allEmployees, shiftsData, weekDays]);
 
+  const getUnavailReasons = (userId: number, dateKey: string): string[] => {
+    const unavail = shiftsData?.unavailable?.[dateKey];
+    if (!unavail) return [];
+    return unavail[String(userId)] ?? [];
+  };
+
   const hasTimeOff = (userId: number, dateKey: string) => {
-    return timeOffData?.items?.some((req: any) => req.user_id === userId && req.start_date <= dateKey && req.end_date >= dateKey);
+    return getUnavailReasons(userId, dateKey).length > 0;
   };
 
   // Handlers
@@ -500,11 +506,12 @@ export function SchedulePage() {
                     const isOff = hasTimeOff(emp.id, dateKey);
 
                     return (
-                      <td key={dateKey} className="px-2 py-2 align-top" onClick={() => dayShifts.length === 0 && !isOff && handleCellClick(emp.id, day)}>
+                      <td key={dateKey} className={`px-2 py-2 align-top ${isOff ? 'bg-gray-100/50' : ''}`} onClick={() => dayShifts.length === 0 && !isOff && handleCellClick(emp.id, day)}>
                         <div className="space-y-1 min-h-[32px]">
                           {isOff && (
-                            <div className="rounded px-1.5 py-1 text-[11px] bg-purple-50 border border-purple-200 text-purple-600 flex items-center gap-1">
-                              <Palmtree className="h-3 w-3" /> Time off
+                            <div className="rounded px-1.5 py-1 text-[11px] bg-purple-50 border border-purple-200 text-purple-600" title={getUnavailReasons(emp.id, dateKey).join('\n')}>
+                              <div className="flex items-center gap-1"><Palmtree className="h-3 w-3" /> Unavailable</div>
+                              <div className="text-[9px] text-purple-400 truncate">{getUnavailReasons(emp.id, dateKey)[0]?.replace('Time off: ', '').replace('Unavailable: ', '')}</div>
                             </div>
                           )}
                           {dayShifts.map((s) => (

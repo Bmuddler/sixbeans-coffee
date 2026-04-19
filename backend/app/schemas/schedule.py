@@ -77,3 +77,4 @@ class WeekScheduleResponse(BaseModel):
     total: int
     week_status: str = "draft"
     published_at: datetime | None = None
+    unavailable: dict[str, dict[str, list[str]]] = {}  # date -> {emp_id: [reasons]}

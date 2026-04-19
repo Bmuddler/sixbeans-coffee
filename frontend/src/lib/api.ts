@@ -147,7 +147,7 @@ export const schedules = {
   listShifts: (params: { location_id?: number; user_id?: number; start_date: string; end_date: string }) =>
     api.get('/schedules/week', { params: { week_start: params.start_date, location_id: params.location_id } }).then((r) => {
       const data = r.data as any;
-      return { shifts: (data.shifts ?? []) as ScheduledShift[], week_status: (data.week_status ?? 'draft') as string, published_at: data.published_at as string | null };
+      return { shifts: (data.shifts ?? []) as ScheduledShift[], week_status: (data.week_status ?? 'draft') as string, published_at: data.published_at as string | null, unavailable: (data.unavailable ?? {}) as Record<string, Record<string, string[]>> };
     }),
 
   publishWeek: (params: { week_start: string; location_id: number }) =>
@@ -226,7 +226,7 @@ export const timeOff = {
       return { items, total: items.length, page: 1, per_page: items.length, total_pages: 1 } as PaginatedResponse<TimeOffRequest>;
     }),
 
-  create: (data: { start_date: string; end_date: string; reason: string }) =>
+  create: (data: { start_date: string; end_date: string; start_time?: string; end_time?: string; reason: string }) =>
     api.post<TimeOffRequest>('/time-off/requests', data).then((r) => r.data),
 
   review: (id: number, data: { status: RequestStatus; review_notes?: string }) =>

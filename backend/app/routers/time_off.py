@@ -39,6 +39,8 @@ async def create_time_off_request(
         employee_id=current_user.id,
         start_date=data.start_date,
         end_date=data.end_date,
+        start_time=data.start_time,
+        end_time=data.end_time,
         reason=data.reason,
     )
     db.add(req)
@@ -80,7 +82,8 @@ async def create_time_off_request(
 
     return TimeOffRequestResponse(
         id=req.id, employee_id=req.employee_id, start_date=req.start_date,
-        end_date=req.end_date, reason=req.reason, status=req.status,
+        end_date=req.end_date, start_time=getattr(req, 'start_time', None), end_time=getattr(req, 'end_time', None),
+        reason=req.reason, status=req.status,
         employee_name=f"{current_user.first_name} {current_user.last_name}",
         created_at=req.created_at,
     )
@@ -110,7 +113,8 @@ async def list_time_off_requests(
     return [
         TimeOffRequestResponse(
             id=r.id, employee_id=r.employee_id, start_date=r.start_date,
-            end_date=r.end_date, reason=r.reason, status=r.status,
+            end_date=r.end_date, start_time=getattr(r, 'start_time', None), end_time=getattr(r, 'end_time', None),
+            reason=r.reason, status=r.status,
             reviewed_by=r.reviewed_by, reviewed_at=r.reviewed_at, notes=r.notes,
             employee_name=f"{r.employee.first_name} {r.employee.last_name}" if r.employee else None,
             created_at=r.created_at,
@@ -163,7 +167,8 @@ async def review_time_off_request(
 
     return TimeOffRequestResponse(
         id=req.id, employee_id=req.employee_id, start_date=req.start_date,
-        end_date=req.end_date, reason=req.reason, status=req.status,
+        end_date=req.end_date, start_time=getattr(req, 'start_time', None), end_time=getattr(req, 'end_time', None),
+        reason=req.reason, status=req.status,
         reviewed_by=req.reviewed_by, reviewed_at=req.reviewed_at, notes=req.notes,
         employee_name=f"{req.employee.first_name} {req.employee.last_name}" if req.employee else None,
         created_at=req.created_at,

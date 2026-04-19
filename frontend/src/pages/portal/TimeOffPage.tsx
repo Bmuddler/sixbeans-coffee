@@ -56,6 +56,8 @@ export function TimeOffPage() {
   const [requestForm, setRequestForm] = useState({
     start_date: '',
     end_date: '',
+    start_time: '',
+    end_time: '',
     reason: '',
   });
 
@@ -103,12 +105,14 @@ export function TimeOffPage() {
       timeOff.create({
         start_date: requestForm.start_date,
         end_date: requestForm.end_date,
+        start_time: requestForm.start_time || undefined,
+        end_time: requestForm.end_time || undefined,
         reason: requestForm.reason,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['timeOff'] });
       setShowRequestModal(false);
-      setRequestForm({ start_date: '', end_date: '', reason: '' });
+      setRequestForm({ start_date: '', end_date: '', start_time: '', end_time: '', reason: '' });
       toast.success('Time off request submitted');
     },
     onError: () => toast.error('Failed to submit request'),
@@ -505,12 +509,29 @@ export function TimeOffPage() {
               onChange={(e) => setRequestForm({ ...requestForm, start_date: e.target.value })}
             />
             <Input
+              label="Start Time (optional)"
+              type="time"
+              value={requestForm.start_time}
+              onChange={(e) => setRequestForm({ ...requestForm, start_time: e.target.value })}
+              helperText="Leave blank for all day"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Input
               label="End Date"
               type="date"
               value={requestForm.end_date}
               onChange={(e) => setRequestForm({ ...requestForm, end_date: e.target.value })}
             />
+            <Input
+              label="End Time (optional)"
+              type="time"
+              value={requestForm.end_time}
+              onChange={(e) => setRequestForm({ ...requestForm, end_time: e.target.value })}
+              helperText="Leave blank for all day"
+            />
           </div>
+          <p className="text-xs text-gray-400">Example: Monday at 2:00 PM through Tuesday at 10:00 AM</p>
           <Input
             label="Reason"
             value={requestForm.reason}
