@@ -143,13 +143,8 @@ export function KioskPage() {
     if (!locationId) return;
     try {
       setDrawerLoading(true);
-      const token = localStorage.getItem('token');
       const today = new Date().toISOString().split('T')[0];
-      const res = await api.get('/cash-drawer/', {
-        params: { location_id: locationId, start_date: today, end_date: today },
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      const drawers = res.data as any[];
+      const drawers = await cashDrawerApi.getReport({ location_id: locationId, start_date: today, end_date: today });
       const open = drawers.find((d: any) => d.actual_closing == null);
       setActiveDrawer(open || null);
     } catch { setActiveDrawer(null); }

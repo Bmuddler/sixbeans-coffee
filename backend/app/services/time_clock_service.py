@@ -4,6 +4,12 @@ from datetime import datetime, timedelta
 
 import pytz
 
+PACIFIC = pytz.timezone("America/Los_Angeles")
+
+
+def _now_pacific() -> datetime:
+    return datetime.now(PACIFIC).replace(tzinfo=None)
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,8 +31,7 @@ async def clock_in(
     now: datetime | None = None,
 ) -> TimeClock:
     """Clock in an employee with shift validation."""
-    pacific = pytz.timezone("America/Los_Angeles")
-    now = now or datetime.now(pacific).replace(tzinfo=None)
+    now = now or _now_pacific()
 
     # Check if already clocked in
     result = await db.execute(
@@ -94,7 +99,7 @@ async def clock_out(
     auto: bool = False,
 ) -> TimeClock:
     """Clock out an employee and calculate total hours."""
-    now = now or datetime.utcnow()
+    now = now or _now_pacific()
 
     result = await db.execute(
         select(TimeClock)
@@ -140,7 +145,7 @@ async def start_break(
     now: datetime | None = None,
 ) -> Break:
     """Start a break for a clocked-in employee."""
-    now = now or datetime.utcnow()
+    now = now or _now_pacific()
 
     result = await db.execute(
         select(TimeClock).where(
@@ -171,7 +176,7 @@ async def end_break(
     now: datetime | None = None,
 ) -> Break:
     """End the current break for an employee."""
-    now = now or datetime.utcnow()
+    now = now or _now_pacific()
 
     result = await db.execute(
         select(TimeClock)
@@ -199,7 +204,7 @@ async def end_break(
 
 async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
     """Auto clock-out employees whose auto_clockout_at has passed. Run periodically."""
-    now = datetime.utcnow()
+    now = _now_pacific()
 
     result = await db.execute(
         select(TimeClock)
@@ -225,7 +230,7 @@ async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
 def get_break_compliance(entry: TimeClock) -> dict:
     """Check if an employee's breaks comply with CA labor law."""
     if not entry.clock_out:
-        duration = datetime.utcnow() - entry.clock_in
+        duration = _now_pacific() - entry.clock_in
     else:
         duration = entry.clock_out - entry.clock_in
 
