@@ -192,7 +192,7 @@ async def list_drawers(
     location_id: int | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
-    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(CashDrawer).options(

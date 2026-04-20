@@ -110,8 +110,8 @@ export function KioskPage() {
     if (timerRef.current) clearTimeout(timerRef.current);
     if (session) {
       timerRef.current = setTimeout(() => {
-        setSession(null); setPin(''); setActiveDrawer(null);
-        toast('Session expired', { icon: '🕐' });
+        setSession(null); setPin(''); setActiveDrawer(null); localStorage.removeItem('token');
+        toast('Session expired');
       }, INACTIVITY_TIMEOUT);
     }
   }, [session]);
@@ -161,6 +161,8 @@ export function KioskPage() {
     setLoading(true);
     try {
       const res = await kiosk.authenticate({ pin_code: pin, location_id: locationId }) as any;
+      // Set the kiosk session token as the JWT for authenticated API calls
+      localStorage.setItem('token', res.session_token);
       const sess: KioskSession = {
         session_token: res.session_token,
         first_name: res.first_name,
@@ -455,7 +457,7 @@ export function KioskPage() {
         </div>
 
         {/* Logout */}
-        <button onClick={() => { setSession(null); setPin(''); setActiveDrawer(null); }} className="w-full rounded-2xl border-2 border-gray-300 py-3 text-lg font-semibold text-gray-500 hover:bg-white transition-colors">
+        <button onClick={() => { setSession(null); setPin(''); setActiveDrawer(null); localStorage.removeItem('token'); }} className="w-full rounded-2xl border-2 border-gray-300 py-3 text-lg font-semibold text-gray-500 hover:bg-white transition-colors">
           Log Out
         </button>
       </div>

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.dependencies import require_roles
+from app.dependencies import get_current_user, require_roles
 from app.models.location import Location
 from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem
 from app.models.user import User, UserRole
@@ -60,7 +60,7 @@ class CatalogItemUpdate(BaseModel):
 
 @router.get("/catalog")
 async def get_catalog(
-    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """List all active supply items grouped by category."""
@@ -184,7 +184,7 @@ async def copy_catalog_item(
 @router.post("/orders", status_code=status.HTTP_201_CREATED)
 async def create_order(
     body: CreateOrderIn,
-    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Submit a supply order request."""
