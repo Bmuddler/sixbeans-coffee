@@ -270,6 +270,18 @@ async def kiosk_end_break(
     }
 
 
+@router.get("/locations")
+async def kiosk_list_locations(db: AsyncSession = Depends(get_db)):
+    """Public endpoint: list active locations for kiosk dropdown."""
+    from app.models.location import Location
+
+    result = await db.execute(
+        select(Location).where(Location.is_active.is_(True)).order_by(Location.name)
+    )
+    locations = result.scalars().all()
+    return [{"id": loc.id, "name": loc.name} for loc in locations]
+
+
 @router.get("/schedule/{location_id}")
 async def kiosk_get_schedule(
     location_id: int,

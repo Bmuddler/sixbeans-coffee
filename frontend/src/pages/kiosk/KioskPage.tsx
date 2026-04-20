@@ -90,9 +90,9 @@ export function KioskPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Load locations
+  // Load locations (public endpoint, no auth needed)
   useEffect(() => {
-    locationsApi.list().then((locs) => {
+    api.get('/kiosk/locations').then((r) => r.data as Location[]).then((locs) => {
       setLocations(locs);
       setLocationsLoaded(true);
       if (urlLocationId) {
