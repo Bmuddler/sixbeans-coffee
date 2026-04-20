@@ -36,7 +36,7 @@ interface KioskSession {
   today_shifts?: any[];
 }
 
-const INACTIVITY_TIMEOUT = 120_000;
+const INACTIVITY_TIMEOUT = 30_000;
 const EXPENSE_CATEGORIES = [
   { value: 'CO2 Delivery', label: 'CO2 Delivery' },
   { value: 'Milk Run', label: 'Milk Run' },
@@ -109,16 +109,20 @@ export function KioskPage() {
     }).catch(() => setLocationsLoaded(true));
   }, []);
 
+  // Pause timeout when in drawer report, edit, close, expense, expected, or supply modals
+  const modalOpen = showDrawerCloseModal || showDrawerReportModal || showEditDrawerModal
+    || showExpenseModal || showExpectedModal || showDrawerStartModal || showSupplyModal;
+
   // Inactivity auto-logout
   const resetTimer = useCallback(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
-    if (session) {
+    if (session && !modalOpen) {
       timerRef.current = setTimeout(() => {
         setSession(null); setPin(''); setActiveDrawer(null); localStorage.removeItem('token');
         toast('Session expired');
       }, INACTIVITY_TIMEOUT);
     }
-  }, [session]);
+  }, [session, modalOpen]);
 
   useEffect(() => {
     if (!session) return;
