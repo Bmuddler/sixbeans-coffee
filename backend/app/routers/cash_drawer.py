@@ -140,7 +140,7 @@ async def api_edit_drawer(
 async def api_set_expected(
     drawer_id: int,
     data: CashDrawerSetExpected,
-    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
