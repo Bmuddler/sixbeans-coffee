@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 
+import pytz
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -23,7 +25,8 @@ async def clock_in(
     now: datetime | None = None,
 ) -> TimeClock:
     """Clock in an employee with shift validation."""
-    now = now or datetime.utcnow()
+    pacific = pytz.timezone("America/Los_Angeles")
+    now = now or datetime.now(pacific).replace(tzinfo=None)
 
     # Check if already clocked in
     result = await db.execute(

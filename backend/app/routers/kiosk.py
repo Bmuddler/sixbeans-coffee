@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta
 
+import pytz
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from jose import JWTError
 from pydantic import BaseModel
@@ -108,8 +110,9 @@ async def kiosk_authenticate(
         expires_delta=timedelta(minutes=KIOSK_TOKEN_EXPIRE_MINUTES),
     )
 
-    # Get today's shifts at this location for this employee
-    today = datetime.utcnow().date()
+    # Get today's shifts at this location for this employee (Pacific time)
+    pacific = pytz.timezone("America/Los_Angeles")
+    today = datetime.now(pacific).date()
     shifts_result = await db.execute(
         select(ScheduledShift).where(
             and_(
@@ -288,7 +291,8 @@ async def kiosk_get_schedule(
     db: AsyncSession = Depends(get_db),
 ):
     """Return today's scheduled shifts at a location with employee names."""
-    today = datetime.utcnow().date()
+    pacific = pytz.timezone("America/Los_Angeles")
+    today = datetime.now(pacific).date()
 
     result = await db.execute(
         select(ScheduledShift)
