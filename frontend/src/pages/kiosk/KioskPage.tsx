@@ -193,7 +193,7 @@ export function KioskPage() {
       const res = await kiosk.clockIn({ session_token: session.session_token, location_id: locationId }) as any;
       setSession({ ...session, active_clock: { id: res.time_clock_id, status: 'clocked_in', clock_in: res.clock_in } });
       toast.success('Clocked in!');
-    } catch { toast.error('Failed to clock in'); }
+    } catch (err: any) { toast.error(err?.response?.data?.detail ?? 'Failed to clock in'); }
     finally { setActionLoading(null); }
   };
 
@@ -204,7 +204,7 @@ export function KioskPage() {
       await kiosk.clockOut({ session_token: session.session_token, time_clock_id: session.active_clock.id });
       setSession({ ...session, active_clock: null });
       toast.success('Clocked out!');
-    } catch { toast.error('Failed to clock out'); }
+    } catch (err: any) { toast.error(err?.response?.data?.detail ?? 'Failed to clock out'); }
     finally { setActionLoading(null); }
   };
 
@@ -215,7 +215,7 @@ export function KioskPage() {
       await kiosk.startBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id, break_type: breakType });
       setSession({ ...session, active_clock: { ...session.active_clock, status: 'on_break' } });
       toast.success(`${breakType === 'paid_10' ? '10 min' : '30 min'} break started!`);
-    } catch { toast.error('Failed to start break'); }
+    } catch (err: any) { toast.error(err?.response?.data?.detail ?? 'Failed to start break'); }
     finally { setActionLoading(null); }
   };
 
@@ -226,7 +226,7 @@ export function KioskPage() {
       await kiosk.endBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id });
       setSession({ ...session, active_clock: { ...session.active_clock, status: 'clocked_in' } });
       toast.success('Break ended!');
-    } catch { toast.error('Failed to end break'); }
+    } catch (err: any) { toast.error(err?.response?.data?.detail ?? 'Failed to end break'); }
     finally { setActionLoading(null); }
   };
 
