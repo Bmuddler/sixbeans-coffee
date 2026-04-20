@@ -70,6 +70,10 @@ export function KioskPage() {
   const [showExpectedModal, setShowExpectedModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showDrawerReportModal, setShowDrawerReportModal] = useState(false);
+  const [showEditDrawerModal, setShowEditDrawerModal] = useState(false);
+  const [closedDrawer, setClosedDrawer] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ opening_amount: '', expected_closing: '', actual_closing: '', notes: '' });
 
   // Form states
   const [drawerStartAmount, setDrawerStartAmount] = useState('');
@@ -256,9 +260,11 @@ export function KioskPage() {
     if (!activeDrawer) return;
     setActionLoading('closeDrawer');
     try {
-      await cashDrawerApi.close(activeDrawer.id, { actual_closing: parseFloat(drawerCloseAmount), notes: drawerCloseNotes || undefined });
+      const result = await cashDrawerApi.close(activeDrawer.id, { actual_closing: parseFloat(drawerCloseAmount), notes: drawerCloseNotes || undefined });
+      setClosedDrawer(result);
       setActiveDrawer(null);
       setShowDrawerCloseModal(false);
+      setShowDrawerReportModal(true);
       setDrawerCloseAmount('');
       setDrawerCloseNotes('');
       toast.success('Drawer closed!');
@@ -271,10 +277,31 @@ export function KioskPage() {
     setActionLoading('expense');
     try {
       await cashDrawerApi.addExpense(activeDrawer.id, { category: expenseForm.category, amount: parseFloat(expenseForm.amount), notes: expenseForm.notes || undefined });
+      await loadActiveDrawer();
       setShowExpenseModal(false);
       setExpenseForm({ amount: '', category: 'CO2 Delivery', notes: '' });
       toast.success('Expense recorded!');
     } catch { toast.error('Failed to record expense'); }
+    finally { setActionLoading(null); }
+  };
+
+  const handleEditDrawer = async () => {
+    if (!closedDrawer) return;
+    setActionLoading('editDrawer');
+    try {
+      const data: any = {};
+      if (editForm.opening_amount) data.opening_amount = parseFloat(editForm.opening_amount);
+      if (editForm.expected_closing) data.expected_closing = parseFloat(editForm.expected_closing);
+      if (editForm.actual_closing) data.actual_closing = parseFloat(editForm.actual_closing);
+      if (editForm.notes) data.notes = editForm.notes;
+      const result = await cashDrawerApi.edit(closedDrawer.id, data);
+      setClosedDrawer(result);
+      setShowEditDrawerModal(false);
+      toast.success('Drawer updated!');
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? 'Failed to update drawer';
+      toast.error(msg);
+    }
     finally { setActionLoading(null); }
   };
 
@@ -440,6 +467,14 @@ export function KioskPage() {
               <div className="rounded-xl p-3 text-sm" style={{ backgroundColor: '#F5F0E8' }}>
                 <div className="flex justify-between"><span className="text-gray-500">Opening:</span><span className="font-bold">${(activeDrawer.opening_amount ?? 0).toFixed(2)}</span></div>
                 {activeDrawer.expected_closing != null && <div className="flex justify-between mt-1"><span className="text-gray-500">Expected:</span><span className="font-bold text-blue-600">${activeDrawer.expected_closing.toFixed(2)}</span></div>}
+                {(activeDrawer.unexpected_expenses ?? []).length > 0 && (
+                  <div className="flex justify-between mt-1">
+                    <span className="text-gray-500">Expenses ({(activeDrawer.unexpected_expenses ?? []).length}):</span>
+                    <span className="font-bold text-red-600">
+                      -${((activeDrawer.unexpected_expenses ?? []).reduce((s: number, e: any) => s + (e.amount ?? 0), 0)).toFixed(2)}
+                    </span>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-3 gap-2">
                 <button onClick={() => { setExpectedAmount(activeDrawer.expected_closing?.toString() ?? ''); setShowExpectedModal(true); }} className="flex flex-col items-center gap-1 rounded-xl border-2 border-blue-200 bg-blue-50 p-3 text-blue-700 font-semibold text-sm hover:bg-blue-100 transition-colors">
@@ -479,15 +514,148 @@ export function KioskPage() {
         </div>
       </Modal>
 
-      {/* Close Drawer Modal */}
-      <Modal open={showDrawerCloseModal} onClose={() => setShowDrawerCloseModal(false)} title="Close Cash Drawer">
+      {/* Close Drawer Modal - shows full report before submitting */}
+      <Modal open={showDrawerCloseModal} onClose={() => setShowDrawerCloseModal(false)} title="Close Cash Drawer" size="lg">
+        {activeDrawer && (
+          <div className="space-y-4">
+            {/* Full report preview */}
+            <div className="rounded-xl border border-gray-200 divide-y divide-gray-100">
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-sm text-gray-500">Opening Amount</span>
+                <span className="text-sm font-bold">${(activeDrawer.opening_amount ?? 0).toFixed(2)}</span>
+              </div>
+              {activeDrawer.expected_closing != null && (
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-sm text-gray-500">Expected (GoDaddy)</span>
+                  <span className="text-sm font-bold text-blue-600">${activeDrawer.expected_closing.toFixed(2)}</span>
+                </div>
+              )}
+              {(activeDrawer.unexpected_expenses ?? []).length > 0 && (
+                <>
+                  <div className="px-4 py-2 bg-gray-50">
+                    <span className="text-xs font-semibold text-gray-500 uppercase">Expenses</span>
+                  </div>
+                  {(activeDrawer.unexpected_expenses ?? []).map((exp: any, i: number) => (
+                    <div key={i} className="flex justify-between px-4 py-2">
+                      <span className="text-sm text-gray-600">{exp.category}{exp.notes ? ` - ${exp.notes}` : ''}</span>
+                      <span className="text-sm font-medium text-red-600">-${(exp.amount ?? 0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between px-4 py-2.5 bg-red-50">
+                    <span className="text-sm font-medium text-red-700">Total Expenses</span>
+                    <span className="text-sm font-bold text-red-700">
+                      -${((activeDrawer.unexpected_expenses ?? []).reduce((s: number, e: any) => s + (e.amount ?? 0), 0)).toFixed(2)}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Actual count input */}
+            <Input label="Actual Cash Counted ($)" type="number" step="0.01" min="0" value={drawerCloseAmount} onChange={(e) => setDrawerCloseAmount(e.target.value)} placeholder="0.00" />
+
+            {/* Preview variance */}
+            {drawerCloseAmount && activeDrawer.expected_closing != null && (
+              <div className={`rounded-lg p-3 text-center ${
+                parseFloat(drawerCloseAmount) - activeDrawer.expected_closing >= 0 ? 'bg-green-50' : 'bg-red-50'
+              }`}>
+                <span className="text-sm font-medium">Variance: </span>
+                <span className={`text-lg font-bold ${
+                  parseFloat(drawerCloseAmount) - activeDrawer.expected_closing >= 0 ? 'text-green-700' : 'text-red-700'
+                }`}>
+                  ${(parseFloat(drawerCloseAmount) - activeDrawer.expected_closing).toFixed(2)}
+                </span>
+              </div>
+            )}
+
+            <Input label="Notes (optional)" value={drawerCloseNotes} onChange={(e) => setDrawerCloseNotes(e.target.value)} placeholder="Any notes..." />
+
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setShowDrawerCloseModal(false)}>Cancel</Button>
+              <Button variant="danger" onClick={handleCloseDrawer} loading={actionLoading === 'closeDrawer'} disabled={!drawerCloseAmount}>Close Drawer</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Drawer Report Modal - shown after closing */}
+      <Modal open={showDrawerReportModal} onClose={() => { setShowDrawerReportModal(false); setClosedDrawer(null); }} title="Drawer Report" size="lg">
+        {closedDrawer && (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-gray-200 divide-y divide-gray-100">
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-sm text-gray-500">Opening Amount</span>
+                <span className="text-sm font-bold">${(closedDrawer.opening_amount ?? 0).toFixed(2)}</span>
+              </div>
+              {closedDrawer.expected_closing != null && (
+                <div className="flex justify-between px-4 py-2.5">
+                  <span className="text-sm text-gray-500">Expected (GoDaddy)</span>
+                  <span className="text-sm font-bold text-blue-600">${closedDrawer.expected_closing.toFixed(2)}</span>
+                </div>
+              )}
+              <div className="flex justify-between px-4 py-2.5">
+                <span className="text-sm text-gray-500">Actual Counted</span>
+                <span className="text-sm font-bold">${(closedDrawer.actual_closing ?? 0).toFixed(2)}</span>
+              </div>
+              {(closedDrawer.unexpected_expenses ?? []).length > 0 && (
+                <>
+                  <div className="px-4 py-2 bg-gray-50">
+                    <span className="text-xs font-semibold text-gray-500 uppercase">Expenses</span>
+                  </div>
+                  {(closedDrawer.unexpected_expenses ?? []).map((exp: any, i: number) => (
+                    <div key={i} className="flex justify-between px-4 py-2">
+                      <span className="text-sm text-gray-600">{exp.category}{exp.notes ? ` - ${exp.notes}` : ''}</span>
+                      <span className="text-sm font-medium text-red-600">-${(exp.amount ?? 0).toFixed(2)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {closedDrawer.variance != null && (
+                <div className={`flex justify-between px-4 py-3 ${closedDrawer.variance >= 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+                  <span className="text-sm font-semibold">Variance</span>
+                  <span className={`text-lg font-bold ${closedDrawer.variance >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                    ${closedDrawer.variance.toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {closedDrawer.notes && (
+                <div className="px-4 py-2.5">
+                  <span className="text-xs text-gray-400">Notes:</span>
+                  <p className="text-sm text-gray-700">{closedDrawer.notes}</p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-between">
+              <Button variant="secondary" onClick={() => {
+                setEditForm({
+                  opening_amount: (closedDrawer.opening_amount ?? '').toString(),
+                  expected_closing: (closedDrawer.expected_closing ?? '').toString(),
+                  actual_closing: (closedDrawer.actual_closing ?? '').toString(),
+                  notes: closedDrawer.notes ?? '',
+                });
+                setShowEditDrawerModal(true);
+              }}>
+                Edit Report
+              </Button>
+              <Button onClick={() => { setShowDrawerReportModal(false); setClosedDrawer(null); }}>Done</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Drawer Modal */}
+      <Modal open={showEditDrawerModal} onClose={() => setShowEditDrawerModal(false)} title="Edit Drawer Report">
         <div className="space-y-4">
-          {activeDrawer?.expected_closing != null && (
-            <div className="rounded-lg bg-blue-50 p-3"><p className="text-sm text-blue-700"><strong>Expected:</strong> ${activeDrawer.expected_closing.toFixed(2)}</p></div>
-          )}
-          <Input label="Actual Counted ($)" type="number" step="0.01" min="0" value={drawerCloseAmount} onChange={(e) => setDrawerCloseAmount(e.target.value)} placeholder="0.00" />
-          <Input label="Notes (optional)" value={drawerCloseNotes} onChange={(e) => setDrawerCloseNotes(e.target.value)} placeholder="Any notes..." />
-          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={() => setShowDrawerCloseModal(false)}>Cancel</Button><Button variant="danger" onClick={handleCloseDrawer} loading={actionLoading === 'closeDrawer'}>Close Drawer</Button></div>
+          <Input label="Opening Amount ($)" type="number" step="0.01" value={editForm.opening_amount} onChange={(e) => setEditForm((f) => ({ ...f, opening_amount: e.target.value }))} />
+          <Input label="Expected Amount ($)" type="number" step="0.01" value={editForm.expected_closing} onChange={(e) => setEditForm((f) => ({ ...f, expected_closing: e.target.value }))} />
+          <Input label="Actual Counted ($)" type="number" step="0.01" value={editForm.actual_closing} onChange={(e) => setEditForm((f) => ({ ...f, actual_closing: e.target.value }))} />
+          <Input label="Notes" value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
+          <p className="text-xs text-gray-400">Editing is only allowed for today's drawer reports.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setShowEditDrawerModal(false)}>Cancel</Button>
+            <Button onClick={handleEditDrawer} loading={actionLoading === 'editDrawer'}>Save Changes</Button>
+          </div>
         </div>
       </Modal>
 
