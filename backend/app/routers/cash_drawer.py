@@ -117,6 +117,7 @@ async def api_edit_drawer(
         drawer.variance = round(drawer.actual_closing - drawer.expected_closing, 2)
 
     await db.flush()
+    await db.commit()
 
     await log_action(
         db, current_user.id, "edit_drawer", "cash_drawer", drawer.id,
@@ -151,6 +152,7 @@ async def api_set_expected(
 
     drawer.expected_closing = data.expected_closing
     await db.flush()
+    await db.commit()
 
     await log_action(
         db, current_user.id, "set_expected", "cash_drawer", drawer.id,

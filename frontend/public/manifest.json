@@ -1,0 +1,22 @@
+{
+  "name": "Six Beans Coffee Co.",
+  "short_name": "Six Beans",
+  "description": "Six Beans Coffee employee portal and kiosk",
+  "start_url": "/kiosk",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F0E8",
+  "theme_color": "#4A3428",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

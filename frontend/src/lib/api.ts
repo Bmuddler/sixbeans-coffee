@@ -450,7 +450,10 @@ export const kiosk = {
     api.post<UnexpectedExpense>('/kiosk/drawer/expense', data).then((r) => r.data),
 
   getTodaySchedule: (locationId: number) =>
-    api.get<ScheduledShift[]>(`/kiosk/schedule/${locationId}`).then((r) => r.data),
+    api.get(`/kiosk/schedule/${locationId}`).then((r) => {
+      const data = r.data as any;
+      return (data.shifts ?? data) as ScheduledShift[];
+    }),
 };
 
 // ============================================================

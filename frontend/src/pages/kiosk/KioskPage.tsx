@@ -12,6 +12,10 @@ import {
   Receipt,
   Banknote,
   X,
+  ShoppingCart,
+  Minus,
+  Plus,
+  Package,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -20,9 +24,17 @@ import { Input } from '@/components/ui/Input';
 import { Select } from '@/components/ui/Select';
 import { Modal } from '@/components/ui/Modal';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import { api, kiosk, locations as locationsApi, cashDrawer as cashDrawerApi } from '@/lib/api';
+import { api, kiosk, locations as locationsApi, cashDrawer as cashDrawerApi, supplyOrders } from '@/lib/api';
 import { formatTime as formatTimePT } from '@/lib/timezone';
-import type { KioskAuthResponse, ScheduledShift, Location } from '@/types';
+import type { ScheduledShift, Location } from '@/types';
+
+interface KioskSession {
+  session_token: string;
+  first_name: string;
+  last_name: string;
+  active_clock?: { id: number; status: string; clock_in: string } | null;
+  today_shifts?: any[];
+}
 
 const INACTIVITY_TIMEOUT = 120_000;
 const EXPENSE_CATEGORIES = [
@@ -43,7 +55,7 @@ export function KioskPage() {
   const [locationId, setLocationId] = useState<number>(urlLocationId ? parseInt(urlLocationId, 10) : 0);
   const [locationName, setLocationName] = useState('');
   const [loading, setLoading] = useState(false);
-  const [session, setSession] = useState<KioskAuthResponse | null>(null);
+  const [session, setSession] = useState<KioskSession | null>(null);
   const [todaySchedule, setTodaySchedule] = useState<ScheduledShift[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationsLoaded, setLocationsLoaded] = useState(false);
@@ -65,6 +77,15 @@ export function KioskPage() {
   const [drawerCloseNotes, setDrawerCloseNotes] = useState('');
   const [expectedAmount, setExpectedAmount] = useState('');
   const [expenseForm, setExpenseForm] = useState({ amount: '', category: 'CO2 Delivery', notes: '' });
+
+  // Supply ordering
+  const [showSupplyModal, setShowSupplyModal] = useState(false);
+  const [catalog, setCatalog] = useState<any[]>([]);
+  const [catalogCategories, setCatalogCategories] = useState<string[]>([]);
+  const [supplyCategory, setSupplyCategory] = useState('');
+  const [supplyCart, setSupplyCart] = useState<{ id: number; name: string; price: number; qty: number }[]>([]);
+  const [supplyNotes, setSupplyNotes] = useState('');
+  const [supplySubmitting, setSupplySubmitting] = useState(false);
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,9 +160,16 @@ export function KioskPage() {
     if (pin.length < 4) return;
     setLoading(true);
     try {
-      const res = await kiosk.authenticate({ pin_code: pin, location_id: locationId });
-      setSession(res);
-      toast.success(`Welcome, ${res.user.first_name}!`);
+      const res = await kiosk.authenticate({ pin_code: pin, location_id: locationId }) as any;
+      const sess: KioskSession = {
+        session_token: res.session_token,
+        first_name: res.first_name,
+        last_name: res.last_name,
+        active_clock: res.active_time_clock ?? null,
+        today_shifts: res.shifts ?? [],
+      };
+      setSession(sess);
+      toast.success(`Welcome, ${sess.first_name}!`);
       setPin('');
     } catch {
       toast.error('Invalid PIN');
@@ -156,8 +184,8 @@ export function KioskPage() {
     if (!session) return;
     setActionLoading('clockIn');
     try {
-      const result = await kiosk.clockIn({ session_token: session.session_token, location_id: locationId });
-      setSession({ ...session, active_clock: result });
+      const res = await kiosk.clockIn({ session_token: session.session_token, location_id: locationId }) as any;
+      setSession({ ...session, active_clock: { id: res.time_clock_id, status: 'clocked_in', clock_in: res.clock_in } });
       toast.success('Clocked in!');
     } catch { toast.error('Failed to clock in'); }
     finally { setActionLoading(null); }
@@ -168,19 +196,19 @@ export function KioskPage() {
     setActionLoading('clockOut');
     try {
       await kiosk.clockOut({ session_token: session.session_token, time_clock_id: session.active_clock.id });
-      setSession({ ...session, active_clock: undefined });
+      setSession({ ...session, active_clock: null });
       toast.success('Clocked out!');
     } catch { toast.error('Failed to clock out'); }
     finally { setActionLoading(null); }
   };
 
-  const handleStartBreak = async (breakType: string) => {
+  const handleStartBreak = async (breakType: 'paid_10' | 'unpaid_30') => {
     if (!session?.active_clock) return;
     setActionLoading(`break-${breakType}`);
     try {
-      const result = await kiosk.startBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id, break_type: breakType });
-      setSession({ ...session, active_clock: result });
-      toast.success(`${breakType === 'paid' ? '10 min' : '30 min'} break started!`);
+      await kiosk.startBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id, break_type: breakType });
+      setSession({ ...session, active_clock: { ...session.active_clock, status: 'on_break' } });
+      toast.success(`${breakType === 'paid_10' ? '10 min' : '30 min'} break started!`);
     } catch { toast.error('Failed to start break'); }
     finally { setActionLoading(null); }
   };
@@ -189,8 +217,8 @@ export function KioskPage() {
     if (!session?.active_clock) return;
     setActionLoading('endBreak');
     try {
-      const result = await kiosk.endBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id });
-      setSession({ ...session, active_clock: result });
+      await kiosk.endBreak({ session_token: session.session_token, time_clock_id: session.active_clock.id });
+      setSession({ ...session, active_clock: { ...session.active_clock, status: 'clocked_in' } });
       toast.success('Break ended!');
     } catch { toast.error('Failed to end break'); }
     finally { setActionLoading(null); }
@@ -248,7 +276,51 @@ export function KioskPage() {
     finally { setActionLoading(null); }
   };
 
-  const onBreak = session?.active_clock?.breaks?.some((b: any) => !b.end_time) ?? false;
+  useEffect(() => {
+    if (showSupplyModal && catalog.length === 0) {
+      supplyOrders.getCatalog().then((data: any) => {
+        const cats = data.categories ?? [];
+        const flat = cats.flatMap((cat: any) =>
+          (cat.items ?? []).map((item: any) => ({ ...item, category: cat.name }))
+        );
+        setCatalog(flat);
+        const names = cats.map((c: any) => c.name).sort();
+        setCatalogCategories(names);
+        if (names.length > 0 && !supplyCategory) setSupplyCategory(names[0]);
+      }).catch(() => toast.error('Failed to load catalog'));
+    }
+  }, [showSupplyModal]);
+
+  const supplyCategoryItems = catalog.filter((item) => item.category === supplyCategory);
+  const supplyCartCount = supplyCart.reduce((sum, c) => sum + c.qty, 0);
+  const supplyCartTotal = supplyCart.reduce((sum, c) => sum + c.price * c.qty, 0);
+
+  const addToSupplyCart = (item: any) => {
+    setSupplyCart((prev) => {
+      const existing = prev.find((c) => c.id === item.id);
+      if (existing) return prev.map((c) => c.id === item.id ? { ...c, qty: c.qty + 1 } : c);
+      return [...prev, { id: item.id, name: item.name, price: item.price ?? 0, qty: 1 }];
+    });
+  };
+
+  const handleSubmitSupplyOrder = async () => {
+    if (supplyCart.length === 0) return;
+    setSupplySubmitting(true);
+    try {
+      await supplyOrders.submitOrder({
+        location_id: locationId,
+        notes: supplyNotes || undefined,
+        items: supplyCart.map((c) => ({ supply_item_id: c.id, quantity: c.qty })),
+      });
+      toast.success('Supply order submitted!');
+      setSupplyCart([]);
+      setSupplyNotes('');
+      setShowSupplyModal(false);
+    } catch { toast.error('Failed to submit order'); }
+    finally { setSupplySubmitting(false); }
+  };
+
+  const onBreak = session?.active_clock?.status === 'on_break';
   const lockedToLocation = !!urlLocationId;
 
   // ---- PIN Screen ----
@@ -299,10 +371,10 @@ export function KioskPage() {
         <div className="rounded-3xl bg-white p-6 shadow-xl mb-4 text-center">
           <img src="/logo.png" alt="Six Beans" className="h-10 w-auto mx-auto mb-2" />
           {locationName && <p className="text-xs font-medium text-gray-400 mb-2">{locationName}</p>}
-          <h2 className="text-2xl font-bold text-gray-900">Hello, {session.user.first_name}!</h2>
+          <h2 className="text-2xl font-bold text-gray-900">Hello, {session.first_name}!</h2>
           <p className="text-sm text-gray-500 mt-1">
             {session.active_clock ? (onBreak ? 'On break' : 'Clocked in') : 'Clocked out'}
-            {session.active_clock && ` since ${formatTimePT(session.active_clock.clock_in)}`}
+            {session.active_clock?.clock_in && ` since ${formatTimePT(session.active_clock.clock_in)}`}
           </p>
 
           {/* Drawer status */}
@@ -328,7 +400,7 @@ export function KioskPage() {
           )}
 
           {session.active_clock && !onBreak ? (
-            <button onClick={() => handleStartBreak('paid')} disabled={actionLoading === 'break-paid'} className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-amber-500 p-6 text-white shadow-lg hover:bg-amber-600 transition-colors disabled:opacity-50">
+            <button onClick={() => handleStartBreak('paid_10')} disabled={actionLoading === 'break-paid_10'} className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-amber-500 p-6 text-white shadow-lg hover:bg-amber-600 transition-colors disabled:opacity-50">
               <Coffee className="h-10 w-10" /><span className="text-lg font-bold">10 min Break</span><span className="text-xs opacity-80">Paid</span>
             </button>
           ) : session.active_clock && onBreak ? (
@@ -340,13 +412,17 @@ export function KioskPage() {
           )}
 
           {session.active_clock && !onBreak && (
-            <button onClick={() => handleStartBreak('unpaid')} disabled={actionLoading === 'break-unpaid'} className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-orange-500 p-6 text-white shadow-lg hover:bg-orange-600 transition-colors disabled:opacity-50 col-span-2 sm:col-span-1">
+            <button onClick={() => handleStartBreak('unpaid_30')} disabled={actionLoading === 'break-unpaid_30'} className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-orange-500 p-6 text-white shadow-lg hover:bg-orange-600 transition-colors disabled:opacity-50 col-span-2 sm:col-span-1">
               <Coffee className="h-10 w-10" /><span className="text-lg font-bold">30 min Break</span><span className="text-xs opacity-80">Unpaid</span>
             </button>
           )}
 
           <button onClick={() => setShowScheduleModal(true)} className="flex flex-col items-center justify-center gap-2 rounded-3xl bg-indigo-500 p-6 text-white shadow-lg hover:bg-indigo-600 transition-colors">
             <Users className="h-10 w-10" /><span className="text-lg font-bold">Schedule</span>
+          </button>
+
+          <button onClick={() => setShowSupplyModal(true)} className="flex flex-col items-center justify-center gap-2 rounded-3xl p-6 text-white shadow-lg transition-colors" style={{ backgroundColor: '#5CB832' }}>
+            <Package className="h-10 w-10" /><span className="text-lg font-bold">Order Supplies</span>
           </button>
         </div>
 
@@ -426,15 +502,91 @@ export function KioskPage() {
       {/* Schedule Modal */}
       <Modal open={showScheduleModal} onClose={() => setShowScheduleModal(false)} title="Today's Schedule" size="lg">
         <div className="space-y-2">
-          {todaySchedule.length > 0 ? todaySchedule.map((shift) => (
+          {todaySchedule.length > 0 ? todaySchedule.map((shift: any) => (
             <div key={shift.id} className="flex items-center justify-between rounded-lg border border-gray-200 p-3">
               <div>
                 <p className="font-semibold text-gray-900">{shift.employee_name ?? `Employee #${shift.employee_id}`}</p>
-                {shift.role_label && <p className="text-xs text-gray-500">{shift.role_label}</p>}
               </div>
               <p className="font-medium text-gray-700">{shift.start_time?.slice(0,5)} - {shift.end_time?.slice(0,5)}</p>
             </div>
           )) : <p className="text-center text-gray-500 py-8">No shifts scheduled today.</p>}
+        </div>
+      </Modal>
+
+      {/* Supply Order Modal */}
+      <Modal open={showSupplyModal} onClose={() => setShowSupplyModal(false)} title="Order Supplies" size="lg">
+        <div className="space-y-4">
+          {/* Category tabs */}
+          <div className="flex gap-1 overflow-x-auto pb-1">
+            {catalogCategories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setSupplyCategory(cat)}
+                className={`whitespace-nowrap px-3 py-1.5 rounded-full text-xs font-medium transition-colors flex-shrink-0 ${
+                  supplyCategory === cat ? 'bg-green-500 text-white' : 'bg-gray-100 text-gray-600'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Items */}
+          <div className="max-h-[40vh] overflow-y-auto divide-y divide-gray-100 border rounded-lg">
+            {supplyCategoryItems.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No items</p>
+            ) : supplyCategoryItems.map((item: any) => {
+              const inCart = supplyCart.find((c) => c.id === item.id);
+              return (
+                <div key={item.id} className="flex items-center gap-3 px-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                    <p className="text-xs text-gray-500">{item.description} {item.price != null ? `· $${item.price.toFixed(2)}` : ''}</p>
+                  </div>
+                  {inCart ? (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => setSupplyCart((prev) => prev.map((c) => c.id === item.id ? { ...c, qty: Math.max(1, c.qty - 1) } : c))} className="h-7 w-7 flex items-center justify-center rounded border border-gray-300">
+                        <Minus className="h-3 w-3" />
+                      </button>
+                      <span className="w-8 text-center text-sm font-medium">{inCart.qty}</span>
+                      <button onClick={() => setSupplyCart((prev) => prev.map((c) => c.id === item.id ? { ...c, qty: c.qty + 1 } : c))} className="h-7 w-7 flex items-center justify-center rounded border border-gray-300">
+                        <Plus className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => setSupplyCart((prev) => prev.filter((c) => c.id !== item.id))} className="ml-1 h-7 w-7 flex items-center justify-center rounded text-red-400 hover:text-red-600">
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => addToSupplyCart(item)} className="px-3 py-1 rounded-lg text-sm font-medium text-white" style={{ backgroundColor: '#5CB832' }}>
+                      Add
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Cart summary */}
+          {supplyCart.length > 0 && (
+            <div className="rounded-lg bg-gray-50 p-3 space-y-2">
+              <div className="flex justify-between text-sm font-medium">
+                <span>{supplyCartCount} items</span>
+                <span className="text-green-600">${supplyCartTotal.toFixed(2)}</span>
+              </div>
+              <div className="text-xs text-gray-500 space-y-0.5">
+                {supplyCart.map((c) => (
+                  <div key={c.id} className="flex justify-between">
+                    <span>{c.name} x{c.qty}</span>
+                    <span>${(c.price * c.qty).toFixed(2)}</span>
+                  </div>
+                ))}
+              </div>
+              <Input placeholder="Notes (optional)" value={supplyNotes} onChange={(e) => setSupplyNotes(e.target.value)} />
+              <Button className="w-full" onClick={handleSubmitSupplyOrder} loading={supplySubmitting}>
+                Submit Order
+              </Button>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

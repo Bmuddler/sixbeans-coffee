@@ -85,11 +85,16 @@ async def kiosk_authenticate(
     """Authenticate by PIN code. Matches the last 4 digits against pin_last_four."""
     pin_last_four = data.pin_code[-4:] if len(data.pin_code) >= 4 else data.pin_code
 
+    from app.models.user import user_locations
+
     result = await db.execute(
-        select(User).where(
+        select(User)
+        .join(user_locations, User.id == user_locations.c.user_id)
+        .where(
             and_(
                 User.pin_last_four == pin_last_four,
                 User.is_active.is_(True),
+                user_locations.c.location_id == data.location_id,
             )
         )
     )
