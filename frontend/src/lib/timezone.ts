@@ -1,24 +1,22 @@
 export const TIMEZONE = 'America/Los_Angeles';
 
-function ensureUtc(dateStr: string): string {
-  if (typeof dateStr === 'string' && !dateStr.endsWith('Z') && !dateStr.includes('+') && !dateStr.includes('-', 10)) {
-    return dateStr + 'Z';
+function toDate(dateStr: string | Date): Date {
+  if (typeof dateStr === 'string') {
+    // Backend timestamps are naive Pacific time (no Z or offset).
+    // Parse them as-is — do NOT append Z (that would misinterpret as UTC).
+    // Replace T with space so JS Date() treats as local time.
+    const cleaned = dateStr.endsWith('Z') ? dateStr : dateStr.replace('T', ' ');
+    return new Date(cleaned);
   }
   return dateStr;
 }
 
-function toDate(dateStr: string | Date): Date {
-  if (typeof dateStr === 'string') return new Date(ensureUtc(dateStr));
-  return dateStr;
-}
-
 export function formatDateTime(dateStr: string | Date, options?: Intl.DateTimeFormatOptions): string {
-  return toDate(dateStr).toLocaleString('en-US', { timeZone: TIMEZONE, ...options });
+  return toDate(dateStr).toLocaleString('en-US', { ...options });
 }
 
 export function formatTime(dateStr: string | Date): string {
   return toDate(dateStr).toLocaleTimeString('en-US', {
-    timeZone: TIMEZONE,
     hour: 'numeric',
     minute: '2-digit',
     hour12: true,
@@ -27,7 +25,6 @@ export function formatTime(dateStr: string | Date): string {
 
 export function formatDate(dateStr: string | Date): string {
   return toDate(dateStr).toLocaleDateString('en-US', {
-    timeZone: TIMEZONE,
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -36,7 +33,6 @@ export function formatDate(dateStr: string | Date): string {
 
 export function formatShortDate(dateStr: string | Date): string {
   return toDate(dateStr).toLocaleDateString('en-US', {
-    timeZone: TIMEZONE,
     month: 'short',
     day: 'numeric',
   });

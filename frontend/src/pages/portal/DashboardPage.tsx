@@ -1147,7 +1147,7 @@ function EmployeeDashboardPage({ userId, locationId, firstName }: { userId: numb
               {nextShift ? (
                 <>
                   <p className="text-lg font-bold text-gray-900">{formatDate(nextShift.date)}</p>
-                  <p className="text-xs text-gray-500">{nextShift.start_time?.slice(0,5)} - {nextShift.end_time?.slice(0,5)}</p>
+                  <p className="text-xs text-gray-500">{formatTimeTz(nextShift.start_time)} - {formatTimeTz(nextShift.end_time)}</p>
                 </>
               ) : (
                 <p className="text-sm text-gray-400">No upcoming shifts</p>

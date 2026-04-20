@@ -672,7 +672,7 @@ export function KioskPage() {
               <div>
                 <p className="font-semibold text-gray-900">{shift.employee_name ?? `Employee #${shift.employee_id}`}</p>
               </div>
-              <p className="font-medium text-gray-700">{shift.start_time?.slice(0,5)} - {shift.end_time?.slice(0,5)}</p>
+              <p className="font-medium text-gray-700">{formatTimePT(shift.start_time)} - {formatTimePT(shift.end_time)}</p>
             </div>
           )) : <p className="text-center text-gray-500 py-8">No shifts scheduled today.</p>}
         </div>
