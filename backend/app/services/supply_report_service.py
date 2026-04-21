@@ -100,7 +100,7 @@ async def fetch_square_orders(start_iso: str, end_iso: str) -> list[dict]:
     """Fetch orders from all active Square locations within the time window."""
     headers = _square_headers()
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    async with httpx.AsyncClient(timeout=60) as client:
         # 1) Get active location IDs
         loc_resp = await client.get(f"{SQUARE_BASE}/locations", headers=headers)
         loc_data = loc_resp.json()

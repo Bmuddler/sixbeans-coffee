@@ -47,12 +47,15 @@ async def scheduled_supply_report(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid cron key",
         )
+    import traceback
     try:
         result = await run_supply_report(manual=False)
         return result
     except Exception as exc:
+        tb = traceback.format_exc()
         logger.exception("Scheduled supply report failed")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Supply report failed: {exc}",
-        )
+        return {
+            "status": "error",
+            "error": str(exc),
+            "traceback": tb,
+        }
