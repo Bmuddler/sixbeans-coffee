@@ -502,12 +502,31 @@ async def run_supply_report(manual: bool = False) -> dict:
     ):
         emails_sent += 1
 
-    # 2. Checklist email (full HTML inline so they can use it on their phone)
+    # 2. Checklist — store as web page and send link
+    from app.routers.supply_reports import store_checklist
+
     checklist_html = build_html_report(report_data, batch_name, window_label)
+    checklist_token = store_checklist(checklist_html)
+    base_url = "https://sixbeans-api.onrender.com/api"
+    checklist_url = f"{base_url}/supply-reports/checklist/{checklist_token}"
+
+    checklist_email = f"""
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+<div style="background:#27ae60;color:white;padding:24px;border-radius:8px;text-align:center;">
+  <h2 style="margin:0 0 8px;">&#9745; Six Beans Supply Checklist</h2>
+  <p style="margin:0;opacity:.9;">{batch_name} &middot; {window_label}</p>
+</div>
+<div style="padding:24px;text-align:center;">
+  <p style="font-size:1.1em;margin-bottom:20px;">Your interactive checklist is ready. Open it in your browser to check off items as you collect them:</p>
+  <a href="{checklist_url}" style="display:inline-block;background:#27ae60;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1.1em;">Open Checklist</a>
+  <p style="margin-top:16px;font-size:.85em;color:#888;">Tap the button above or copy this link:<br>{checklist_url}</p>
+</div>
+</body></html>"""
+
     if send_report_email(
         FULL_RECIPIENTS,
         f"Six Beans Checklist ({window_label})",
-        checklist_html,
+        checklist_email,
     ):
         emails_sent += 1
 
@@ -528,10 +547,26 @@ async def run_supply_report(manual: bool = False) -> dict:
         bakery_checklist = build_html_report(
             bakery_data, batch_name, window_label, title_suffix="BAKERY ONLY",
         )
+        bakery_token = store_checklist(bakery_checklist)
+        bakery_url = f"{base_url}/supply-reports/checklist/{bakery_token}"
+
+        bakery_link_email = f"""
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#333;max-width:600px;margin:0 auto;padding:20px;">
+<div style="background:#8B4513;color:white;padding:24px;border-radius:8px;text-align:center;">
+  <h2 style="margin:0 0 8px;">&#127840; Six Beans Bakery Checklist</h2>
+  <p style="margin:0;opacity:.9;">{batch_name} &middot; {window_label}</p>
+</div>
+<div style="padding:24px;text-align:center;">
+  <p style="font-size:1.1em;margin-bottom:20px;">Your bakery checklist is ready:</p>
+  <a href="{bakery_url}" style="display:inline-block;background:#8B4513;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1.1em;">Open Bakery Checklist</a>
+  <p style="margin-top:16px;font-size:.85em;color:#888;">Tap the button above or copy this link:<br>{bakery_url}</p>
+</div>
+</body></html>"""
+
         if send_report_email(
             BAKERY_RECIPIENTS,
             f"Six Beans Bakery Checklist ({window_label})",
-            bakery_checklist,
+            bakery_link_email,
         ):
             emails_sent += 1
 

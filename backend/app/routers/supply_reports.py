@@ -1,8 +1,10 @@
 """Supply report endpoints — manual trigger and scheduled cron."""
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -14,6 +16,30 @@ from app.services.supply_report_service import run_supply_report
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# In-memory cache for generated checklists (keyed by token)
+_checklist_cache: dict[str, str] = {}
+
+
+def store_checklist(html: str) -> str:
+    """Store a checklist and return its access token."""
+    import hashlib
+    token = hashlib.sha256(f"{datetime.utcnow().isoformat()}{len(html)}".encode()).hexdigest()[:16]
+    _checklist_cache[token] = html
+    # Keep only last 20 checklists
+    if len(_checklist_cache) > 20:
+        oldest = list(_checklist_cache.keys())[0]
+        del _checklist_cache[oldest]
+    return token
+
+
+@router.get("/checklist/{token}", response_class=HTMLResponse)
+async def view_checklist(token: str):
+    """Serve a generated checklist as a web page (no auth required)."""
+    html = _checklist_cache.get(token)
+    if not html:
+        return HTMLResponse("<h1>Checklist not found or expired</h1><p>This link may have expired. Please request a new report.</p>", status_code=404)
+    return HTMLResponse(html)
 
 
 @router.post("/run")
