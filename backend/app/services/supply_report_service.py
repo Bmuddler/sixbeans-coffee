@@ -681,10 +681,13 @@ async def run_supply_report(manual: bool = False) -> dict:
 </div>
 </body></html>"""
 
-        if send_report_email(
+        bakery_pdf = _build_orders_pdf(bakery_data, batch_name, window_label, 0)
+        if send_report_email_with_attachment(
             BAKERY_RECIPIENTS,
             f"Six Beans Bakery Checklist ({window_label})",
             bakery_link_email,
+            bakery_pdf,
+            f"SixBeans_Bakery_{datetime.now(LA_TZ).strftime('%Y-%m-%d')}.pdf",
         ):
             emails_sent += 1
 
