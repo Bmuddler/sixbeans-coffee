@@ -422,6 +422,125 @@ def build_bakery_email_html(
 # ── email sending ────────────────────────────────────────────
 
 
+def _build_orders_pdf(
+    report_data: dict,
+    batch_name: str,
+    window_label: str,
+    total_orders: int,
+) -> bytes:
+    """Build a simple PDF listing all orders by supplier and shop."""
+    lines = []
+    lines.append(f"Six Beans Supply Report — {batch_name}")
+    lines.append(f"Window: {window_label}")
+    lines.append(f"Total Orders: {total_orders}")
+    lines.append("")
+    lines.append("=" * 60)
+
+    suppliers = _sorted_suppliers(report_data)
+    for supplier in suppliers:
+        item_count = sum(len(v) for v in report_data[supplier].values())
+        lines.append("")
+        lines.append(f"  {supplier} ({item_count} items)")
+        lines.append("-" * 40)
+        for shop in sorted(report_data[supplier].keys()):
+            lines.append(f"    {shop}:")
+            for item in report_data[supplier][shop]:
+                lines.append(f"      [ ] {item}")
+        lines.append("")
+
+    text = "\n".join(lines)
+
+    # Build a minimal valid PDF with the text content
+    content = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    # Split into lines for PDF text rendering
+    pdf_lines = text.split("\n")
+
+    # Build PDF manually (no external library needed)
+    pdf = bytearray()
+    pdf.extend(b"%PDF-1.4\n")
+
+    # Object 1: Catalog
+    obj1_offset = len(pdf)
+    pdf.extend(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+
+    # Object 2: Pages
+    obj2_offset = len(pdf)
+    pdf.extend(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
+
+    # Object 4: Font
+    obj4_offset = len(pdf)
+    pdf.extend(b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n")
+
+    # Build text stream
+    stream_lines = ["BT", "/F1 9 Tf", "36 756 Td", "11 TL"]
+    for line in pdf_lines:
+        safe = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+        stream_lines.append(f"({safe}) '")
+    stream_lines.append("ET")
+    stream_content = "\n".join(stream_lines).encode()
+
+    # Object 5: Content stream
+    obj5_offset = len(pdf)
+    pdf.extend(f"5 0 obj\n<< /Length {len(stream_content)} >>\nstream\n".encode())
+    pdf.extend(stream_content)
+    pdf.extend(b"\nendstream\nendobj\n")
+
+    # Object 3: Page
+    obj3_offset = len(pdf)
+    pdf.extend(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+               b"/Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n")
+
+    # Cross-reference table
+    xref_offset = len(pdf)
+    pdf.extend(b"xref\n0 6\n")
+    pdf.extend(b"0000000000 65535 f \n")
+    pdf.extend(f"{obj1_offset:010d} 00000 n \n".encode())
+    pdf.extend(f"{obj2_offset:010d} 00000 n \n".encode())
+    pdf.extend(f"{obj3_offset:010d} 00000 n \n".encode())
+    pdf.extend(f"{obj4_offset:010d} 00000 n \n".encode())
+    pdf.extend(f"{obj5_offset:010d} 00000 n \n".encode())
+
+    pdf.extend(b"trailer\n<< /Size 6 /Root 1 0 R >>\n")
+    pdf.extend(b"startxref\n")
+    pdf.extend(f"{xref_offset}\n".encode())
+    pdf.extend(b"%%EOF\n")
+
+    return bytes(pdf)
+
+
+def send_report_email_with_attachment(
+    to_list: list[str], subject: str, html_body: str,
+    attachment_data: bytes, attachment_name: str,
+) -> bool:
+    """Send an HTML email with a PDF attachment via Gmail SMTP."""
+    if not settings.gmail_app_password or not settings.gmail_from:
+        logger.warning("Gmail not configured, skipping email send")
+        return False
+
+    from email.mime.application import MIMEApplication
+
+    msg = MIMEMultipart()
+    msg["From"] = settings.gmail_from
+    msg["To"] = ", ".join(to_list)
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html"))
+
+    pdf_part = MIMEApplication(attachment_data, _subtype="pdf")
+    pdf_part.add_header("Content-Disposition", "attachment", filename=attachment_name)
+    msg.attach(pdf_part)
+
+    try:
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(settings.gmail_from, settings.gmail_app_password)
+            server.sendmail(settings.gmail_from, to_list, msg.as_string())
+        logger.info("Email with attachment sent to %s — %s", ", ".join(to_list), subject)
+        return True
+    except Exception:
+        logger.exception("Failed to send email to %s", ", ".join(to_list))
+        return False
+
+
 def send_report_email(to_list: list[str], subject: str, html_body: str) -> bool:
     """Send an HTML email via Gmail SMTP."""
     if not settings.gmail_app_password or not settings.gmail_from:
@@ -490,19 +609,11 @@ async def run_supply_report(manual: bool = False) -> dict:
     # Parse
     report_data = parse_orders(all_orders)
 
-    # ── Full report emails ──────────────────────────────────
+    # ── Build PDF of all orders ────────────────────────────
+    pdf_data = _build_orders_pdf(report_data, batch_name, window_label, len(all_orders))
+
+    # ── Full checklist email with PDF attached ─────────────
     emails_sent = 0
-
-    # 1. Summary email
-    summary_html = build_email_html(report_data, batch_name, window_label, len(all_orders))
-    if send_report_email(
-        FULL_RECIPIENTS,
-        f"Six Beans Supply Report ({window_label})",
-        summary_html,
-    ):
-        emails_sent += 1
-
-    # 2. Checklist — store as web page and send link
     from app.routers.supply_reports import store_checklist
 
     checklist_html = build_html_report(report_data, batch_name, window_label)
@@ -517,32 +628,26 @@ async def run_supply_report(manual: bool = False) -> dict:
   <p style="margin:0;opacity:.9;">{batch_name} &middot; {window_label}</p>
 </div>
 <div style="padding:24px;text-align:center;">
-  <p style="font-size:1.1em;margin-bottom:20px;">Your interactive checklist is ready. Open it in your browser to check off items as you collect them:</p>
+  <p style="font-size:1.1em;margin-bottom:20px;">Your interactive checklist is ready:</p>
   <a href="{checklist_url}" style="display:inline-block;background:#27ae60;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1.1em;">Open Checklist</a>
-  <p style="margin-top:16px;font-size:.85em;color:#888;">Tap the button above or copy this link:<br>{checklist_url}</p>
+  <p style="margin-top:16px;font-size:.85em;color:#888;">A PDF of all orders is attached to this email.</p>
 </div>
 </body></html>"""
 
-    if send_report_email(
+    if send_report_email_with_attachment(
         FULL_RECIPIENTS,
         f"Six Beans Checklist ({window_label})",
         checklist_email,
+        pdf_data,
+        f"SixBeans_Orders_{datetime.now(LA_TZ).strftime('%Y-%m-%d')}.pdf",
     ):
         emails_sent += 1
 
-    # ── Bakery report emails ────────────────────────────────
+    # ── Bakery checklist email ──────────────────────────────
     has_bakery = "BAKERY" in report_data
     if has_bakery:
         bakery_data: dict = defaultdict(lambda: defaultdict(list))
         bakery_data["BAKERY"] = report_data["BAKERY"]
-
-        bakery_summary = build_bakery_email_html(bakery_data, batch_name, window_label)
-        if send_report_email(
-            BAKERY_RECIPIENTS,
-            f"Six Beans Bakery Items ({window_label})",
-            bakery_summary,
-        ):
-            emails_sent += 1
 
         bakery_checklist = build_html_report(
             bakery_data, batch_name, window_label, title_suffix="BAKERY ONLY",
@@ -559,7 +664,6 @@ async def run_supply_report(manual: bool = False) -> dict:
 <div style="padding:24px;text-align:center;">
   <p style="font-size:1.1em;margin-bottom:20px;">Your bakery checklist is ready:</p>
   <a href="{bakery_url}" style="display:inline-block;background:#8B4513;color:white;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:1.1em;">Open Bakery Checklist</a>
-  <p style="margin-top:16px;font-size:.85em;color:#888;">Tap the button above or copy this link:<br>{bakery_url}</p>
 </div>
 </body></html>"""
 
