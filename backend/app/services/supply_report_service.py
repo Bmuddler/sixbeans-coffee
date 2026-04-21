@@ -428,84 +428,98 @@ def _build_orders_pdf(
     window_label: str,
     total_orders: int,
 ) -> bytes:
-    """Build a simple PDF listing all orders by supplier and shop."""
-    lines = []
-    lines.append(f"Six Beans Supply Report — {batch_name}")
-    lines.append(f"Window: {window_label}")
-    lines.append(f"Total Orders: {total_orders}")
-    lines.append("")
-    lines.append("=" * 60)
+    """Build a professional multi-page PDF of all orders by supplier and shop."""
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    )
 
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle("Title2", parent=styles["Title"], fontSize=18,
+                                  textColor=colors.HexColor("#2c3e50"), spaceAfter=4)
+    subtitle_style = ParagraphStyle("Sub", parent=styles["Normal"], fontSize=10,
+                                     textColor=colors.gray, spaceAfter=12)
+    supplier_style = ParagraphStyle("Supplier", parent=styles["Heading2"], fontSize=14,
+                                     textColor=colors.white, backColor=colors.HexColor("#2c3e50"),
+                                     spaceBefore=16, spaceAfter=8, leftIndent=6,
+                                     borderPadding=(6, 8, 6, 8))
+    shop_style = ParagraphStyle("Shop", parent=styles["Heading3"], fontSize=11,
+                                 textColor=colors.HexColor("#1a1a2e"), spaceBefore=10, spaceAfter=4)
+    item_style = ParagraphStyle("Item", parent=styles["Normal"], fontSize=9.5,
+                                 leftIndent=20, spaceBefore=1, spaceAfter=1,
+                                 textColor=colors.HexColor("#333333"))
+
+    story = []
+
+    # Header
+    story.append(Paragraph("Six Beans Supply Report", title_style))
+    story.append(Paragraph(f"<b>{batch_name}</b> &nbsp;&middot;&nbsp; {window_label}", subtitle_style))
+
+    # Summary table
     suppliers = _sorted_suppliers(report_data)
+    summary_data = [["Supplier", "Shops", "Items"]]
+    grand_total = 0
+    for sup in suppliers:
+        shop_count = len(report_data[sup])
+        item_count = sum(len(v) for v in report_data[sup].values())
+        grand_total += item_count
+        summary_data.append([sup, str(shop_count), str(item_count)])
+    summary_data.append(["TOTAL", "", str(grand_total)])
+
+    summary_table = Table(summary_data, colWidths=[3.5 * inch, 1.2 * inch, 1.2 * inch])
+    summary_table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2c3e50")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, 0), 10),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#e8e8e8")),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -2), [colors.white, colors.HexColor("#f8f8f8")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(summary_table)
+    story.append(Spacer(1, 16))
+
+    # Detail sections
     for supplier in suppliers:
         item_count = sum(len(v) for v in report_data[supplier].values())
-        lines.append("")
-        lines.append(f"  {supplier} ({item_count} items)")
-        lines.append("-" * 40)
+        story.append(Paragraph(f"{supplier} &nbsp;&mdash;&nbsp; {item_count} items", supplier_style))
+
         for shop in sorted(report_data[supplier].keys()):
-            lines.append(f"    {shop}:")
-            for item in report_data[supplier][shop]:
-                lines.append(f"      [ ] {item}")
-        lines.append("")
+            shop_items = report_data[supplier][shop]
+            story.append(Paragraph(f"{shop} ({len(shop_items)} items)", shop_style))
 
-    text = "\n".join(lines)
+            # Items as a table with checkbox column
+            item_data = []
+            for item in shop_items:
+                item_data.append(["\u2610", item])
 
-    # Build a minimal valid PDF with the text content
-    content = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    # Split into lines for PDF text rendering
-    pdf_lines = text.split("\n")
+            if item_data:
+                item_table = Table(item_data, colWidths=[0.3 * inch, 5.0 * inch])
+                item_table.setStyle(TableStyle([
+                    ("FONTSIZE", (0, 0), (-1, -1), 9.5),
+                    ("FONTNAME", (0, 0), (0, -1), "Helvetica"),
+                    ("TEXTCOLOR", (0, 0), (0, -1), colors.HexColor("#999999")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                    ("LEFTPADDING", (0, 0), (0, -1), 20),
+                    ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+                ]))
+                story.append(item_table)
 
-    # Build PDF manually (no external library needed)
-    pdf = bytearray()
-    pdf.extend(b"%PDF-1.4\n")
-
-    # Object 1: Catalog
-    obj1_offset = len(pdf)
-    pdf.extend(b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
-
-    # Object 2: Pages
-    obj2_offset = len(pdf)
-    pdf.extend(b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")
-
-    # Object 4: Font
-    obj4_offset = len(pdf)
-    pdf.extend(b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj\n")
-
-    # Build text stream
-    stream_lines = ["BT", "/F1 9 Tf", "36 756 Td", "11 TL"]
-    for line in pdf_lines:
-        safe = line.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-        stream_lines.append(f"({safe}) '")
-    stream_lines.append("ET")
-    stream_content = "\n".join(stream_lines).encode()
-
-    # Object 5: Content stream
-    obj5_offset = len(pdf)
-    pdf.extend(f"5 0 obj\n<< /Length {len(stream_content)} >>\nstream\n".encode())
-    pdf.extend(stream_content)
-    pdf.extend(b"\nendstream\nendobj\n")
-
-    # Object 3: Page
-    obj3_offset = len(pdf)
-    pdf.extend(b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-               b"/Contents 5 0 R /Resources << /Font << /F1 4 0 R >> >> >>\nendobj\n")
-
-    # Cross-reference table
-    xref_offset = len(pdf)
-    pdf.extend(b"xref\n0 6\n")
-    pdf.extend(b"0000000000 65535 f \n")
-    pdf.extend(f"{obj1_offset:010d} 00000 n \n".encode())
-    pdf.extend(f"{obj2_offset:010d} 00000 n \n".encode())
-    pdf.extend(f"{obj3_offset:010d} 00000 n \n".encode())
-    pdf.extend(f"{obj4_offset:010d} 00000 n \n".encode())
-    pdf.extend(f"{obj5_offset:010d} 00000 n \n".encode())
-
-    pdf.extend(b"trailer\n<< /Size 6 /Root 1 0 R >>\n")
-    pdf.extend(b"startxref\n")
-    pdf.extend(f"{xref_offset}\n".encode())
-    pdf.extend(b"%%EOF\n")
-
-    return bytes(pdf)
+    doc.build(story)
+    return buf.getvalue()
 
 
 def send_report_email_with_attachment(
