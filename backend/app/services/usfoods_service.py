@@ -53,25 +53,28 @@ SQUARE_BASE_URL = "https://connect.squareup.com/v2"
 
 async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
     """
-    Pull Square orders for Fri 10AM - Mon 10AM Pacific, filter [U] items,
+    Pull Square orders for Fri 10AM - Mon 11AM Pacific, filter [U] items,
     resolve catalog names, map to shops, aggregate, generate CSV, and create the run.
     """
-    # Calculate order window: Friday 10AM to Monday 10AM Pacific
-    today = date.today()
+    import pytz
+    pacific = pytz.timezone("America/Los_Angeles")
+    now = datetime.now(pacific)
+    today = now.date()
+
     # Find the most recent Monday (today or before)
     days_since_monday = today.weekday()  # Monday = 0
     monday = today - timedelta(days=days_since_monday)
 
-    # Order window: Friday 10AM to Monday 10AM
+    # Order window: Friday 10AM to Monday 11AM Pacific
     friday = monday - timedelta(days=3)
-    order_window_start = datetime(friday.year, friday.month, friday.day, 10, 0, 0)
-    order_window_end = datetime(monday.year, monday.month, monday.day, 10, 0, 0)
+    order_window_start = pacific.localize(datetime(friday.year, friday.month, friday.day, 10, 0, 0))
+    order_window_end = pacific.localize(datetime(monday.year, monday.month, monday.day, 11, 0, 0))
 
-    # Create the run record
+    # Create the run record (store naive datetimes for DB)
     run = USFoodsWeeklyRun(
         run_date=today,
-        order_window_start=order_window_start,
-        order_window_end=order_window_end,
+        order_window_start=order_window_start.replace(tzinfo=None),
+        order_window_end=order_window_end.replace(tzinfo=None),
         status=RunStatus.generating,
     )
     db.add(run)
@@ -177,12 +180,12 @@ async def _fetch_square_orders(start: datetime, end: datetime) -> list[dict]:
                     "filter": {
                         "date_time_filter": {
                             "created_at": {
-                                "start_at": start.isoformat() + "Z",
-                                "end_at": end.isoformat() + "Z",
+                                "start_at": start.isoformat(),
+                                "end_at": end.isoformat(),
                             }
                         },
                         "state_filter": {
-                            "states": ["COMPLETED"]
+                            "states": ["OPEN", "COMPLETED"]
                         },
                     }
                 },
