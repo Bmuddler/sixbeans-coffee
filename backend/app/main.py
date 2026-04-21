@@ -12,6 +12,7 @@ from app.models.location import Location
 from app.services.auth_service import hash_password
 from app.seed_employees import seed_employees
 from app.seed_supply_catalog import seed_supply_catalog
+from app.seed_usfoods import seed_usfoods
 from app.models.system_settings import SystemSettings
 from app.routers import (
     applications,
@@ -29,6 +30,7 @@ from app.routers import (
     shift_swap,
     supply_orders,
     supply_reports,
+    usfoods,
     time_clock,
     time_off,
     users,
@@ -66,6 +68,7 @@ app.include_router(settings_router.router, prefix="/api/settings", tags=["Settin
 app.include_router(applications.router, prefix="/api/applications", tags=["Applications"])
 app.include_router(supply_orders.router, prefix="/api/supply-orders", tags=["Supply Orders"])
 app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["Supply Reports"])
+app.include_router(usfoods.router, prefix="/api/usfoods", tags=["US Foods"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
@@ -204,6 +207,9 @@ async def startup():
 
         # Seed supply catalog from Square export
         await seed_supply_catalog(session)
+
+        # Seed US Foods shop mappings and product catalog
+        await seed_usfoods(session)
 
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(

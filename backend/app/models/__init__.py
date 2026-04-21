@@ -21,3 +21,10 @@ from app.models.form_submission import FormSubmission  # noqa: E402, F401
 from app.models.company_document import CompanyDocument  # noqa: E402, F401
 from app.models.job_application import JobApplication  # noqa: E402, F401
 from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem  # noqa: E402, F401
+from app.models.usfoods import (  # noqa: E402, F401
+    USFoodsProduct,
+    USFoodsShopMapping,
+    USFoodsWeeklyRun,
+    USFoodsRunItem,
+    USFoodsPriceHistory,
+)
