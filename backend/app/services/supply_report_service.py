@@ -208,7 +208,7 @@ def build_html_report(
     window_label: str,
     title_suffix: str = "",
 ) -> str:
-    """Build the interactive HTML checklist (same format as the local script)."""
+    """Build the interactive HTML checklist with collapsible categories and shops."""
     title_text = f"Six Beans {batch_name}"
     if title_suffix:
         title_text += f" — {title_suffix}"
@@ -222,24 +222,33 @@ def build_html_report(
 
     sections_html = ""
     item_idx = 0
+    sup_idx = 0
     for supplier in suppliers:
         shop_count = len(report_data[supplier])
         item_count = sum(len(v) for v in report_data[supplier].values())
+        sup_id = f"sup{sup_idx}"
         sections_html += (
-            f'<div class="supplier-section">'
-            f'<div class="supplier-header" onclick="toggleSupplier(\'{supplier}\')">'
-            f'<span class="supplier-name">{supplier}</span>'
-            f'<span class="supplier-meta">{shop_count} shop{"s" if shop_count != 1 else ""}'
+            f'<div class="section">'
+            f'<div class="section-header" onclick="toggle(\'{sup_id}\')">'
+            f'<span class="arrow" id="arrow-{sup_id}">&#9654;</span>'
+            f'<span class="section-title">{supplier}</span>'
+            f'<span class="section-meta">{shop_count} shop{"s" if shop_count != 1 else ""}'
             f' &middot; {item_count} item{"s" if item_count != 1 else ""}</span>'
-            f'<span class="toggle-icon" id="icon-{supplier}">&#9660;</span>'
             f'</div>'
-            f'<div class="supplier-body" id="body-{supplier}">'
+            f'<div class="section-body hidden" id="{sup_id}">'
         )
+        shop_idx = 0
         for shop in sorted(report_data[supplier].keys()):
+            shop_id = f"{sup_id}_shop{shop_idx}"
+            shop_item_count = len(report_data[supplier][shop])
             sections_html += (
-                f'<div class="shop-section">'
-                f'<div class="shop-name">{shop}</div>'
-                f'<div class="shop-items">'
+                f'<div class="shop">'
+                f'<div class="shop-header" onclick="toggle(\'{shop_id}\')">'
+                f'<span class="arrow" id="arrow-{shop_id}">&#9654;</span>'
+                f'<span class="shop-name">{shop}</span>'
+                f'<span class="shop-meta">{shop_item_count} item{"s" if shop_item_count != 1 else ""}</span>'
+                f'</div>'
+                f'<div class="shop-body hidden" id="{shop_id}">'
             )
             for item in report_data[supplier][shop]:
                 sections_html += (
@@ -249,7 +258,9 @@ def build_html_report(
                 )
                 item_idx += 1
             sections_html += "</div></div>"
+            shop_idx += 1
         sections_html += "</div></div>"
+        sup_idx += 1
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -265,24 +276,27 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 .progress-bar-wrap{{background:rgba(255,255,255,.2);border-radius:6px;height:8px;margin-top:10px}}
 .progress-bar{{background:#27ae60;height:8px;border-radius:6px;transition:width .3s ease;width:0%}}
 .progress-label{{font-size:.8em;margin-top:4px;opacity:.9}}
-.content{{max-width:800px;margin:0 auto;padding:16px}}
-.supplier-section{{background:#fff;border-radius:8px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.1);overflow:hidden}}
-.supplier-header{{background:#2c3e50;color:#fff;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:8px}}
-.supplier-header:hover{{background:#34495e}}
-.supplier-name{{font-weight:bold;font-size:1.05em;flex:1}}
-.supplier-meta{{font-size:.8em;opacity:.7}}
-.toggle-icon{{font-size:.8em;transition:transform .2s}}
-.toggle-icon.collapsed{{transform:rotate(-90deg)}}
-.supplier-body{{padding:0 16px 8px}}
-.supplier-body.hidden{{display:none}}
-.shop-section{{border-bottom:1px solid #eee;padding:10px 0}}
-.shop-section:last-child{{border-bottom:none}}
-.shop-name{{font-weight:bold;font-size:.95em;color:#1a1a2e;margin-bottom:6px;padding-left:4px}}
-.shop-items{{display:flex;flex-direction:column;gap:4px}}
-.item-row{{display:flex;align-items:flex-start;gap:10px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .15s}}
-.item-row:hover{{background:#f0f4ff}}
-.item-row input[type=checkbox]{{margin-top:2px;width:18px;height:18px;cursor:pointer;flex-shrink:0;accent-color:#27ae60}}
-.item-text{{font-size:.92em;line-height:1.4}}
+.content{{max-width:800px;margin:0 auto;padding:12px}}
+.section{{background:#fff;border-radius:8px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.1);overflow:hidden}}
+.section-header{{background:#2c3e50;color:#fff;padding:14px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;-webkit-tap-highlight-color:transparent}}
+.section-header:active{{background:#34495e}}
+.section-title{{font-weight:bold;font-size:1.05em;flex:1}}
+.section-meta{{font-size:.8em;opacity:.7}}
+.section-body{{padding:0 8px 8px}}
+.shop{{margin-top:6px;border:1px solid #e8e8e8;border-radius:6px;overflow:hidden}}
+.shop-header{{background:#f0f4ff;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;-webkit-tap-highlight-color:transparent}}
+.shop-header:active{{background:#e0e8f8}}
+.shop-name{{font-weight:bold;font-size:.95em;color:#1a1a2e;flex:1}}
+.shop-meta{{font-size:.8em;color:#888}}
+.shop-body{{padding:4px 8px 8px}}
+.arrow{{font-size:.7em;color:#999;width:16px;text-align:center;transition:transform .15s}}
+.arrow.open{{transform:rotate(90deg)}}
+.hidden{{display:none}}
+.item-row{{display:flex;align-items:flex-start;gap:10px;padding:8px;border-radius:6px;cursor:pointer;transition:background .15s;border-bottom:1px solid #f0f0f0}}
+.item-row:last-child{{border-bottom:none}}
+.item-row:hover,.item-row:active{{background:#f0f4ff}}
+.item-row input[type=checkbox]{{margin-top:2px;width:20px;height:20px;cursor:pointer;flex-shrink:0;accent-color:#27ae60}}
+.item-text{{font-size:.95em;line-height:1.4}}
 .item-row.checked .item-text{{text-decoration:line-through;color:#999}}
 </style>
 </head>
@@ -297,21 +311,26 @@ body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgro
 <script>
 var total={total_items};
 function updateProgress(){{
-  var checked=0;
+  var c=0;
   document.querySelectorAll('input[type=checkbox]').forEach(function(cb){{
     var row=cb.closest('.item-row');
-    if(cb.checked){{checked++;row.classList.add('checked');}}
-    else{{row.classList.remove('checked');}}
+    if(cb.checked){{c++;row.classList.add('checked')}}
+    else{{row.classList.remove('checked')}}
   }});
-  var pct=total>0?(checked/total*100):0;
+  var pct=total>0?(c/total*100):0;
   document.getElementById('progressBar').style.width=pct+'%';
-  document.getElementById('progressLabel').textContent=checked+' of '+total+' checked';
+  document.getElementById('progressLabel').textContent=c+' of '+total+' checked';
 }}
-function toggleSupplier(s){{
-  var body=document.getElementById('body-'+s);
-  var icon=document.getElementById('icon-'+s);
-  if(body.classList.contains('hidden')){{body.classList.remove('hidden');icon.classList.remove('collapsed');}}
-  else{{body.classList.add('hidden');icon.classList.add('collapsed');}}
+function toggle(id){{
+  var el=document.getElementById(id);
+  var arrow=document.getElementById('arrow-'+id);
+  if(el.classList.contains('hidden')){{
+    el.classList.remove('hidden');
+    if(arrow)arrow.classList.add('open');
+  }}else{{
+    el.classList.add('hidden');
+    if(arrow)arrow.classList.remove('open');
+  }}
 }}
 </script>
 </body></html>"""
