@@ -583,4 +583,40 @@ export const supplyOrders = {
     api.post(`/supply-orders/catalog/${id}/copy`).then((r) => r.data),
 };
 
+// ============================================================
+// US Foods
+// ============================================================
+
+export const usfoods = {
+  listRuns: () =>
+    api.get('/usfoods/runs').then((r) => r.data),
+
+  getRun: (id: number) =>
+    api.get(`/usfoods/runs/${id}`).then((r) => r.data),
+
+  generateRun: () =>
+    api.post('/usfoods/runs/generate').then((r) => r.data),
+
+  updateItem: (runId: number, itemId: number, data: { quantity?: number; unit?: string; is_flagged?: boolean; flag_reason?: string | null }) =>
+    api.patch(`/usfoods/runs/${runId}/items/${itemId}`, data).then((r) => r.data),
+
+  addItem: (runId: number, data: { product_id: number; shop_mapping_id: number; quantity: number; unit: string }) =>
+    api.post(`/usfoods/runs/${runId}/items`, data).then((r) => r.data),
+
+  deleteItem: (runId: number, itemId: number) =>
+    api.delete(`/usfoods/runs/${runId}/items/${itemId}`).then((r) => r.data),
+
+  submitRun: (id: number) =>
+    api.post(`/usfoods/runs/${id}/submit`).then((r) => r.data),
+
+  listProducts: () =>
+    api.get('/usfoods/products').then((r) => r.data),
+
+  listShops: () =>
+    api.get('/usfoods/shops').then((r) => r.data),
+
+  getAnalytics: (params?: { start_date?: string; end_date?: string }) =>
+    api.get('/usfoods/analytics', { params }).then((r) => r.data),
+};
+
 export default api;

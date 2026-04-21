@@ -31,6 +31,7 @@ import { LocationsPage } from '@/pages/portal/LocationsPage';
 import { AuditLogPage } from '@/pages/portal/AuditLogPage';
 import { SettingsPage } from '@/pages/portal/SettingsPage';
 import { SupplyOrderPage } from '@/pages/portal/SupplyOrderPage';
+import { USFoodsPage } from '@/pages/portal/USFoodsPage';
 
 export function App() {
   return (
@@ -107,6 +108,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.MANAGER, UserRole.OWNER]}>
               <SupplyOrderPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/usfoods"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+              <USFoodsPage />
             </ProtectedRoute>
           }
         />

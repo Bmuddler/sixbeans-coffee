@@ -20,6 +20,7 @@ import {
   X,
   Banknote,
   ShoppingCart,
+  Truck,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
@@ -52,6 +53,12 @@ const navItems: NavItem[] = [
     label: 'Order Supplies',
     icon: <ShoppingCart className="h-5 w-5" />,
     roles: [UserRole.MANAGER, UserRole.OWNER],
+  },
+  {
+    to: '/portal/usfoods',
+    label: 'US Foods',
+    icon: <Truck className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
   },
   {
     to: '/portal/payroll',
