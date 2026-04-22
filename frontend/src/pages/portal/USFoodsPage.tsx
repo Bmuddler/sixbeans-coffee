@@ -634,7 +634,19 @@ export function USFoodsPage() {
                                       className="h-7 w-16 rounded border border-gray-300 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                     />
                                   </td>
-                                  <td className="px-4 py-2 text-gray-600">{item.unit}</td>
+                                  <td className="px-4 py-2">
+                                    <button
+                                      onClick={() =>
+                                        updateItemMutation.mutate({
+                                          itemId: item.id,
+                                          data: { unit: item.unit === 'CS' ? 'EA' : 'CS' },
+                                        })
+                                      }
+                                      className="px-2 py-0.5 rounded border border-gray-300 text-xs font-medium hover:bg-gray-100 transition-colors"
+                                    >
+                                      {item.unit}
+                                    </button>
+                                  </td>
                                   <td className="px-4 py-2">
                                     {item.is_flagged ? (
                                       <div className="flex items-center gap-1.5">
