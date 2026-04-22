@@ -477,7 +477,7 @@ export function USFoodsPage() {
                     <Package className="h-5 w-5 text-blue-600" />
                   </div>
                   <div>
-                    <p className="text-sm text-gray-500">Total Items</p>
+                    <p className="text-sm text-gray-500">Total Cases</p>
                     <p className="text-xl font-bold text-gray-900">{summary.totalItems}</p>
                   </div>
                 </div>
@@ -576,10 +576,10 @@ export function USFoodsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-sm text-gray-500">
-                          <span>{shop.item_count} items{(shop.combined_count ?? shop.item_count) !== shop.item_count ? ` (${shop.combined_count} combined)` : ''}</span>
+                          <span>{shop.item_count} cases{(shop.combined_count ?? shop.item_count) !== shop.item_count ? ` (${shop.combined_count} combined)` : ''}</span>
                           {!shop.meets_minimum && (
                             <span className="text-orange-600 font-medium">
-                              Need {MINIMUM_ITEMS - (shop.combined_count ?? shop.item_count)} more
+                              Need {MINIMUM_ITEMS - (shop.combined_count ?? shop.item_count)} more cases
                             </span>
                           )}
                           {shop.flagged_count > 0 && (

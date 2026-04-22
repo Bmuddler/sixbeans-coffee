@@ -136,19 +136,21 @@ async def get_run(
         if item.is_flagged:
             shops_map[mid]["flagged_count"] += 1
 
-    # Calculate combined item count per customer number for 15-item minimum
+    # Calculate combined case count per customer number (sum of quantities for 15-case minimum)
     combined_counts: dict[str, int] = defaultdict(int)
     for data in shops_map.values():
-        combined_counts[data["customer_number"]] += len(data["items"])
+        combined_counts[data["customer_number"]] += sum(i.get("quantity", 0) for i in data["items"])
 
     shops = []
     for data in shops_map.values():
         cust_num = data["customer_number"]
+        shop_cases = sum(i.get("quantity", 0) for i in data["items"])
         combined_total = combined_counts[cust_num]
         shops.append({
             "shop_name": data["shop_name"],
             "customer_number": cust_num,
-            "item_count": len(data["items"]),
+            "item_count": shop_cases,  # Total cases (quantities summed)
+            "line_count": len(data["items"]),  # Number of different products
             "combined_count": combined_total,
             "flagged_count": data["flagged_count"],
             "meets_minimum": combined_total >= 15,
