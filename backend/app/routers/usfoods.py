@@ -116,34 +116,47 @@ async def get_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Group items by shop
-    shops_map: dict[int, dict] = defaultdict(lambda: {
+    # Group items by customer number (merges aliases like Adelia -> Hesperia)
+    shops_map: dict[str, dict] = defaultdict(lambda: {
         "shop_name": "",
         "customer_number": "",
+        "sub_shops": [],
         "items": [],
         "flagged_count": 0,
     })
 
     for item in run.items:
         mapping = item.shop_mapping
-        shop_data = shops_map[item.shop_mapping_id]
-        shop_data["shop_name"] = mapping.us_foods_account_name if mapping else "Unknown"
-        shop_data["customer_number"] = mapping.customer_number if mapping else ""
+        if not mapping:
+            continue
+        cust_num = mapping.customer_number
+        shop_data = shops_map[cust_num]
+        shop_data["customer_number"] = cust_num
+
+        # Use the non-alias name as primary, track sub-shops
+        if mapping.is_routing_alias:
+            if mapping.us_foods_account_name not in shop_data["sub_shops"]:
+                shop_data["sub_shops"].append(mapping.us_foods_account_name)
+        else:
+            shop_data["shop_name"] = mapping.us_foods_account_name
+
         shop_data["items"].append(_serialize_run_item(item))
         if item.is_flagged:
             shop_data["flagged_count"] += 1
 
-    shops = [
-        {
-            "shop_name": data["shop_name"],
+    shops = []
+    for data in shops_map.values():
+        name = data["shop_name"] or data["sub_shops"][0] if data["sub_shops"] else "Unknown"
+        if data["sub_shops"]:
+            name += f" (includes: {', '.join(data['sub_shops'])})"
+        shops.append({
+            "shop_name": name,
             "customer_number": data["customer_number"],
             "item_count": len(data["items"]),
             "flagged_count": data["flagged_count"],
-            "meets_minimum": len(data["items"]) >= 1,  # Basic minimum check
+            "meets_minimum": len(data["items"]) >= 15,
             "items": data["items"],
-        }
-        for data in shops_map.values()
-    ]
+        })
 
     return {
         "id": run.id,
