@@ -189,9 +189,6 @@ async def _fetch_square_orders(start: datetime, end: datetime) -> list[dict]:
                                 "end_at": end.isoformat(),
                             }
                         },
-                        "state_filter": {
-                            "states": ["OPEN", "COMPLETED"]
-                        },
                     }
                 },
                 "limit": 500,
@@ -221,12 +218,31 @@ async def _fetch_square_orders(start: datetime, end: datetime) -> list[dict]:
     return all_orders
 
 
+def _get_shop_name(order: dict) -> str:
+    """Extract the shop/recipient name from a Square order."""
+    for ff in order.get("fulfillments", []):
+        recipient = ff.get("delivery_details", {}).get("recipient", {})
+        name = recipient.get("display_name", "").strip()
+        if name:
+            return name
+        # Also check pickup
+        recipient = ff.get("pickup_details", {}).get("recipient", {})
+        name = recipient.get("display_name", "").strip()
+        if name:
+            return name
+    for key in ("ticket_name", "note"):
+        val = order.get(key, "").strip()
+        if val:
+            return val[:60]
+    return "Unknown Shop"
+
+
 def _extract_usfoods_items(orders: list[dict]) -> list[dict]:
     """Extract line items tagged with [U] or [PN:xxx] from Square orders."""
     items = []
 
     for order in orders:
-        location_id = order.get("location_id", "")
+        shop_name = _get_shop_name(order)
         for line_item in order.get("line_items", []):
             name = line_item.get("name", "")
 
@@ -245,11 +261,10 @@ def _extract_usfoods_items(orders: list[dict]) -> list[dict]:
                 "product_number": product_number,
                 "quantity": quantity,
                 "catalog_object_id": line_item.get("catalog_object_id"),
-                "location_id": location_id,
-                "location_name": order.get("location_id", ""),
+                "shop_name": shop_name,
             })
 
-    logger.info(f"Extracted {len(items)} US Foods tagged items from orders")
+    logger.info("Extracted %d US Foods tagged items from %d orders", len(items), len(orders))
     return items
 
 
@@ -311,10 +326,11 @@ def _aggregate_items(
         catalog_id = item.get("catalog_object_id")
         display_name = catalog_names.get(catalog_id, item["name"]) if catalog_id else item["name"]
 
-        # Match to a shop using keywords (first match wins)
-        shop_mapping = _match_shop(display_name, item.get("location_name", ""), shop_mappings)
+        # Match to a shop using the order's recipient name (first match wins)
+        shop_name = item.get("shop_name", "")
+        shop_mapping = _match_shop(shop_name, shop_mappings)
         if not shop_mapping:
-            logger.warning(f"No shop mapping found for item: {display_name}")
+            logger.warning("No shop mapping for '%s' (item: %s)", shop_name, display_name)
             continue
 
         # Match to a product
@@ -342,12 +358,11 @@ def _aggregate_items(
 
 
 def _match_shop(
-    item_name: str,
-    location_name: str,
+    shop_name: str,
     shop_mappings: list,
 ) -> "USFoodsShopMapping | None":
-    """Match an item to a shop using keyword matching (first match wins)."""
-    search_text = f"{item_name} {location_name}".lower()
+    """Match a shop name to a mapping using keyword matching (first match wins)."""
+    search_text = shop_name.lower()
 
     for mapping in shop_mappings:
         keywords = [kw.strip().lower() for kw in mapping.match_keywords.split(",")]
