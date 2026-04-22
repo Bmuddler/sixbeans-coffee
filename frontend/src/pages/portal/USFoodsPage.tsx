@@ -98,6 +98,7 @@ interface Shop {
   us_foods_account_name: string;
   distributor: string;
   department: string;
+  is_routing_alias: boolean;
   notes: string | null;
 }
 
@@ -584,6 +585,41 @@ export function USFoodsPage() {
                         )}
                       </div>
                     </button>
+
+                    {/* Combine dropdown — only show if under minimum */}
+                    {!shop.meets_minimum && run && (
+                      <div className="px-4 py-2 bg-orange-50 border-t border-orange-200 flex items-center gap-3">
+                        <span className="text-sm text-orange-700 font-medium">Combine with:</span>
+                        <select
+                          className="text-sm rounded border border-orange-300 px-2 py-1 bg-white"
+                          defaultValue=""
+                          onChange={async (e) => {
+                            const toId = Number(e.target.value);
+                            if (!toId || !effectiveRunId) return;
+                            const fromMapping = shopList.find((s) => s.customer_number === shop.customer_number && !s.is_routing_alias);
+                            const fromId = fromMapping?.id;
+                            if (!fromId) { toast.error('Could not find shop mapping'); return; }
+                            try {
+                              await usfoods.combineShops(effectiveRunId, fromId, toId);
+                              queryClient.invalidateQueries({ queryKey: ['usfoods-run'] });
+                              toast.success(`Moved ${shop.item_count} items`);
+                            } catch { toast.error('Failed to combine'); }
+                          }}
+                        >
+                          <option value="">Select a store...</option>
+                          {run.shops
+                            .filter((s) => s.customer_number !== shop.customer_number)
+                            .map((s) => {
+                              const mapping = shopList.find((m) => m.customer_number === s.customer_number && !m.is_routing_alias);
+                              return mapping ? (
+                                <option key={mapping.id} value={mapping.id}>
+                                  {s.shop_name} ({s.item_count} items)
+                                </option>
+                              ) : null;
+                            })}
+                        </select>
+                      </div>
+                    )}
 
                     {/* Expanded content */}
                     {isExpanded && (

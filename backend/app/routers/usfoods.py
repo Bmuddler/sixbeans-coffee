@@ -328,6 +328,37 @@ async def mark_for_validation(
     return {"id": run.id, "status": run.status.value}
 
 
+@router.post("/runs/{run_id}/combine-shops")
+async def combine_shops(
+    run_id: int,
+    body: dict,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Move all items from one shop to another shop's customer number."""
+    from_mapping_id = body.get("from_mapping_id")
+    to_mapping_id = body.get("to_mapping_id")
+    if not from_mapping_id or not to_mapping_id:
+        raise HTTPException(status_code=400, detail="from_mapping_id and to_mapping_id required")
+
+    result = await db.execute(
+        select(USFoodsRunItem).where(
+            USFoodsRunItem.run_id == run_id,
+            USFoodsRunItem.shop_mapping_id == from_mapping_id,
+        )
+    )
+    items = result.scalars().all()
+    if not items:
+        raise HTTPException(status_code=404, detail="No items found for source shop")
+
+    for item in items:
+        item.shop_mapping_id = to_mapping_id
+    await db.flush()
+    await db.commit()
+
+    return {"moved": len(items), "from": from_mapping_id, "to": to_mapping_id}
+
+
 @router.post("/runs/{run_id}/rebuild-csv")
 async def rebuild_csv(
     run_id: int,

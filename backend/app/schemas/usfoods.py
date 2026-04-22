@@ -100,6 +100,7 @@ class RunItemUpdate(BaseModel):
     unit: str | None = None
     is_flagged: bool | None = None
     flag_reason: str | None = None
+    shop_mapping_id: int | None = None
 
 
 class RunItemCreate(BaseModel):
