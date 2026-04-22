@@ -8,7 +8,7 @@ import {
   ChevronRight,
   Trash2,
   Plus,
-  Send,
+  Download,
   RefreshCw,
   BarChart3,
   Package,
@@ -413,17 +413,31 @@ export function USFoodsPage() {
             </Button>
 
             <Button
-              onClick={() => submitMutation.mutate()}
-              loading={submitMutation.isPending}
-              disabled={!canSubmit}
-              icon={<Send className="h-4 w-4" />}
+              onClick={async () => {
+                if (!effectiveRunId) return;
+                try {
+                  const result = await usfoods.downloadCsv(effectiveRunId);
+                  const csv = result.csv_data;
+                  if (!csv) { toast.error('No CSV data'); return; }
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `us_foods_import_${run?.run_date ?? 'export'}.csv`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  toast.success('CSV downloaded!');
+                } catch { toast.error('Failed to generate CSV'); }
+              }}
+              disabled={!run || !run.shops?.length}
+              icon={<Download className="h-4 w-4" />}
               className={clsx(
-                canSubmit
+                run?.shops?.length
                   ? 'bg-[#5CB832] hover:bg-[#4a9628] text-white'
                   : '',
               )}
             >
-              Submit to US Foods
+              Download CSV
             </Button>
           </div>
 

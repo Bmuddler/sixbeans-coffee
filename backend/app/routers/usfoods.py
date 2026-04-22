@@ -313,6 +313,42 @@ async def mark_for_validation(
     return {"id": run.id, "status": run.status.value}
 
 
+@router.post("/runs/{run_id}/rebuild-csv")
+async def rebuild_csv(
+    run_id: int,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rebuild CSV from current run items (after edits/additions)."""
+    from app.services.usfoods_service import build_csv
+
+    result = await db.execute(
+        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
+    )
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    # Load items with relationships
+    items_result = await db.execute(
+        select(USFoodsRunItem).where(USFoodsRunItem.run_id == run_id)
+    )
+    items = items_result.scalars().all()
+
+    # Load shop mappings and products
+    mappings_result = await db.execute(select(USFoodsShopMapping))
+    shop_mappings = mappings_result.scalars().all()
+
+    products_result = await db.execute(select(USFoodsProduct))
+    products_by_number = {p.product_number: p for p in products_result.scalars().all()}
+
+    run.csv_data = build_csv(items, shop_mappings, products_by_number)
+    await db.flush()
+    await db.commit()
+
+    return {"csv_data": run.csv_data}
+
+
 @router.post("/runs/{run_id}/submit")
 async def mark_for_submit(
     run_id: int,

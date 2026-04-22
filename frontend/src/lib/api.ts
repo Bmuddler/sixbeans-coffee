@@ -609,6 +609,9 @@ export const usfoods = {
   submitRun: (id: number) =>
     api.post(`/usfoods/runs/${id}/submit`).then((r) => r.data),
 
+  downloadCsv: (id: number) =>
+    api.post(`/usfoods/runs/${id}/rebuild-csv`).then((r) => r.data),
+
   listProducts: () =>
     api.get('/usfoods/products').then((r) => r.data),
 
