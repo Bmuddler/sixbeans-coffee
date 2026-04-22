@@ -166,18 +166,22 @@ async def trigger_generate_run(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger generation of a new weekly run from Square orders."""
+    import traceback
     try:
         run = await generate_weekly_run(db)
+        await db.commit()
         return {
             "id": run.id,
             "run_date": run.run_date.isoformat(),
             "status": run.status.value if isinstance(run.status, RunStatus) else run.status,
             "square_orders_count": run.square_orders_count,
             "total_line_items": run.total_line_items,
+            "order_window_start": run.order_window_start.isoformat() if run.order_window_start else None,
+            "order_window_end": run.order_window_end.isoformat() if run.order_window_end else None,
         }
     except Exception as e:
         logger.exception("Failed to generate weekly run")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 @router.patch("/runs/{run_id}/items/{item_id}")

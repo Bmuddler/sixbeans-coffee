@@ -87,6 +87,7 @@ async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
 
         # Extract US Foods items from orders
         usfoods_items = _extract_usfoods_items(orders)
+        logger.info("Extracted %d US Foods items from %d orders", len(usfoods_items), len(orders))
 
         # Resolve catalog names for items that have catalog_object_ids
         catalog_ids = [
@@ -95,17 +96,21 @@ async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
             if item.get("catalog_object_id")
         ]
         catalog_names = await _batch_resolve_catalog_names(catalog_ids) if catalog_ids else {}
+        logger.info("Resolved %d catalog names from %d IDs", len(catalog_names), len(catalog_ids))
 
         # Load shop mappings
         mappings_result = await db.execute(select(USFoodsShopMapping))
         shop_mappings = mappings_result.scalars().all()
+        logger.info("Loaded %d shop mappings", len(shop_mappings))
 
         # Load product catalog
         products_result = await db.execute(select(USFoodsProduct).where(USFoodsProduct.is_active == True))  # noqa: E712
         products_by_number = {p.product_number: p for p in products_result.scalars().all()}
+        logger.info("Loaded %d active products", len(products_by_number))
 
         # Map items to shops and aggregate
         aggregated = _aggregate_items(usfoods_items, catalog_names, shop_mappings, products_by_number)
+        logger.info("Aggregated into %d line items", len(aggregated))
 
         # Create run items
         items_created = 0
@@ -133,7 +138,7 @@ async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
         all_items = items_result.scalars().all()
         run.csv_data = build_csv(all_items, shop_mappings, products_by_number)
 
-        run.status = RunStatus.pending_validation
+        run.status = RunStatus.reviewing
         await db.flush()
 
         return run
