@@ -53,22 +53,29 @@ SQUARE_BASE_URL = "https://connect.squareup.com/v2"
 
 async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
     """
-    Pull Square orders for Fri 10AM - Mon 11AM Pacific, filter [U] items,
-    resolve catalog names, map to shops, aggregate, generate CSV, and create the run.
+    Pull Square orders for the current delivery window:
+    - Monday run (cron 9 AM): Friday 11 AM → Monday 11 AM
+    - Friday run (cron 9 AM): Monday 11 AM → Friday 11 AM
+    - Other days (manual): uses the most recent window
     """
     import pytz
     pacific = pytz.timezone("America/Los_Angeles")
     now = datetime.now(pacific)
     today = now.date()
+    dow = today.weekday()  # 0=Mon, 4=Fri
 
-    # Find the most recent Monday (today or before)
-    days_since_monday = today.weekday()  # Monday = 0
-    monday = today - timedelta(days=days_since_monday)
-
-    # Order window: Friday 10AM to Monday 11AM Pacific
-    friday = monday - timedelta(days=3)
-    order_window_start = pacific.localize(datetime(friday.year, friday.month, friday.day, 10, 0, 0))
-    order_window_end = pacific.localize(datetime(monday.year, monday.month, monday.day, 11, 0, 0))
+    if dow == 4:  # Friday
+        # Window: Monday 11 AM → Friday 11 AM
+        monday = today - timedelta(days=4)
+        order_window_start = pacific.localize(datetime(monday.year, monday.month, monday.day, 11, 0, 0))
+        order_window_end = pacific.localize(datetime(today.year, today.month, today.day, 11, 0, 0))
+    else:
+        # Monday (or manual on other days): Friday 11 AM → Monday 11 AM
+        days_since_monday = dow  # Monday = 0
+        monday = today - timedelta(days=days_since_monday)
+        friday = monday - timedelta(days=3)
+        order_window_start = pacific.localize(datetime(friday.year, friday.month, friday.day, 11, 0, 0))
+        order_window_end = pacific.localize(datetime(monday.year, monday.month, monday.day, 11, 0, 0))
 
     # Create the run record (store naive datetimes for DB)
     run = USFoodsWeeklyRun(
