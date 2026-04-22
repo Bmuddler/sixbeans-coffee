@@ -609,11 +609,8 @@ export const usfoods = {
   submitRun: (id: number) =>
     api.post(`/usfoods/runs/${id}/submit`).then((r) => r.data),
 
-  downloadCsv: (id: number) =>
-    api.post(`/usfoods/runs/${id}/rebuild-csv`).then((r) => r.data),
-
-  combineShops: (runId: number, fromMappingId: number, toMappingId: number) =>
-    api.post(`/usfoods/runs/${runId}/combine-shops`, { from_mapping_id: fromMappingId, to_mapping_id: toMappingId }).then((r) => r.data),
+  downloadCsv: (id: number, combinations?: Record<string, string>) =>
+    api.post(`/usfoods/runs/${id}/rebuild-csv`, { combinations: combinations ?? {} }).then((r) => r.data),
 
   listProducts: () =>
     api.get('/usfoods/products').then((r) => r.data),

@@ -179,6 +179,7 @@ export function USFoodsPage() {
   const [addItemProductId, setAddItemProductId] = useState<number | null>(null);
   const [addItemQuantity, setAddItemQuantity] = useState(1);
   const [addItemUnit, setAddItemUnit] = useState('CS');
+  const [combinations, setCombinations] = useState<Record<string, string>>({});
 
   // ---- API Queries ----
 
@@ -419,7 +420,7 @@ export function USFoodsPage() {
               onClick={async () => {
                 if (!effectiveRunId) return;
                 try {
-                  const result = await usfoods.downloadCsv(effectiveRunId);
+                  const result = await usfoods.downloadCsv(effectiveRunId, combinations);
                   const csv = result.csv_data;
                   if (!csv) { toast.error('No CSV data'); return; }
                   const blob = new Blob([csv], { type: 'text/csv' });
@@ -429,6 +430,16 @@ export function USFoodsPage() {
                   a.download = `us_foods_import_${run?.run_date ?? 'export'}.csv`;
                   a.click();
                   URL.revokeObjectURL(url);
+                  // Download breakdown PDF if there are combinations
+                  if (result.breakdown_pdf) {
+                    const pdfBlob = new Blob([Uint8Array.from(atob(result.breakdown_pdf), c => c.charCodeAt(0))], { type: 'application/pdf' });
+                    const pdfUrl = URL.createObjectURL(pdfBlob);
+                    const pdfA = document.createElement('a');
+                    pdfA.href = pdfUrl;
+                    pdfA.download = `order_breakdown_${run?.run_date ?? 'export'}.pdf`;
+                    pdfA.click();
+                    URL.revokeObjectURL(pdfUrl);
+                  }
                   toast.success('CSV downloaded!');
                 } catch { toast.error('Failed to generate CSV'); }
               }}
@@ -586,49 +597,52 @@ export function USFoodsPage() {
                       </div>
                     </button>
 
-                    {/* Combine dropdown — only show if under minimum */}
-                    {!shop.meets_minimum && run && (
-                      <div className="px-4 py-2 bg-orange-50 border-t border-orange-200 flex items-center gap-3">
-                        <span className="text-sm text-orange-700 font-medium">Combine with:</span>
+                    {/* Combine dropdown — show for all shops */}
+                    {run && (
+                      <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 flex items-center gap-3">
+                        <span className="text-sm text-gray-600 font-medium">Send to:</span>
                         <select
-                          className="text-sm rounded border border-orange-300 px-2 py-1 bg-white"
-                          defaultValue=""
-                          onChange={async (e) => {
-                            const toId = Number(e.target.value);
-                            if (!toId || !effectiveRunId) return;
-                            const fromMapping = shopList.find((s) => s.customer_number === shop.customer_number && !s.is_routing_alias);
-                            const fromId = fromMapping?.id;
-                            if (!fromId) { toast.error('Could not find shop mapping'); return; }
-                            try {
-                              await usfoods.combineShops(effectiveRunId, fromId, toId);
-                              queryClient.invalidateQueries({ queryKey: ['usfoods-run'] });
-                              toast.success(`Moved ${shop.item_count} items`);
-                            } catch { toast.error('Failed to combine'); }
+                          className="text-sm rounded border border-gray-300 px-2 py-1 bg-white"
+                          value={combinations[shop.customer_number] ?? ''}
+                          onChange={(e) => {
+                            const target = e.target.value;
+                            setCombinations((prev) => {
+                              const next = { ...prev };
+                              if (target) {
+                                next[shop.customer_number] = target;
+                              } else {
+                                delete next[shop.customer_number];
+                              }
+                              return next;
+                            });
+                            toast.success(target ? 'Combined for CSV export' : 'Removed combination');
                           }}
                         >
-                          <option value="">Select a store...</option>
+                          <option value="">Own account (#{shop.customer_number})</option>
                           {(() => {
-                            // Group other shops by customer number for the dropdown
-                            const grouped: Record<string, { names: string[]; totalItems: number; mappingId: number }> = {};
+                            const grouped: Record<string, { names: string[]; totalItems: number }> = {};
                             run.shops
                               .filter((s) => s.customer_number !== shop.customer_number)
                               .forEach((s) => {
-                                if (!grouped[s.customer_number]) {
-                                  const mapping = shopList.find((m) => m.customer_number === s.customer_number && !m.is_routing_alias);
-                                  grouped[s.customer_number] = { names: [], totalItems: 0, mappingId: mapping?.id ?? 0 };
+                                const custNum = s.customer_number;
+                                if (!grouped[custNum]) {
+                                  grouped[custNum] = { names: [], totalItems: 0 };
                                 }
-                                grouped[s.customer_number].names.push(s.shop_name);
-                                grouped[s.customer_number].totalItems += s.item_count;
+                                if (!grouped[custNum].names.includes(s.shop_name)) {
+                                  grouped[custNum].names.push(s.shop_name);
+                                }
+                                grouped[custNum].totalItems += s.item_count;
                               });
                             return Object.entries(grouped).map(([custNum, g]) => (
-                              g.mappingId ? (
-                                <option key={custNum} value={g.mappingId}>
-                                  {g.names.join(' + ')} ({g.totalItems} items)
-                                </option>
-                              ) : null
+                              <option key={custNum} value={custNum}>
+                                {g.names.join(' + ')} ({g.totalItems} items)
+                              </option>
                             ));
                           })()}
                         </select>
+                        {combinations[shop.customer_number] && (
+                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">Combined</span>
+                        )}
                       </div>
                     )}
 
@@ -682,17 +696,22 @@ export function USFoodsPage() {
                                     />
                                   </td>
                                   <td className="px-4 py-2">
-                                    <button
-                                      onClick={() =>
+                                    <select
+                                      value={item.unit}
+                                      onChange={(e) =>
                                         updateItemMutation.mutate({
                                           itemId: item.id,
-                                          data: { unit: item.unit === 'CS' ? 'EA' : 'CS' },
+                                          data: { unit: e.target.value },
                                         })
                                       }
-                                      className="px-2 py-0.5 rounded border border-gray-300 text-xs font-medium hover:bg-gray-100 transition-colors"
+                                      className="px-1.5 py-0.5 rounded border border-gray-300 text-xs font-medium bg-white cursor-pointer"
                                     >
-                                      {item.unit}
-                                    </button>
+                                      <option value="CS">CS</option>
+                                      <option value="EA">EA</option>
+                                      <option value="LB">LB</option>
+                                      <option value="BX">BX</option>
+                                      <option value="BG">BG</option>
+                                    </select>
                                   </td>
                                   <td className="px-4 py-2">
                                     {item.is_flagged ? (

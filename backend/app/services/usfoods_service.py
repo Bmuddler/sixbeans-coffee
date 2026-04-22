@@ -377,15 +377,18 @@ def build_csv(
     run_items: list,
     shop_mappings: list,
     products_by_number: dict,
+    combinations: dict[str, str] | None = None,
 ) -> str:
     """
     Generate the 19-column US Foods CSV format.
+    combinations: maps source customer_number -> target customer_number
     """
-    # Build lookup maps
     mappings_by_id = {m.id: m for m in shop_mappings}
     products_by_id = {}
     for p in products_by_number.values():
         products_by_id[p.id] = p
+
+    combinations = combinations or {}
 
     today_str = date.today().strftime("%m/%d/%Y")
     lines = [",".join(CSV_COLUMNS)]
@@ -396,6 +399,11 @@ def build_csv(
 
         if not mapping or not product:
             continue
+
+        # Apply combination override
+        customer_number = mapping.customer_number
+        if customer_number in combinations:
+            customer_number = combinations[customer_number]
 
         cs_qty = str(item.quantity) if item.unit == "CS" else ""
         ea_qty = str(item.quantity) if item.unit == "EA" else ""
@@ -408,7 +416,7 @@ def build_csv(
             extended = f"{product.current_price * item.quantity:.2f}"
 
         row = [
-            mapping.customer_number,       # CUSTOMER NUMBER
+            customer_number,               # CUSTOMER NUMBER
             mapping.distributor,           # DISTRIBUTOR
             mapping.department,            # DEPARTMENT
             today_str,                     # DATE
@@ -485,3 +493,107 @@ async def apply_validation_results(
             item.flag_reason = result.status  # out_of_stock, discontinued, substituted, etc.
 
     await db.flush()
+
+
+def build_breakdown_pdf(
+    run_items: list,
+    shop_mappings: list,
+    products_by_number: dict,
+    combinations: dict[str, str],
+) -> bytes:
+    """Build a PDF showing which items belong to which shop within combined orders."""
+    from io import BytesIO
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+
+    mappings_by_id = {m.id: m for m in shop_mappings}
+    mappings_by_cust = {}
+    for m in shop_mappings:
+        if not m.is_routing_alias:
+            mappings_by_cust[m.customer_number] = m
+
+    products_by_id = {}
+    for p in products_by_number.values():
+        products_by_id[p.id] = p
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.5 * inch, bottomMargin=0.5 * inch)
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle("T", parent=styles["Title"], fontSize=16,
+                                  textColor=colors.HexColor("#2c3e50"), spaceAfter=4)
+    subtitle_style = ParagraphStyle("S", parent=styles["Normal"], fontSize=10,
+                                     textColor=colors.gray, spaceAfter=16)
+    header_style = ParagraphStyle("H", parent=styles["Heading2"], fontSize=13,
+                                   textColor=colors.white, backColor=colors.HexColor("#2c3e50"),
+                                   spaceBefore=14, spaceAfter=6, borderPadding=(6, 8, 6, 8))
+    shop_style = ParagraphStyle("Sh", parent=styles["Heading3"], fontSize=11,
+                                 textColor=colors.HexColor("#5CB832"), spaceBefore=10, spaceAfter=4)
+
+    story = []
+    story.append(Paragraph("Combined Order Breakdown", title_style))
+    story.append(Paragraph("Which items go to which shop", subtitle_style))
+
+    # Group: for each target customer number, show which source shops contributed
+    target_groups: dict[str, dict[str, list]] = {}
+    for item in run_items:
+        mapping = mappings_by_id.get(item.shop_mapping_id)
+        product = products_by_id.get(item.product_id)
+        if not mapping or not product:
+            continue
+
+        source_cust = mapping.customer_number
+        target_cust = combinations.get(source_cust, source_cust)
+
+        if target_cust not in target_groups:
+            target_groups[target_cust] = {}
+
+        source_name = mapping.us_foods_account_name
+        if source_name not in target_groups[target_cust]:
+            target_groups[target_cust][source_name] = []
+
+        target_groups[target_cust][source_name].append({
+            "description": product.description,
+            "product_number": product.product_number,
+            "quantity": item.quantity,
+            "unit": item.unit,
+        })
+
+    for target_cust, sources in target_groups.items():
+        target_mapping = mappings_by_cust.get(target_cust)
+        target_name = target_mapping.us_foods_account_name if target_mapping else f"#{target_cust}"
+
+        source_names = list(sources.keys())
+        if len(source_names) <= 1 and target_cust not in combinations.values():
+            continue
+
+        total_items = sum(len(items) for items in sources.values())
+        story.append(Paragraph(f"Delivering to: {target_name} (#{target_cust}) — {total_items} items", header_style))
+
+        for source_name, items in sorted(sources.items()):
+            story.append(Paragraph(f"{source_name} ({len(items)} items)", shop_style))
+
+            table_data = [["Product", "PN#", "Qty", "Unit"]]
+            for it in items:
+                table_data.append([it["description"][:50], it["product_number"], str(it["quantity"]), it["unit"]])
+
+            t = Table(table_data, colWidths=[3.5 * inch, 1 * inch, 0.5 * inch, 0.5 * inch])
+            t.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f0f0f0")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#ddd")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]))
+            story.append(t)
+
+    if len(story) <= 2:
+        story.append(Paragraph("No combined orders — all shops are separate.", styles["Normal"]))
+
+    doc.build(story)
+    return buf.getvalue()

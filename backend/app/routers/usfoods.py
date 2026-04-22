@@ -328,45 +328,20 @@ async def mark_for_validation(
     return {"id": run.id, "status": run.status.value}
 
 
-@router.post("/runs/{run_id}/combine-shops")
-async def combine_shops(
-    run_id: int,
-    body: dict,
-    current_user: User = Depends(require_roles(UserRole.owner)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Move all items from one shop to another shop's customer number."""
-    from_mapping_id = body.get("from_mapping_id")
-    to_mapping_id = body.get("to_mapping_id")
-    if not from_mapping_id or not to_mapping_id:
-        raise HTTPException(status_code=400, detail="from_mapping_id and to_mapping_id required")
-
-    result = await db.execute(
-        select(USFoodsRunItem).where(
-            USFoodsRunItem.run_id == run_id,
-            USFoodsRunItem.shop_mapping_id == from_mapping_id,
-        )
-    )
-    items = result.scalars().all()
-    if not items:
-        raise HTTPException(status_code=404, detail="No items found for source shop")
-
-    for item in items:
-        item.shop_mapping_id = to_mapping_id
-    await db.flush()
-    await db.commit()
-
-    return {"moved": len(items), "from": from_mapping_id, "to": to_mapping_id}
-
-
 @router.post("/runs/{run_id}/rebuild-csv")
 async def rebuild_csv(
     run_id: int,
+    body: dict | None = None,
     current_user: User = Depends(require_roles(UserRole.owner)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Rebuild CSV from current run items (after edits/additions)."""
-    from app.services.usfoods_service import build_csv
+    """Rebuild CSV from current run items with optional shop combinations.
+
+    Body (optional):
+        combinations: dict mapping customer_number -> target_customer_number
+        e.g. {"54330857": "14495147"} means Barstow items go under 7th St's account
+    """
+    from app.services.usfoods_service import build_csv, build_breakdown_pdf
 
     result = await db.execute(
         select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
@@ -375,24 +350,31 @@ async def rebuild_csv(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Load items with relationships
     items_result = await db.execute(
         select(USFoodsRunItem).where(USFoodsRunItem.run_id == run_id)
     )
     items = items_result.scalars().all()
 
-    # Load shop mappings and products
     mappings_result = await db.execute(select(USFoodsShopMapping))
     shop_mappings = mappings_result.scalars().all()
 
     products_result = await db.execute(select(USFoodsProduct))
     products_by_number = {p.product_number: p for p in products_result.scalars().all()}
 
-    run.csv_data = build_csv(items, shop_mappings, products_by_number)
+    combinations = (body or {}).get("combinations", {})
+
+    run.csv_data = build_csv(items, shop_mappings, products_by_number, combinations)
     await db.flush()
     await db.commit()
 
-    return {"csv_data": run.csv_data}
+    # Build breakdown PDF if there are combinations
+    breakdown_pdf = None
+    if combinations:
+        import base64
+        pdf_bytes = build_breakdown_pdf(items, shop_mappings, products_by_number, combinations)
+        breakdown_pdf = base64.b64encode(pdf_bytes).decode()
+
+    return {"csv_data": run.csv_data, "breakdown_pdf": breakdown_pdf}
 
 
 @router.post("/runs/{run_id}/submit")
