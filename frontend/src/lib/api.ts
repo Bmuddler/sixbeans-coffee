@@ -606,9 +606,6 @@ export const usfoods = {
   deleteItem: (runId: number, itemId: number) =>
     api.delete(`/usfoods/runs/${runId}/items/${itemId}`).then((r) => r.data),
 
-  submitRun: (id: number) =>
-    api.post(`/usfoods/runs/${id}/submit`).then((r) => r.data),
-
   downloadCsv: (id: number, combinations?: Record<string, string>) =>
     api.post(`/usfoods/runs/${id}/rebuild-csv`, { combinations: combinations ?? {} }).then((r) => r.data),
 

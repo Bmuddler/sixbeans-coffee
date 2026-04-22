@@ -198,6 +198,9 @@ async def _fetch_square_orders(start: datetime, end: datetime) -> list[dict]:
                                 "end_at": end.isoformat(),
                             }
                         },
+                        "state_filter": {
+                            "states": ["OPEN", "COMPLETED"],
+                        },
                     }
                 },
                 "limit": 500,
@@ -263,7 +266,11 @@ def _extract_usfoods_items(orders: list[dict]) -> list[dict]:
                 continue
 
             product_number = pn_match.group(1) if pn_match else None
-            quantity = int(line_item.get("quantity", "1"))
+            # Square quantity is a string that can be decimal (e.g. "1.5")
+            try:
+                quantity = max(1, int(float(line_item.get("quantity", "1"))))
+            except (ValueError, TypeError):
+                quantity = 1
 
             items.append({
                 "name": name,
@@ -399,7 +406,10 @@ def build_csv(
 
     combinations = combinations or {}
 
-    today_str = date.today().strftime("%m/%d/%Y")
+    # Use Pacific date to match run_date
+    import pytz
+    pacific = pytz.timezone("America/Los_Angeles")
+    today_str = datetime.now(pacific).strftime("%m/%d/%Y")
     lines = [",".join(CSV_COLUMNS)]
 
     for item in run_items:
@@ -446,62 +456,21 @@ def build_csv(
             "",                            # SHORTED
         ]
 
-        # Escape commas in fields
+        # Escape per RFC 4180: wrap in quotes and double any internal quotes
         escaped_row = []
         for field in row:
-            if "," in field or '"' in field:
-                escaped_row.append(f'"{field}"')
+            s = str(field)
+            if "," in s or '"' in s or "\n" in s:
+                s = s.replace('"', '""')
+                escaped_row.append(f'"{s}"')
             else:
-                escaped_row.append(field)
+                escaped_row.append(s)
 
         lines.append(",".join(escaped_row))
 
     return "\n".join(lines)
 
 
-async def apply_validation_results(
-    db: AsyncSession,
-    run_id: int,
-    results: list,
-) -> None:
-    """
-    Apply validation results from the Playwright scrape to run items.
-    Updates flags on items based on stock status from the US Foods website.
-    """
-    # Load run items with products
-    items_result = await db.execute(
-        select(USFoodsRunItem)
-        .where(USFoodsRunItem.run_id == run_id)
-    )
-    run_items = items_result.scalars().all()
-
-    # Load products for number lookup
-    product_ids = [item.product_id for item in run_items]
-    products_result = await db.execute(
-        select(USFoodsProduct).where(USFoodsProduct.id.in_(product_ids))
-    )
-    products_by_id = {p.id: p for p in products_result.scalars().all()}
-
-    # Map validation results by product number
-    validation_map = {r.product_number: r for r in results}
-
-    for item in run_items:
-        product = products_by_id.get(item.product_id)
-        if not product:
-            continue
-
-        result = validation_map.get(product.product_number)
-        if not result:
-            continue
-
-        if result.status == "ok":
-            item.is_flagged = False
-            item.flag_reason = None
-        else:
-            item.is_flagged = True
-            item.flag_reason = result.status  # out_of_stock, discontinued, substituted, etc.
-
-    await db.flush()
 
 
 def build_breakdown_pdf(

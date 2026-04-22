@@ -233,16 +233,6 @@ export function USFoodsPage() {
     onError: () => toast.error('Failed to generate run'),
   });
 
-  const submitMutation = useMutation({
-    mutationFn: () => usfoods.submitRun(effectiveRunId!),
-    onSuccess: () => {
-      toast.success('Order submitted to US Foods');
-      queryClient.invalidateQueries({ queryKey: ['usfoods-runs'] });
-      queryClient.invalidateQueries({ queryKey: ['usfoods-run', effectiveRunId] });
-    },
-    onError: () => toast.error('Failed to submit order'),
-  });
-
   const updateItemMutation = useMutation({
     mutationFn: ({ itemId, data }: { itemId: number; data: { quantity?: number; unit?: string; is_flagged?: boolean; flag_reason?: string | null } }) =>
       usfoods.updateItem(effectiveRunId!, itemId, data),
@@ -300,18 +290,20 @@ export function USFoodsPage() {
     return { totalItems, flaggedItems, shopsNeedingAttention };
   }, [run, combinations]);
 
-  const canSubmit = useMemo(() => {
-    if (!run) return false;
-    if (run.status !== 'reviewing') return false;
-    return run.shops.every((s) => s.meets_minimum && s.flagged_count === 0);
-  }, [run]);
-
   // Filler items: cheap products for meeting minimums
   const fillerProducts = useMemo(() => {
+    // Common cheap fillers - spices, small items, extracts, condiments
+    const fillerKeywords = ['SPICE', 'EXTRACT', 'BAKING', 'SS POUCH', 'SALT'];
+    const withPrices = productList.filter((p) => p.current_price != null && p.current_price < 30);
+    if (withPrices.length > 0) {
+      return withPrices
+        .sort((a, b) => (a.current_price ?? 999) - (b.current_price ?? 999))
+        .slice(0, 15);
+    }
+    // Fallback: use keyword matching when no prices are set
     return productList
-      .filter((p) => p.current_price != null && p.current_price < 20)
-      .sort((a, b) => (a.current_price ?? 999) - (b.current_price ?? 999))
-      .slice(0, 10);
+      .filter((p) => fillerKeywords.some((kw) => p.description.toUpperCase().includes(kw)))
+      .slice(0, 15);
   }, [productList]);
 
   // ---- Handlers ----

@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.database import get_db
-from app.dependencies import get_current_user, require_roles
+from app.dependencies import require_roles
 from app.models.usfoods import (
     RunStatus,
     USFoodsProduct,
@@ -19,35 +19,12 @@ from app.models.usfoods import (
     USFoodsWeeklyRun,
 )
 from app.models.user import User, UserRole
-from app.schemas.usfoods import (
-    RunItemCreate,
-    RunItemUpdate,
-    SubmitResultPayload,
-    USFoodsProductResponse,
-    USFoodsRunItemResponse,
-    USFoodsRunListItem,
-    USFoodsRunResponse,
-    USFoodsShopMappingResponse,
-    USFoodsShopSummary,
-    ValidationResultPayload,
-)
+from app.schemas.usfoods import RunItemCreate, RunItemUpdate
 from app.services.usfoods_service import generate_weekly_run
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-# --- Agent auth helper ---
-
-async def verify_agent_key(x_agent_key: str = Header(...)) -> bool:
-    """Verify the agent key matches the JWT secret (shared secret for agent auth)."""
-    if x_agent_key != settings.jwt_secret_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid agent key",
-        )
-    return True
 
 
 # --- Helper to serialize run items ---
@@ -179,7 +156,6 @@ async def trigger_generate_run(
     db: AsyncSession = Depends(get_db),
 ):
     """Trigger generation of a new weekly run from Square orders."""
-    import traceback
     try:
         run = await generate_weekly_run(db)
         await db.commit()
@@ -194,7 +170,7 @@ async def trigger_generate_run(
         }
     except Exception as e:
         logger.exception("Failed to generate weekly run")
-        return {"error": str(e), "traceback": traceback.format_exc()}
+        raise HTTPException(status_code=500, detail=f"Generate failed: {e}")
 
 
 @router.patch("/runs/{run_id}/items/{item_id}")
@@ -311,25 +287,6 @@ async def remove_run_item(
     return {"ok": True}
 
 
-@router.post("/runs/{run_id}/validate")
-async def mark_for_validation(
-    run_id: int,
-    current_user: User = Depends(require_roles(UserRole.owner)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Mark a run as ready for validation (agent will pick it up)."""
-    result = await db.execute(
-        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
-    )
-    run = result.scalar_one_or_none()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    run.status = RunStatus.pending_validation
-    await db.flush()
-    return {"id": run.id, "status": run.status.value}
-
-
 @router.post("/runs/{run_id}/rebuild-csv")
 async def rebuild_csv(
     run_id: int,
@@ -379,39 +336,14 @@ async def rebuild_csv(
     return {"csv_data": run.csv_data, "breakdown_pdf": breakdown_pdf}
 
 
-@router.post("/runs/{run_id}/submit")
-async def mark_for_submit(
-    run_id: int,
-    current_user: User = Depends(require_roles(UserRole.owner)),
-    db: AsyncSession = Depends(get_db),
-):
-    """Mark a run as ready for real submission (agent will pick it up)."""
-    result = await db.execute(
-        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
-    )
-    run = result.scalar_one_or_none()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    if run.status != RunStatus.reviewing:
-        raise HTTPException(
-            status_code=400,
-            detail="Run must be in 'reviewing' status to submit",
-        )
-
-    run.status = RunStatus.pending_submit
-    await db.flush()
-    await db.commit()
-    return {"id": run.id, "status": run.status.value}
-
-
 @router.post("/cron/generate")
 async def cron_generate_run(
     x_cron_key: str = Header(..., alias="X-Cron-Key"),
     db: AsyncSession = Depends(get_db),
 ):
     """Monday 11 AM cron: generate weekly run from Square orders."""
-    if x_cron_key != settings.jwt_secret_key:
+    import hmac
+    if not hmac.compare_digest(x_cron_key, settings.jwt_secret_key):
         raise HTTPException(status_code=403, detail="Invalid cron key")
 
     from app.services.usfoods_service import generate_weekly_run
@@ -419,7 +351,35 @@ async def cron_generate_run(
     try:
         run = await generate_weekly_run(db)
         await db.commit()
-        return {"id": run.id, "status": run.status.value, "total_items": run.total_line_items}
+
+        # Count shops and total cases for SMS
+        items_result = await db.execute(
+            select(USFoodsRunItem).where(USFoodsRunItem.run_id == run.id)
+        )
+        all_items = items_result.scalars().all()
+        total_cases = sum(i.quantity for i in all_items)
+        shop_ids = set(i.shop_mapping_id for i in all_items)
+
+        # SMS notification to owners
+        try:
+            from app.services.notification_service import send_sms
+
+            owner_result = await db.execute(
+                select(User).where(User.role == UserRole.owner, User.is_active.is_(True))
+            )
+            owners = owner_result.scalars().all()
+            msg = (
+                f"Six Beans: US Foods order ready for review. "
+                f"{total_cases} cases across {len(shop_ids)} shops. "
+                f"Review at sixbeanscoffee.com/portal/usfoods"
+            )
+            for owner in owners:
+                if owner.phone:
+                    await send_sms(owner.phone, msg)
+        except Exception:
+            logger.exception("Failed to send US Foods SMS")
+
+        return {"id": run.id, "status": run.status.value, "total_items": run.total_line_items, "total_cases": total_cases}
     except Exception as e:
         logger.exception("Cron generate run failed")
         raise HTTPException(status_code=500, detail=str(e))
@@ -529,125 +489,3 @@ async def get_analytics(
     }
 
 
-# --- Agent endpoints ---
-
-@router.get("/agent/pending")
-async def agent_get_pending(
-    _: bool = Depends(verify_agent_key),
-    db: AsyncSession = Depends(get_db),
-):
-    """Get the next job for the agent (validation or submit)."""
-    # Check for pending validation first
-    result = await db.execute(
-        select(USFoodsWeeklyRun)
-        .where(USFoodsWeeklyRun.status == RunStatus.pending_validation)
-        .order_by(USFoodsWeeklyRun.created_at.asc())
-        .limit(1)
-    )
-    run = result.scalar_one_or_none()
-    if run:
-        return {
-            "job_type": "validate",
-            "run_id": run.id,
-            "csv_data": run.csv_data,
-        }
-
-    # Check for pending submit
-    result = await db.execute(
-        select(USFoodsWeeklyRun)
-        .where(USFoodsWeeklyRun.status == RunStatus.pending_submit)
-        .order_by(USFoodsWeeklyRun.created_at.asc())
-        .limit(1)
-    )
-    run = result.scalar_one_or_none()
-    if run:
-        return {
-            "job_type": "submit",
-            "run_id": run.id,
-            "csv_data": run.csv_data,
-        }
-
-    return {"job_type": None}
-
-
-@router.post("/agent/validation-result")
-async def agent_post_validation_result(
-    body: ValidationResultPayload,
-    _: bool = Depends(verify_agent_key),
-    db: AsyncSession = Depends(get_db),
-):
-    """Agent posts validation results from the Playwright scrape."""
-    from app.services.usfoods_service import apply_validation_results
-
-    run_result = await db.execute(
-        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == body.run_id)
-    )
-    run = run_result.scalar_one_or_none()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    await apply_validation_results(db, body.run_id, body.results)
-
-    # Transition to reviewing status
-    run.status = RunStatus.reviewing
-    await db.flush()
-    await db.commit()
-
-    # Count flagged items for the SMS
-    items_result = await db.execute(
-        select(USFoodsRunItem).where(USFoodsRunItem.run_id == body.run_id)
-    )
-    all_items = items_result.scalars().all()
-    flagged_count = sum(1 for i in all_items if i.is_flagged)
-    total_items = len(all_items)
-
-    # Count unique shops
-    shop_ids = set(i.shop_mapping_id for i in all_items)
-
-    # Send SMS notification to owner
-    try:
-        from app.services.notification_service import send_sms
-
-        owner_result = await db.execute(
-            select(User).where(User.role == UserRole.owner, User.is_active.is_(True))
-        )
-        owners = owner_result.scalars().all()
-        msg = (
-            f"Six Beans: US Foods order ready for review. "
-            f"{total_items} items across {len(shop_ids)} shops."
-        )
-        if flagged_count > 0:
-            msg += f" {flagged_count} flagged items need attention."
-        msg += " Review at sixbeanscoffee.com/portal/usfoods"
-
-        for owner in owners:
-            if owner.phone:
-                await send_sms(owner.phone, msg)
-    except Exception:
-        logger.exception("Failed to send US Foods validation SMS")
-
-    return {"ok": True, "status": run.status.value}
-
-
-@router.post("/agent/submit-result")
-async def agent_post_submit_result(
-    body: SubmitResultPayload,
-    _: bool = Depends(verify_agent_key),
-    db: AsyncSession = Depends(get_db),
-):
-    """Agent posts submission confirmation."""
-    run_result = await db.execute(
-        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == body.run_id)
-    )
-    run = run_result.scalar_one_or_none()
-    if not run:
-        raise HTTPException(status_code=404, detail="Run not found")
-
-    if body.success:
-        run.status = RunStatus.submitted
-    else:
-        run.status = RunStatus.failed
-
-    await db.flush()
-
-    return {"ok": True, "status": run.status.value}

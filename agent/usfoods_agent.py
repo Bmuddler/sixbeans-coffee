@@ -159,17 +159,26 @@ async def run_playwright_upload(csv_path: str, submit: bool = False) -> dict:
             await asyncio.sleep(3)
 
             # Check if logged in
-            content = await page.content()
+            try:
+                content = await page.content()
+            except Exception:
+                content = ""
             if "Six Bean Coffee" not in content:
-                logger.warning("Not logged in to US Foods. Please log in manually...")
-                # Wait up to 5 minutes for manual login
+                logger.warning("Not logged in to US Foods. Please log in manually in the browser window...")
+                logger.warning("You have 5 minutes to log in...")
+                logged_in = False
                 for i in range(60):
                     await asyncio.sleep(5)
-                    content = await page.content()
-                    if "Six Bean Coffee" in content:
-                        logger.info("Login detected!")
-                        break
-                else:
+                    try:
+                        content = await page.content()
+                        if "Six Bean Coffee" in content:
+                            logger.info("Login detected!")
+                            logged_in = True
+                            break
+                    except Exception:
+                        # Page might be navigating during login
+                        continue
+                if not logged_in:
                     result["message"] = "Login timeout - please log in to US Foods first"
                     await browser.close()
                     return result

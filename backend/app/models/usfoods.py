@@ -22,13 +22,8 @@ from app.models import Base
 
 class RunStatus(str, enum.Enum):
     generating = "generating"
-    pending_validation = "pending_validation"
-    validated = "validated"
     reviewing = "reviewing"
-    pending_submit = "pending_submit"
-    submitted = "submitted"
     failed = "failed"
-    cancelled = "cancelled"
 
 
 class USFoodsProduct(Base):
