@@ -607,16 +607,27 @@ export function USFoodsPage() {
                           }}
                         >
                           <option value="">Select a store...</option>
-                          {run.shops
-                            .filter((s) => s.customer_number !== shop.customer_number)
-                            .map((s) => {
-                              const mapping = shopList.find((m) => m.customer_number === s.customer_number && !m.is_routing_alias);
-                              return mapping ? (
-                                <option key={mapping.id} value={mapping.id}>
-                                  {s.shop_name} ({s.item_count} items)
+                          {(() => {
+                            // Group other shops by customer number for the dropdown
+                            const grouped: Record<string, { names: string[]; totalItems: number; mappingId: number }> = {};
+                            run.shops
+                              .filter((s) => s.customer_number !== shop.customer_number)
+                              .forEach((s) => {
+                                if (!grouped[s.customer_number]) {
+                                  const mapping = shopList.find((m) => m.customer_number === s.customer_number && !m.is_routing_alias);
+                                  grouped[s.customer_number] = { names: [], totalItems: 0, mappingId: mapping?.id ?? 0 };
+                                }
+                                grouped[s.customer_number].names.push(s.shop_name);
+                                grouped[s.customer_number].totalItems += s.item_count;
+                              });
+                            return Object.entries(grouped).map(([custNum, g]) => (
+                              g.mappingId ? (
+                                <option key={custNum} value={g.mappingId}>
+                                  {g.names.join(' + ')} ({g.totalItems} items)
                                 </option>
-                              ) : null;
-                            })}
+                              ) : null
+                            ));
+                          })()}
                         </select>
                       </div>
                     )}
