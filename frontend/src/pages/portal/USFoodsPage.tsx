@@ -59,8 +59,10 @@ interface ShopData {
   shop_name: string;
   customer_number: string;
   item_count: number;
+  combined_count?: number;
   flagged_count: number;
   meets_minimum: boolean;
+  is_alias?: boolean;
   items: RunItem[];
 }
 
@@ -278,7 +280,7 @@ export function USFoodsPage() {
     const totalItems = run.shops.reduce((sum, s) => sum + s.item_count, 0);
     const flaggedItems = run.shops.reduce((sum, s) => sum + s.flagged_count, 0);
     const shopsNeedingAttention = run.shops.filter(
-      (s) => s.flagged_count > 0 || s.item_count < MINIMUM_ITEMS,
+      (s) => s.flagged_count > 0 || !s.meets_minimum,
     ).length;
     return { totalItems, flaggedItems, shopsNeedingAttention };
   }, [run]);
@@ -286,7 +288,7 @@ export function USFoodsPage() {
   const canSubmit = useMemo(() => {
     if (!run) return false;
     if (run.status !== 'reviewing') return false;
-    return run.shops.every((s) => s.item_count >= MINIMUM_ITEMS && s.flagged_count === 0);
+    return run.shops.every((s) => s.meets_minimum && s.flagged_count === 0);
   }, [run]);
 
   // Filler items: cheap products for meeting minimums
@@ -335,7 +337,7 @@ export function USFoodsPage() {
   const shopExpandState = useCallback(
     (shop: ShopData): boolean => {
       if (expandedShops[shop.shop_name] !== undefined) return expandedShops[shop.shop_name];
-      return shop.flagged_count > 0 || shop.item_count < MINIMUM_ITEMS;
+      return shop.flagged_count > 0 || !shop.meets_minimum;
     },
     [expandedShops],
   );
@@ -525,7 +527,7 @@ export function USFoodsPage() {
             <div className="space-y-3">
               {run.shops.map((shop) => {
                 const isExpanded = shopExpandState(shop);
-                const hasIssues = shop.flagged_count > 0 || shop.item_count < MINIMUM_ITEMS;
+                const hasIssues = shop.flagged_count > 0 || !shop.meets_minimum;
 
                 return (
                   <Card key={shop.customer_number} padding={false}>
@@ -544,12 +546,15 @@ export function USFoodsPage() {
                         <div className="flex items-center gap-2">
                           <span className="font-semibold text-gray-900">{shop.shop_name}</span>
                           <span className="text-xs text-gray-500">#{shop.customer_number}</span>
+                          {shop.is_alias && (
+                            <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">→ shared account</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-sm text-gray-500">
-                          <span>{shop.item_count} items</span>
-                          {shop.item_count < MINIMUM_ITEMS && (
+                          <span>{shop.item_count} items{(shop.combined_count ?? shop.item_count) !== shop.item_count ? ` (${shop.combined_count} combined)` : ''}</span>
+                          {!shop.meets_minimum && (
                             <span className="text-orange-600 font-medium">
-                              Need {MINIMUM_ITEMS - shop.item_count} more
+                              Need {MINIMUM_ITEMS - (shop.combined_count ?? shop.item_count)} more
                             </span>
                           )}
                           {shop.flagged_count > 0 && (
@@ -688,7 +693,7 @@ export function USFoodsPage() {
                           >
                             Add Item
                           </Button>
-                          {shop.item_count < MINIMUM_ITEMS && (
+                          {!shop.meets_minimum && (
                             <Button
                               size="sm"
                               variant="secondary"

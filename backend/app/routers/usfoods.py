@@ -116,47 +116,43 @@ async def get_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    # Group items by customer number (merges aliases like Adelia -> Hesperia)
-    shops_map: dict[str, dict] = defaultdict(lambda: {
-        "shop_name": "",
-        "customer_number": "",
-        "sub_shops": [],
-        "items": [],
-        "flagged_count": 0,
-    })
+    # Group items by shop mapping, but calculate combined totals per customer number
+    shops_map: dict[int, dict] = {}
 
     for item in run.items:
         mapping = item.shop_mapping
         if not mapping:
             continue
-        cust_num = mapping.customer_number
-        shop_data = shops_map[cust_num]
-        shop_data["customer_number"] = cust_num
-
-        # Use the non-alias name as primary, track sub-shops
-        if mapping.is_routing_alias:
-            if mapping.us_foods_account_name not in shop_data["sub_shops"]:
-                shop_data["sub_shops"].append(mapping.us_foods_account_name)
-        else:
-            shop_data["shop_name"] = mapping.us_foods_account_name
-
-        shop_data["items"].append(_serialize_run_item(item))
+        mid = item.shop_mapping_id
+        if mid not in shops_map:
+            shops_map[mid] = {
+                "shop_name": mapping.us_foods_account_name,
+                "customer_number": mapping.customer_number,
+                "is_alias": mapping.is_routing_alias,
+                "items": [],
+                "flagged_count": 0,
+            }
+        shops_map[mid]["items"].append(_serialize_run_item(item))
         if item.is_flagged:
-            shop_data["flagged_count"] += 1
+            shops_map[mid]["flagged_count"] += 1
+
+    # Calculate combined item count per customer number for 15-item minimum
+    combined_counts: dict[str, int] = defaultdict(int)
+    for data in shops_map.values():
+        combined_counts[data["customer_number"]] += len(data["items"])
 
     shops = []
     for data in shops_map.values():
-        name = data["shop_name"]
-        if not name:
-            name = data["sub_shops"][0] if data["sub_shops"] else "Unknown"
-        if data["sub_shops"]:
-            name += f" (includes: {', '.join(data['sub_shops'])})"
+        cust_num = data["customer_number"]
+        combined_total = combined_counts[cust_num]
         shops.append({
-            "shop_name": name,
-            "customer_number": data["customer_number"],
+            "shop_name": data["shop_name"],
+            "customer_number": cust_num,
             "item_count": len(data["items"]),
+            "combined_count": combined_total,
             "flagged_count": data["flagged_count"],
-            "meets_minimum": len(data["items"]) >= 15,
+            "meets_minimum": combined_total >= 15,
+            "is_alias": data["is_alias"],
             "items": data["items"],
         })
 
