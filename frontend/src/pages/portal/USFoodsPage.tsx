@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Truck,
@@ -698,14 +698,9 @@ export function USFoodsPage() {
                                     {item.product_number ?? '-'}
                                   </td>
                                   <td className="px-4 py-2">
-                                    <input
-                                      type="number"
-                                      min={1}
+                                    <QuantityInput
                                       value={item.quantity}
-                                      onChange={(e) =>
-                                        handleQuantityChange(item.id, parseInt(e.target.value) || 1)
-                                      }
-                                      className="h-7 w-16 rounded border border-gray-300 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      onChange={(newQty) => handleQuantityChange(item.id, newQty)}
                                     />
                                   </td>
                                   <td className="px-4 py-2">
@@ -1034,5 +1029,43 @@ function AnalyticsView({ data, loading }: { data: AnalyticsData | undefined; loa
         )}
       </Card>
     </div>
+  );
+}
+
+// Quantity input with local state so typing works smoothly.
+// Only commits to the parent on blur or Enter.
+function QuantityInput({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const [localValue, setLocalValue] = useState(String(value));
+
+  // Sync when the parent value changes (e.g., after server confirms)
+  useEffect(() => {
+    setLocalValue(String(value));
+  }, [value]);
+
+  const commit = () => {
+    const num = parseInt(localValue, 10);
+    if (isNaN(num) || num < 1) {
+      setLocalValue(String(value));
+      return;
+    }
+    if (num !== value) {
+      onChange(num);
+    }
+  };
+
+  return (
+    <input
+      type="number"
+      min={1}
+      value={localValue}
+      onChange={(e) => setLocalValue(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.currentTarget.blur();
+        }
+      }}
+      className="h-7 w-16 rounded border border-gray-300 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+    />
   );
 }
