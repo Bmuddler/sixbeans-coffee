@@ -70,6 +70,15 @@ async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
     order_window_start = pacific.localize(datetime(last_monday.year, last_monday.month, last_monday.day, 11, 0, 0))
     order_window_end = pacific.localize(datetime(this_monday.year, this_monday.month, this_monday.day, 11, 0, 0))
 
+    # Delete any previous runs from today so we get a clean start
+    old_runs = await db.execute(
+        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.run_date == today)
+    )
+    for old_run in old_runs.scalars().all():
+        await db.delete(old_run)
+    await db.flush()
+    logger.info("Purged old runs for %s", today)
+
     # Create the run record (store naive datetimes for DB)
     run = USFoodsWeeklyRun(
         run_date=today,

@@ -281,11 +281,24 @@ export function USFoodsPage() {
     if (!run) return { totalItems: 0, flaggedItems: 0, shopsNeedingAttention: 0 };
     const totalItems = run.shops.reduce((sum, s) => sum + s.item_count, 0);
     const flaggedItems = run.shops.reduce((sum, s) => sum + s.flagged_count, 0);
-    const shopsNeedingAttention = run.shops.filter(
-      (s) => s.flagged_count > 0 || !s.meets_minimum,
-    ).length;
+
+    // Calculate effective item counts per target customer number (with combinations)
+    const effectiveCounts: Record<string, number> = {};
+    for (const s of run.shops) {
+      const target = combinations[s.customer_number] ?? s.customer_number;
+      effectiveCounts[target] = (effectiveCounts[target] ?? 0) + s.item_count;
+    }
+
+    const shopsNeedingAttention = run.shops.filter((s) => {
+      if (s.flagged_count > 0) return true;
+      // If this shop is combined into another, it doesn't need attention on its own
+      if (combinations[s.customer_number]) return false;
+      // Check effective count for this target
+      const effectiveCount = effectiveCounts[s.customer_number] ?? s.item_count;
+      return effectiveCount < MINIMUM_ITEMS;
+    }).length;
     return { totalItems, flaggedItems, shopsNeedingAttention };
-  }, [run]);
+  }, [run, combinations]);
 
   const canSubmit = useMemo(() => {
     if (!run) return false;
