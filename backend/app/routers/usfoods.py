@@ -146,7 +146,9 @@ async def get_run(
 
     shops = []
     for data in shops_map.values():
-        name = data["shop_name"] or data["sub_shops"][0] if data["sub_shops"] else "Unknown"
+        name = data["shop_name"]
+        if not name:
+            name = data["sub_shops"][0] if data["sub_shops"] else "Unknown"
         if data["sub_shops"]:
             name += f" (includes: {', '.join(data['sub_shops'])})"
         shops.append({
