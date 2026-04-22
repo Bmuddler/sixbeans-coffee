@@ -550,9 +550,21 @@ export function USFoodsPage() {
           {/* Shop sections */}
           {run && !runDetailLoading && (
             <div className="space-y-3">
-              {run.shops.map((shop) => {
-                const isExpanded = shopExpandState(shop);
-                const hasIssues = shop.flagged_count > 0 || !shop.meets_minimum;
+              {(() => {
+                // Calculate effective case count per target customer number (with combinations applied)
+                const effectiveTotals: Record<string, number> = {};
+                for (const s of run.shops) {
+                  const target = combinations[s.customer_number] ?? s.customer_number;
+                  effectiveTotals[target] = (effectiveTotals[target] ?? 0) + s.item_count;
+                }
+                return run.shops.map((shop) => {
+                  const isExpanded = shopExpandState(shop);
+                  // If this shop is combined into another, it doesn't need its own minimum check
+                  const isCombinedAway = !!combinations[shop.customer_number];
+                  const targetCust = combinations[shop.customer_number] ?? shop.customer_number;
+                  const effectiveTotal = effectiveTotals[targetCust] ?? shop.item_count;
+                  const effectiveMinMet = isCombinedAway || effectiveTotal >= MINIMUM_ITEMS;
+                  const hasIssues = shop.flagged_count > 0 || !effectiveMinMet;
 
                 return (
                   <Card key={shop.customer_number} padding={false}>
@@ -576,10 +588,18 @@ export function USFoodsPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-3 mt-0.5 text-sm text-gray-500">
-                          <span>{shop.item_count} cases{(shop.combined_count ?? shop.item_count) !== shop.item_count ? ` (${shop.combined_count} combined)` : ''}</span>
-                          {!shop.meets_minimum && (
+                          <span>
+                            {shop.item_count} cases
+                            {effectiveTotal !== shop.item_count && ` (${effectiveTotal} combined)`}
+                          </span>
+                          {isCombinedAway && (
+                            <span className="text-blue-600 font-medium">
+                              → sending to combined order
+                            </span>
+                          )}
+                          {!effectiveMinMet && !isCombinedAway && (
                             <span className="text-orange-600 font-medium">
-                              Need {MINIMUM_ITEMS - (shop.combined_count ?? shop.item_count)} more cases
+                              Need {MINIMUM_ITEMS - effectiveTotal} more cases
                             </span>
                           )}
                           {shop.flagged_count > 0 && (
@@ -779,7 +799,7 @@ export function USFoodsPage() {
                           >
                             Add Item
                           </Button>
-                          {!shop.meets_minimum && (
+                          {!effectiveMinMet && !isCombinedAway && (
                             <Button
                               size="sm"
                               variant="secondary"
@@ -808,7 +828,8 @@ export function USFoodsPage() {
                     )}
                   </Card>
                 );
-              })}
+                });
+              })()}
             </div>
           )}
         </>
