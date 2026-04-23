@@ -197,6 +197,9 @@ async def startup():
             bakery = Location(
                 name="Six Beans - Bakery",
                 address="Bakery (internal)",
+                city="Apple Valley",
+                state="CA",
+                zip_code="92307",
                 canonical_short_name="BAKERY",
                 is_active=True,
             )
