@@ -149,6 +149,32 @@ async def startup():
             await session.commit()
             logger.info("Locations synced.")
 
+        # Backfill canonical short names and external IDs for analytics ingestion.
+        # Matches on address (unique per location) to avoid ambiguity.
+        CANONICAL_MAPPINGS = [
+            # (address_match, canonical_short_name, godaddy_dropdown_label, tapmango_location_id, doordash_store_id)
+            ("21788 Bear Valley Rd", "APPLE_VALLEY_HS", "Six Beans Coffee Co. - AV HS", 2360, None),
+            ("15760 Ranchero Rd", "HESPERIA", "Six Beans Coffee Co. - Ranchero", 7226, None),
+            ("921 Barstow Rd", "BARSTOW", "Six Beans Coffee Co. - Barstow", 8772, None),
+            ("12875 Bear Valley Rd", "VICTORVILLE", "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
+            ("13730 Apple Valley Rd", "YUCCA_LOMA", "Six Beans Coffee Co. - Yucca Loma", 10958, None),
+            ("14213 7th St", "SEVENTH_STREET", "Six Beans Coffee Co. - 7th Street", 12497, None),
+        ]
+        all_locs = (await session.execute(select(Location))).scalars().all()
+        mappings_changed = False
+        for address_match, short_name, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
+            for loc in all_locs:
+                if loc.address == address_match and loc.canonical_short_name != short_name:
+                    loc.canonical_short_name = short_name
+                    loc.godaddy_dropdown_label = gd_label
+                    loc.tapmango_location_id = tm_id
+                    loc.doordash_store_id = dd_id
+                    mappings_changed = True
+                    break
+        if mappings_changed:
+            await session.commit()
+            logger.info("Analytics canonical mappings backfilled for %d locations.", len(CANONICAL_MAPPINGS))
+
         # Set owners to not require password change
         from app.models.user import UserRole, user_locations
         await session.execute(
