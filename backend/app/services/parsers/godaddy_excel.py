@@ -303,3 +303,147 @@ def parse_godaddy_excel(
         },
     )
     return [row]
+
+
+def parse_godaddy_settlement(
+    file_bytes: bytes,
+    source_file: str,
+    store_label: str,
+) -> tuple[list[ParsedRevenueRow], set[str]]:
+    """Parse a GoDaddy Settlement XLSX — a multi-day version of the same workbook.
+
+    Returns (rows_per_date, terminal_ids_seen). The caller uses the
+    terminal IDs to pick a Location, then writes one DailyRevenue +
+    HourlyRevenue for each emitted row.
+
+    Sheets are the same layout as the daily Transactions Report (Card
+    Payments (N), Cash Payments (N), Other Purchases (N), Card/Cash
+    Refunds (N), Net Payment Summary), but detail rows span the full
+    date range. We group by the Date column's date component and emit
+    one ParsedRevenueRow per day.
+    """
+    try:
+        import openpyxl  # type: ignore
+    except ImportError:
+        raise RuntimeError("openpyxl is required to parse GoDaddy Settlement exports.")
+
+    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+
+    # Per-day, per-quarter-hour buckets
+    per_day: dict[date_cls, dict] = {}
+    terminal_ids: set[str] = set()
+    refunds_per_day: dict[date_cls, float] = {}
+
+    def _daybucket(d: date_cls) -> dict:
+        if d not in per_day:
+            per_day[d] = {
+                "subtotal": 0.0, "tip": 0.0, "count": 0,
+                "hourly": {},  # (hour, quarter) -> [txns, gross]
+            }
+        return per_day[d]
+
+    for sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+        if DETAIL_SHEET_RE.match(sheet_name):
+            rows = list(ws.iter_rows(values_only=True))
+            header_idx = _find_header_row(rows)
+            if header_idx is None:
+                continue
+            headers = [str(c).strip().lower() if c is not None else "" for c in rows[header_idx]]
+            date_col = headers.index("date") if "date" in headers else 0
+            sub_col = headers.index("subtotal") if "subtotal" in headers else None
+            tip_col = headers.index("tip") if "tip" in headers else None
+            term_col = headers.index("terminal id") if "terminal id" in headers else None
+            txn_col = headers.index("transaction id") if "transaction id" in headers else None
+
+            for row in rows[header_idx + 1:]:
+                if not row or all(v is None or v == "" for v in row):
+                    continue
+                first = str(row[0]).strip().lower() if row[0] is not None else ""
+                if first == "total" or first.startswith("grand total"):
+                    break
+                if txn_col is not None and txn_col < len(row):
+                    tid = row[txn_col]
+                    if tid is None or str(tid).strip() == "":
+                        continue
+
+                ts = _parse_gd_datetime(row[date_col] if date_col < len(row) else None)
+                if ts is None:
+                    continue
+                d = ts.date()
+                bucket = _daybucket(d)
+
+                row_sub = _as_float(row[sub_col]) if sub_col is not None and sub_col < len(row) else 0.0
+                row_tip = _as_float(row[tip_col]) if tip_col is not None and tip_col < len(row) else 0.0
+                bucket["subtotal"] += row_sub
+                bucket["tip"] += row_tip
+                bucket["count"] += 1
+
+                hkey = (ts.hour, ts.minute // 15)
+                hb = bucket["hourly"].setdefault(hkey, [0, 0.0])
+                hb[0] += 1
+                hb[1] += row_sub + row_tip
+
+                if term_col is not None and term_col < len(row):
+                    t = row[term_col]
+                    if t and len(str(t)) > 20:  # filter out non-UUID junk
+                        terminal_ids.add(str(t).strip())
+
+        elif REFUND_SHEET_RE.match(sheet_name):
+            # Refunds have the same Date column; bucket per-day and subtract.
+            rows = list(ws.iter_rows(values_only=True))
+            header_idx = _find_header_row(rows)
+            if header_idx is None:
+                continue
+            headers = [str(c).strip().lower() if c is not None else "" for c in rows[header_idx]]
+            date_col = headers.index("date") if "date" in headers else 0
+            amt_col = None
+            for candidate in ("total", "amount", "refund amount", "subtotal"):
+                if candidate in headers:
+                    amt_col = headers.index(candidate)
+                    break
+            if amt_col is None:
+                continue
+            for row in rows[header_idx + 1:]:
+                if not row or all(v is None or v == "" for v in row):
+                    continue
+                first = str(row[0]).strip().lower() if row[0] is not None else ""
+                if first == "total":
+                    break
+                ts = _parse_gd_datetime(row[date_col] if date_col < len(row) else None)
+                if ts is None:
+                    continue
+                amt = abs(_as_float(row[amt_col] if amt_col < len(row) else 0))
+                refunds_per_day[ts.date()] = refunds_per_day.get(ts.date(), 0.0) + amt
+
+    rows_out: list[ParsedRevenueRow] = []
+    for d, b in per_day.items():
+        gross = b["subtotal"] + b["tip"]  # customer-paid total
+        refund = refunds_per_day.get(d, 0.0)
+        net = gross - refund
+        hourly_rows = [
+            {
+                "date": d, "hour": h, "quarter": q,
+                "channel": CHANNEL_GODADDY,
+                "txns": bt, "gross": round(bg, 2),
+            }
+            for (h, q), (bt, bg) in b["hourly"].items()
+        ]
+        rows_out.append(ParsedRevenueRow(
+            external_store_id=store_label,
+            channel=CHANNEL_GODADDY,
+            date=d,
+            gross_revenue=round(gross, 2),
+            net_revenue=round(net, 2),
+            tip_total=round(b["tip"], 2) if b["tip"] else None,
+            transaction_count=b["count"],
+            raw_notes={
+                "source_file": source_file,
+                "subtotal_sum": round(b["subtotal"], 2),
+                "refund_total": round(refund, 2) if refund else 0.0,
+                "hourly_rows": hourly_rows,
+                "terminal_ids": sorted(terminal_ids),
+            },
+        ))
+
+    return rows_out, terminal_ids

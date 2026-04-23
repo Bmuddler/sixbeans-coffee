@@ -767,6 +767,10 @@ _GODADDY_RE = _ingest_re.compile(
     r"^godaddy_(?P<uuid>[0-9a-f-]{36})_(?P<date>\d{4}-\d{2}-\d{2})\.xlsx$",
     _ingest_re.IGNORECASE,
 )
+_GODADDY_SETTLEMENT_RE = _ingest_re.compile(
+    r"^settlement-.*\.xlsx$",
+    _ingest_re.IGNORECASE,
+)
 _TAPMANGO_RE = _ingest_re.compile(
     r"^Orders_(?P<start>\d{8})_(?P<end>\d{8})_?\.csv$",
     _ingest_re.IGNORECASE,
@@ -785,6 +789,8 @@ def _detect_source(name: str) -> str | None:
     lname = name.split("/")[-1]
     if _GODADDY_RE.match(lname):
         return "godaddy"
+    if _GODADDY_SETTLEMENT_RE.match(lname):
+        return "godaddy_settlement"
     if _DOORDASH_RE.match(lname):
         return "doordash"
     if _HOMEBASE_RE.search(lname):
@@ -850,6 +856,17 @@ async def ingest_batch(
     by_doordash_id = {str(loc.doordash_store_id): loc for loc in locations if loc.doordash_store_id}
     by_short_name = {loc.canonical_short_name: loc for loc in locations if loc.canonical_short_name}
 
+    # Map every known godaddy terminal_id to its Location. `godaddy_terminal_ids`
+    # is a comma-separated list because stores may have >1 physical terminal.
+    by_terminal_id: dict[str, Location] = {}
+    for loc in locations:
+        if not loc.godaddy_terminal_ids:
+            continue
+        for t in loc.godaddy_terminal_ids.split(","):
+            t = t.strip()
+            if t:
+                by_terminal_id[t] = loc
+
     per_file: list[dict] = []
     unmapped_counts: dict[str, set[str]] = defaultdict(set)
 
@@ -888,6 +905,51 @@ async def ingest_batch(
                     "location": loc.name, "date": target_date.isoformat(),
                     "gross": parsed[0].gross_revenue if parsed else 0,
                     "txns": parsed[0].transaction_count if parsed else 0,
+                })
+
+            elif source == "godaddy_settlement":
+                from app.services.parsers.godaddy_excel import parse_godaddy_settlement
+                # Parse without knowing the store yet — the terminal IDs
+                # embedded in the detail rows tell us which Location.
+                parsed_rows, terminal_ids = parse_godaddy_settlement(
+                    file_bytes=data,
+                    source_file=name,
+                    store_label="(pending terminal lookup)",
+                )
+                resolved = next((by_terminal_id[t] for t in terminal_ids if t in by_terminal_id), None)
+                if not resolved:
+                    for t in terminal_ids:
+                        unmapped_counts["godaddy_terminal"].add(t)
+                    per_file.append({
+                        "file": name, "source": source,
+                        "error": f"unmapped GoDaddy terminal(s): {', '.join(sorted(terminal_ids)) or 'none found'}",
+                    })
+                    continue
+
+                # If the settlement has terminals not already on this location,
+                # auto-append them (handles the case where a new terminal is
+                # seen later for an already-mapped store).
+                existing_terms = set(
+                    t.strip() for t in (resolved.godaddy_terminal_ids or "").split(",") if t.strip()
+                )
+                new_terms = terminal_ids - existing_terms
+                if new_terms:
+                    resolved.godaddy_terminal_ids = ",".join(sorted(existing_terms | terminal_ids))
+
+                dates_touched: set = set()
+                for row in parsed_rows:
+                    # The parser returned external_store_id="(pending...)" so override.
+                    row.external_store_id = resolved.godaddy_dropdown_label or resolved.name
+                    await _upsert_daily_revenue(db, resolved.id, row)
+                    await _upsert_hourly_rows(db, resolved.id, row.raw_notes.get("hourly_rows") or [])
+                    dates_touched.add(row.date)
+                per_file.append({
+                    "file": name, "source": source,
+                    "location": resolved.name,
+                    "days": len(dates_touched),
+                    "date_range": (f"{min(dates_touched).isoformat()} -> {max(dates_touched).isoformat()}"
+                                   if dates_touched else None),
+                    "terminals": sorted(terminal_ids),
                 })
 
             elif source == "tapmango":

@@ -157,6 +157,10 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS cogs_percent "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.22"
         ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_terminal_ids "
+            "VARCHAR(500)"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -178,30 +182,38 @@ async def startup():
 
         # Backfill canonical short names and external IDs for analytics ingestion.
         # Matches on address (unique per location) to avoid ambiguity.
-        # Tuple: (address_match, canonical_short_name, godaddy_store_id, godaddy_dropdown_label,
-        #         tapmango_location_id, doordash_store_id)
-        # GoDaddy UUIDs verified against manually-downloaded settlement reports
-        # for 2026-04-21 — the six Cowork-downloaded workbooks match by
-        # Net Payment Summary totals to the following store addresses.
+        # Tuple: (address_match, canonical_short_name, godaddy_store_id,
+        #         godaddy_dropdown_label, tapmango_location_id,
+        #         doordash_store_id, godaddy_terminal_ids).
+        # GoDaddy terminal IDs were identified by matching each Settlement
+        # Report file's 4/21 gross/txn totals against the already-verified
+        # per-store Transactions Reports from that day; two stores (AVHS
+        # and Hesperia) have two physical terminals.
         CANONICAL_MAPPINGS = [
             ("21788 Bear Valley Rd", "APPLE_VALLEY_HS",
              "7160b3ac-5321-403c-b849-e4f041ef7574",
-             "Six Beans Coffee Co. - AV HS", 2360, 27728588),
+             "Six Beans Coffee Co. - AV HS", 2360, 27728588,
+             "15a661b5-f3b3-40de-a44f-07519e82ed7d,50db32b6-92c0-4965-af2c-cfe5ca2764f6"),
             ("15760 Ranchero Rd", "HESPERIA",
              "ab50508a-8f15-4235-b54d-b5e6151fa474",
-             "Six Beans Coffee Co. - Ranchero", 7226, 27795480),
+             "Six Beans Coffee Co. - Ranchero", 7226, 27795480,
+             "67609ff9-0112-419d-a1c7-95a450c96a45,f13621ad-c969-49be-ad2c-8d25ecdc2964"),
             ("921 Barstow Rd", "BARSTOW",
              "99842f2c-4850-4f3d-bebc-2a5459654a1b",
-             "Six Beans Coffee Co. - Barstow", 8772, 27728689),
+             "Six Beans Coffee Co. - Barstow", 8772, 27728689,
+             "19929ffe-f068-4bbd-9a53-87b36479eb87"),
             ("12875 Bear Valley Rd", "VICTORVILLE",
              "28f4c6a9-e59f-4d31-a47b-73b4b7270330",
-             "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
+             "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027,
+             "ba935e9a-a848-4b3e-83a3-a4ff65708ecf"),
             ("13730 Apple Valley Rd", "YUCCA_LOMA",
              "7d0f498a-44d1-4176-978b-fec7aa58b00d",
-             "Six Beans Coffee Co. - Yucca Loma", 10958, 27798819),
+             "Six Beans Coffee Co. - Yucca Loma", 10958, 27798819,
+             "ecc38797-9c91-4c8e-b5ec-d95cb7bc99ff"),
             ("14213 7th St", "SEVENTH_STREET",
              "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
-             "Six Beans Coffee Co. - 7th Street", 12497, 36236401),
+             "Six Beans Coffee Co. - 7th Street", 12497, 36236401,
+             "b5b39c32-0280-4354-a5a9-4edb4beb6bb8"),
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
 
@@ -231,9 +243,9 @@ async def startup():
 
         by_address = {loc.address: loc for loc in all_locs}
         mapped_addresses = {row[0] for row in CANONICAL_MAPPINGS}
-        targets: list[tuple[Location, str, str, str, int | None, int | None]] = []
+        targets: list[tuple[Location, str, str, str, int | None, int | None, str | None]] = []
         needs_update = False
-        for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
+        for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id, gd_terms in CANONICAL_MAPPINGS:
             loc = by_address.get(address_match)
             if loc is None:
                 continue
@@ -243,9 +255,10 @@ async def startup():
                 or loc.godaddy_dropdown_label != gd_label
                 or loc.tapmango_location_id != tm_id
                 or loc.doordash_store_id != dd_id
+                or (loc.godaddy_terminal_ids or "") != (gd_terms or "")
             ):
                 needs_update = True
-            targets.append((loc, short_name, gd_store_id, gd_label, tm_id, dd_id))
+            targets.append((loc, short_name, gd_store_id, gd_label, tm_id, dd_id, gd_terms))
 
         # Non-sales locations (e.g. warehouse) must not hold any POS channel
         # IDs — these get nulled on every boot so a stray admin link can't
@@ -277,12 +290,13 @@ async def startup():
                 loc.tapmango_location_id = None
                 loc.doordash_store_id = None
             await session.flush()
-            for loc, short_name, gd_store_id, gd_label, tm_id, dd_id in targets:
+            for loc, short_name, gd_store_id, gd_label, tm_id, dd_id, gd_terms in targets:
                 loc.canonical_short_name = short_name
                 loc.godaddy_store_id = gd_store_id
                 loc.godaddy_dropdown_label = gd_label
                 loc.tapmango_location_id = tm_id
                 loc.doordash_store_id = dd_id
+                loc.godaddy_terminal_ids = gd_terms
             mappings_changed = True
         if mappings_changed:
             await session.commit()

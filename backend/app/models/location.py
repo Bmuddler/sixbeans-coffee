@@ -32,6 +32,10 @@ class Location(Base):
     # name kept for diagnostics / auto-discovery.
     godaddy_store_id = Column(String(50), nullable=True, unique=True, index=True)
     godaddy_dropdown_label = Column(String(200), nullable=True)
+    # Comma-separated list of GoDaddy terminal UUIDs for this store. Stores
+    # may have >1 physical POS terminal; settlement reports are scoped per
+    # terminal pair rather than per store, so we route files by terminal.
+    godaddy_terminal_ids = Column(String(500), nullable=True)
     tapmango_location_id = Column(Integer, nullable=True, unique=True, index=True)
     doordash_store_id = Column(Integer, nullable=True, unique=True, index=True)
 

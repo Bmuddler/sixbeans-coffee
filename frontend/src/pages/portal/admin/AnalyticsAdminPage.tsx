@@ -16,10 +16,11 @@ import { Button } from '@/components/ui/Button';
 import { analyticsAdmin, analyticsAdminUploads, locations as locationsApi } from '@/lib/api';
 
 const SOURCE_LABELS: Record<string, { label: string; icon: typeof Upload; color: string }> = {
-  godaddy:  { label: 'GoDaddy Commerce',     icon: Upload, color: '#5CB832' },
-  tapmango: { label: 'TapMango Orders',      icon: Upload, color: '#F59E0B' },
-  doordash: { label: 'DoorDash Financials',  icon: Upload, color: '#EF4444' },
-  homebase: { label: 'Homebase Timesheets',  icon: Upload, color: '#3B82F6' },
+  godaddy:             { label: 'GoDaddy Commerce',     icon: Upload, color: '#5CB832' },
+  godaddy_settlement:  { label: 'GoDaddy Settlement',   icon: Upload, color: '#5CB832' },
+  tapmango:            { label: 'TapMango Orders',      icon: Upload, color: '#F59E0B' },
+  doordash:            { label: 'DoorDash Financials',  icon: Upload, color: '#EF4444' },
+  homebase:            { label: 'Homebase Timesheets',  icon: Upload, color: '#3B82F6' },
 };
 
 export function AnalyticsAdminPage() {
@@ -224,8 +225,9 @@ function UnifiedUploadCard({ onUploaded }: { onUploaded: () => void }) {
       <p className="text-xs text-gray-500 mb-3">
         Mix and match. Filename tells the server which source it is:
         <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">godaddy_&lt;uuid&gt;_YYYY-MM-DD.xlsx</code> ·
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">settlement-*.xlsx</code> ·
         <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">Orders_YYYYMMDD_YYYYMMDD_.csv</code> ·
-        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">financial_YYYY-MM-DD_YYYY-MM-DD_*.zip</code> ·
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">financial_*.zip</code> ·
         <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">*_timesheets.csv</code>
       </p>
 
@@ -303,6 +305,8 @@ function UnifiedUploadCard({ onUploaded }: { onUploaded: () => void }) {
                     <p className="text-xs text-gray-500">
                       {pf.source === 'godaddy' &&
                         `${pf.location} · ${pf.date} · $${pf.gross?.toFixed?.(2)} · ${pf.txns} txns`}
+                      {pf.source === 'godaddy_settlement' &&
+                        `${pf.location} · ${pf.days} day${pf.days === 1 ? '' : 's'} · ${pf.date_range ?? ''}`}
                       {pf.source === 'tapmango' &&
                         `${pf.date} · ${pf.stores} store${pf.stores === 1 ? '' : 's'}`}
                       {pf.source === 'doordash' &&
