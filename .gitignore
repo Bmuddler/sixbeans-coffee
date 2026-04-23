@@ -11,3 +11,11 @@ dist/
 agent/.chrome_profile/
 agent/*.log
 agent/captures/
+
+# Local-only Playwright / session-capture artifacts that live alongside
+# backend/scripts/capture_session.py. These hold the owner's authenticated
+# GoDaddy / TapMango browser sessions and must never be committed.
+backend/scripts/.chrome_profile_godaddy/
+backend/scripts/.chrome_profile_tapmango/
+backend/scripts/tapmango_storage_state.json
+backend/scripts/godaddy_storage_state.json
