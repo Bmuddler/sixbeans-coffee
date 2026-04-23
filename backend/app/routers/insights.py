@@ -565,3 +565,277 @@ async def data_freshness(
             "homebase": _summary(labor_days),
         },
     }
+
+
+
+# ----------------------------------------------------------------------
+# Elite Scorecards — per-store P&L + grade + action
+# ----------------------------------------------------------------------
+
+# Target labor % of revenue. Anything above this contributes to
+# "labor_opportunity" (how much you could save by right-sizing staff).
+TARGET_LABOR_PCT = 0.30
+
+
+def _grade(score: int, has_labor: bool) -> str:
+    if not has_labor:
+        return "INFO ONLY"  # no labor data yet — can't grade
+    if score >= 85:
+        return "GREEN"
+    if score >= 70:
+        return "YELLOW"
+    if score >= 55:
+        return "ORANGE"
+    return "RED"
+
+
+def _manager_score(
+    margin_pct: float | None,
+    labor_pct: float | None,
+    avg_splh: float | None,
+    labor_opportunity: float,
+    wow_profit_delta: float | None,
+) -> int:
+    """Adaptation of the v6 Python scorer. 100 = perfect; subtractive."""
+    score = 100
+
+    if labor_pct is not None:
+        if labor_pct > 40:
+            score -= 28
+        elif labor_pct > 35:
+            score -= 18
+        elif labor_pct > 30:
+            score -= 10
+
+    if margin_pct is not None:
+        if margin_pct < 10:
+            score -= 30
+        elif margin_pct < 20:
+            score -= 15
+        elif margin_pct < 30:
+            score -= 6
+
+    if avg_splh is not None:
+        if avg_splh < 60:
+            score -= 12
+        elif avg_splh < 65:
+            score -= 7
+        elif avg_splh < 70:
+            score -= 3
+
+    if labor_opportunity > 550:
+        score -= 12
+    elif labor_opportunity > 400:
+        score -= 8
+    elif labor_opportunity > 250:
+        score -= 4
+
+    if wow_profit_delta is not None:
+        if wow_profit_delta > 250:
+            score += 4
+        elif wow_profit_delta < -250:
+            score -= 6
+
+    return max(0, min(100, int(round(score))))
+
+
+def _action_for(grade: str, margin_pct, labor_pct, labor_opportunity, wow_rev_delta, wow_profit_delta) -> str:
+    if grade == "INFO ONLY":
+        return "Upload Homebase timesheets to unlock grading"
+    if margin_pct is not None and margin_pct < 10:
+        return f"Margin only {margin_pct:.1f}% — cut labor or raise prices"
+    if labor_pct is not None and labor_pct >= 40:
+        return f"Labor at {labor_pct:.1f}% — cut weak shifts first"
+    if labor_pct is not None and labor_pct >= 35:
+        return f"Labor high at {labor_pct:.1f}% — tighten slow periods"
+    if labor_opportunity > 250:
+        return f"Up to ${labor_opportunity:.0f} in labor savings available"
+    if wow_profit_delta is not None and wow_profit_delta < -250:
+        return f"Profit down ${abs(wow_profit_delta):.0f} vs prior period — investigate"
+    if wow_rev_delta is not None and wow_rev_delta < -500:
+        return f"Revenue down ${abs(wow_rev_delta):.0f} vs prior — match staff to demand"
+    if grade == "GREEN":
+        return "Protect gains — hold labor line"
+    return "Monitor"
+
+
+@router.get("/elite-scorecards")
+async def elite_scorecards(
+    days: int = Query(7, ge=1, le=90),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Elite per-store P&L scorecards with grade + action item.
+
+    Joins DailyRevenue + DailyLabor + Expense with SystemSettings
+    (labor_burden_multiplier, cogs_percent) to compute each shop's
+    margin, labor %, SPLH, and labor-opportunity figure. Grades via a
+    100-point scorer. Returns per-store cards ordered by lowest margin
+    first (so the shops that need attention sit at the top).
+    """
+    curr_start, curr_end = _resolve_window(days, start_date, end_date)
+    span = (curr_end - curr_start).days + 1
+    prev_end = curr_start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=span - 1)
+
+    settings_row = (await db.execute(select(SystemSettings).limit(1))).scalar_one_or_none()
+    burden = settings_row.labor_burden_multiplier if settings_row else 1.25
+    cogs_pct = settings_row.cogs_percent if settings_row else 0.22
+
+    locations = (await db.execute(
+        select(Location).where(
+            Location.canonical_short_name.isnot(None),
+            (
+                Location.godaddy_store_id.isnot(None)
+                | Location.tapmango_location_id.isnot(None)
+                | Location.doordash_store_id.isnot(None)
+            ),
+        ).order_by(Location.canonical_short_name)
+    )).scalars().all()
+
+    # One big revenue + labor fetch covering both windows
+    rev_rows = (await db.execute(
+        select(DailyRevenue).where(
+            and_(DailyRevenue.date >= prev_start, DailyRevenue.date <= curr_end)
+        )
+    )).scalars().all()
+    labor_rows = (await db.execute(
+        select(DailyLabor).where(
+            and_(DailyLabor.date >= prev_start, DailyLabor.date <= curr_end)
+        )
+    )).scalars().all()
+
+    rev_by_loc: dict[int, list] = defaultdict(list)
+    for r in rev_rows:
+        rev_by_loc[r.location_id].append(r)
+    labor_by_loc: dict[int, list] = defaultdict(list)
+    for l in labor_rows:
+        labor_by_loc[l.location_id].append(l)
+
+    # Per-store expense totals (current snapshot — we prorate to the window)
+    exp_rows = (await db.execute(select(Expense))).scalars().all()
+    exp_monthly_by_loc: dict[int | None, float] = defaultdict(float)
+    for e in exp_rows:
+        exp_monthly_by_loc[e.location_id] += e.amount or 0.0
+
+    def _window_split(rows, start_, end_):
+        curr = [r for r in rows if curr_start <= r.date <= end_ and r.date >= start_]
+        return curr
+
+    def _rollup(rev_curr, labor_curr, monthly_expense: float, window_days: int):
+        gross = sum((r.gross_revenue or 0.0) for r in rev_curr)
+        txns = sum((r.transaction_count or 0) for r in rev_curr)
+        hours = sum((l.total_hours or 0.0) for l in labor_curr)
+        raw_labor = sum((l.labor_cost or 0.0) for l in labor_curr)
+        fully_loaded = raw_labor * burden
+        cogs = gross * cogs_pct
+        prorated_exp = (monthly_expense / 30.44) * window_days
+        profit = gross - cogs - fully_loaded - prorated_exp
+        margin = (profit / gross * 100.0) if gross else None
+        labor_pct = (fully_loaded / gross * 100.0) if gross else None
+        splh = (gross / hours) if hours else None
+        opp = max(0.0, fully_loaded - gross * TARGET_LABOR_PCT)
+        return {
+            "gross": round(gross, 2),
+            "transactions": txns,
+            "hours": round(hours, 2),
+            "raw_labor": round(raw_labor, 2),
+            "fully_loaded_labor": round(fully_loaded, 2),
+            "cogs": round(cogs, 2),
+            "prorated_expenses": round(prorated_exp, 2),
+            "profit": round(profit, 2),
+            "margin_pct": round(margin, 1) if margin is not None else None,
+            "labor_pct": round(labor_pct, 1) if labor_pct is not None else None,
+            "avg_splh": round(splh, 2) if splh is not None else None,
+            "labor_opportunity": round(opp, 2),
+        }
+
+    scorecards = []
+    for loc in locations:
+        monthly_exp = exp_monthly_by_loc.get(loc.id, 0.0)
+        rev_curr = _window_split(rev_by_loc.get(loc.id, []), curr_start, curr_end)
+        rev_prev = [r for r in rev_by_loc.get(loc.id, []) if prev_start <= r.date <= prev_end]
+        labor_curr = [l for l in labor_by_loc.get(loc.id, []) if curr_start <= l.date <= curr_end]
+        labor_prev = [l for l in labor_by_loc.get(loc.id, []) if prev_start <= l.date <= prev_end]
+
+        curr = _rollup(rev_curr, labor_curr, monthly_exp, span)
+        prev = _rollup(rev_prev, labor_prev, monthly_exp, span)
+
+        wow_rev = curr["gross"] - prev["gross"]
+        wow_profit = curr["profit"] - prev["profit"]
+
+        has_labor = curr["hours"] > 0
+        score = _manager_score(
+            curr["margin_pct"], curr["labor_pct"], curr["avg_splh"],
+            curr["labor_opportunity"], wow_profit if labor_prev else None,
+        )
+        grade = _grade(score, has_labor)
+        action = _action_for(
+            grade, curr["margin_pct"], curr["labor_pct"],
+            curr["labor_opportunity"], wow_rev, wow_profit,
+        )
+
+        scorecards.append({
+            "location_id": loc.id,
+            "name": loc.name,
+            "canonical_short_name": loc.canonical_short_name,
+            "current": curr,
+            "previous": prev,
+            "wow_revenue_delta": round(wow_rev, 2),
+            "wow_profit_delta": round(wow_profit, 2),
+            "score": score,
+            "grade": grade,
+            "primary_action": action,
+        })
+
+    # Sort: ungraded first, then by margin ascending (neediest first)
+    def _sort_key(s):
+        g = s["grade"]
+        rank = {"INFO ONLY": 0, "RED": 1, "ORANGE": 2, "YELLOW": 3, "GREEN": 4}.get(g, 5)
+        margin = s["current"]["margin_pct"]
+        return (rank, margin if margin is not None else 999)
+    scorecards.sort(key=_sort_key)
+
+    # Top-5 priority actions queue
+    priority_queue = []
+    for s in scorecards:
+        if s["grade"] in ("RED", "ORANGE"):
+            priority_queue.append({
+                "store": s["name"],
+                "short_name": s["canonical_short_name"],
+                "grade": s["grade"],
+                "score": s["score"],
+                "action": s["primary_action"],
+                "labor_opportunity": s["current"]["labor_opportunity"],
+            })
+
+    # Company roll-up
+    company_gross = sum(s["current"]["gross"] for s in scorecards)
+    company_profit = sum(s["current"]["profit"] for s in scorecards)
+    company_labor_opp = sum(s["current"]["labor_opportunity"] for s in scorecards)
+    company_margin = (company_profit / company_gross * 100.0) if company_gross else None
+    projected = company_profit + company_labor_opp
+
+    return {
+        "window": {
+            "start": curr_start.isoformat(),
+            "end": curr_end.isoformat(),
+            "days": span,
+        },
+        "settings": {
+            "labor_burden_multiplier": burden,
+            "cogs_percent": cogs_pct,
+            "target_labor_pct": TARGET_LABOR_PCT,
+        },
+        "company": {
+            "gross": round(company_gross, 2),
+            "profit": round(company_profit, 2),
+            "margin_pct": round(company_margin, 1) if company_margin is not None else None,
+            "labor_opportunity": round(company_labor_opp, 2),
+            "projected_profit_if_fixed": round(projected, 2),
+        },
+        "scorecards": scorecards,
+        "priority_queue": priority_queue[:5],
+    }

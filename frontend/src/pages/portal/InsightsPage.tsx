@@ -191,6 +191,9 @@ export function InsightsPage() {
         />
       </div>
 
+      {/* Elite scorecards */}
+      <EliteSection window={window} />
+
       {/* Channel breakdown */}
       {pulse?.current?.by_channel && (
         <Card>
@@ -793,6 +796,164 @@ function DataFreshnessBanner({ window }: { window: InsightsWindow }) {
           Drop the missing files on the Analytics Ingestion page — they'll silently replace whatever's there.
         </p>
       </div>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// Elite scorecards — per-store P&L grade + action queue
+// -------------------------------------------------------------
+
+const GRADE_STYLE: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  GREEN:    { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  label: 'GREEN' },
+  YELLOW:   { bg: 'bg-yellow-50', text: 'text-yellow-800', border: 'border-yellow-200', label: 'YELLOW' },
+  ORANGE:   { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', label: 'ORANGE' },
+  RED:      { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    label: 'RED' },
+  'INFO ONLY': { bg: 'bg-gray-50', text: 'text-gray-600',  border: 'border-gray-200',   label: 'INFO ONLY' },
+};
+
+function EliteSection({ window }: { window: InsightsWindow }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['insights-elite', JSON.stringify(window)],
+    queryFn: () => insights.eliteScorecards(window),
+  });
+
+  if (isLoading || !data) return null;
+
+  const money = (v: number | null | undefined) =>
+    v == null ? 'n/a'
+    : `$${Math.round(v).toLocaleString('en-US')}`;
+  const money2 = (v: number | null | undefined) =>
+    v == null ? 'n/a'
+    : `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const pct = (v: number | null | undefined) =>
+    v == null ? 'n/a' : `${v.toFixed(1)}%`;
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 className="text-lg font-semibold">Elite Scorecards</h2>
+        <div className="text-xs text-gray-500">
+          Labor burden {data.settings.labor_burden_multiplier.toFixed(2)}× ·
+          COGS {(data.settings.cogs_percent * 100).toFixed(0)}% ·
+          Target labor {(data.settings.target_labor_pct * 100).toFixed(0)}%
+        </div>
+      </div>
+
+      {/* Company roll-up */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        <RollupTile label="Revenue"        value={money(data.company.gross)} />
+        <RollupTile label="True profit"    value={money(data.company.profit)}
+                    tone={data.company.profit < 0 ? 'red' : undefined} />
+        <RollupTile label="Margin"         value={pct(data.company.margin_pct)} />
+        <RollupTile label="Labor opp."     value={money(data.company.labor_opportunity)}
+                    tone={data.company.labor_opportunity > 1000 ? 'orange' : undefined} />
+      </div>
+      <p className="text-xs text-gray-500 mb-4">
+        Projected profit if the labor opportunity is captured:
+        {' '}<strong>{money(data.company.projected_profit_if_fixed)}</strong>
+      </p>
+
+      {/* Priority queue */}
+      {data.priority_queue.length > 0 && (
+        <div className="mb-4">
+          <h3 className="text-sm font-medium text-gray-700 mb-2">This week's focus</h3>
+          <ol className="list-decimal list-inside space-y-1 text-sm">
+            {data.priority_queue.map((a: any, i: number) => (
+              <li key={i}>
+                <span className={clsx('font-semibold', GRADE_STYLE[a.grade]?.text)}>
+                  {a.store}
+                </span>
+                {' — '}
+                {a.action}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {/* Per-store cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {data.scorecards.map((s: any) => {
+          const g = GRADE_STYLE[s.grade] ?? GRADE_STYLE['INFO ONLY'];
+          return (
+            <div
+              key={s.location_id}
+              className={clsx('border rounded-lg p-3', g.border, g.bg)}
+            >
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-semibold text-gray-900 truncate">{s.name}</h4>
+                  <p className="text-[10px] text-gray-500 font-mono">{s.canonical_short_name}</p>
+                </div>
+                <div className="text-right">
+                  <div className={clsx('text-xs font-bold', g.text)}>{g.label}</div>
+                  <div className="text-[10px] text-gray-500">{s.score}/100</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                <div className="text-gray-500">Revenue</div>
+                <div className="text-right font-medium tabular-nums">
+                  {money2(s.current.gross)}
+                </div>
+                <div className="text-gray-500">Profit</div>
+                <div className={clsx(
+                  'text-right font-medium tabular-nums',
+                  s.current.profit < 0 && 'text-red-600',
+                )}>
+                  {money2(s.current.profit)}
+                </div>
+                <div className="text-gray-500">Margin</div>
+                <div className="text-right tabular-nums">{pct(s.current.margin_pct)}</div>
+                <div className="text-gray-500">Labor %</div>
+                <div className={clsx(
+                  'text-right tabular-nums',
+                  (s.current.labor_pct ?? 0) > 35 && 'text-orange-600 font-medium',
+                )}>
+                  {pct(s.current.labor_pct)}
+                </div>
+                <div className="text-gray-500">Hours</div>
+                <div className="text-right tabular-nums">{s.current.hours}</div>
+                <div className="text-gray-500">$/labor hr</div>
+                <div className="text-right tabular-nums">
+                  {s.current.avg_splh != null ? `$${s.current.avg_splh.toFixed(2)}` : 'n/a'}
+                </div>
+                {s.current.labor_opportunity > 0 && (
+                  <>
+                    <div className="text-gray-500">Labor opp.</div>
+                    <div className="text-right text-orange-600 font-medium tabular-nums">
+                      {money(s.current.labor_opportunity)}
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-2 pt-2 border-t border-black/5 text-[11px] text-gray-700">
+                <span className="font-medium">Action: </span>{s.primary_action}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+function RollupTile({ label, value, tone }: { label: string; value: string; tone?: 'red' | 'orange' }) {
+  return (
+    <div className={clsx(
+      'border rounded-md p-2 bg-white',
+      tone === 'red'    && 'border-red-200',
+      tone === 'orange' && 'border-orange-200',
+      !tone             && 'border-gray-100',
+    )}>
+      <p className="text-[10px] text-gray-500 uppercase">{label}</p>
+      <p className={clsx(
+        'text-base font-bold tabular-nums',
+        tone === 'red' && 'text-red-600',
+        tone === 'orange' && 'text-orange-600',
+      )}>{value}</p>
     </div>
   );
 }

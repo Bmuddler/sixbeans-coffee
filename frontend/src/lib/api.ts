@@ -735,6 +735,10 @@ export const insights = {
   actionInbox: () =>
     api.get('/insights/action-inbox').then((r) => r.data as { actions: any[] }),
 
+  eliteScorecards: (window: InsightsWindow) =>
+    api.get('/insights/elite-scorecards', { params: windowParams(window) })
+      .then((r) => r.data as any),
+
   dataFreshness: (window: InsightsWindow) =>
     api.get('/insights/data-freshness', { params: windowParams(window) })
       .then((r) => r.data as {
