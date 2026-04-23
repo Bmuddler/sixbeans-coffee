@@ -19,4 +19,7 @@ class SystemSettings(Base):
     # Cost of goods sold as a share of revenue. Used by Elite to estimate
     # profit when the actual COGS total isn't entered yet. 0.22 = 22%.
     cogs_percent = Column(Float, default=0.22, nullable=False)
+    # Monotonic marker for one-shot analytics-data self-healing migrations.
+    # Bump the hard-coded TARGET below and boot will wipe & expect reload.
+    analytics_reset_version = Column(Integer, default=0, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

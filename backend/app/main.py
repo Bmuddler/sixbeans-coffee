@@ -161,6 +161,10 @@ async def startup():
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_terminal_ids "
             "VARCHAR(500)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS analytics_reset_version "
+            "INTEGER NOT NULL DEFAULT 0"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -301,6 +305,37 @@ async def startup():
         if mappings_changed:
             await session.commit()
             logger.info("Analytics canonical mappings backfilled for %d locations.", len(CANONICAL_MAPPINGS))
+
+        # One-shot analytics-data self-heal.
+        # Bump TARGET when the Locations table had duplicate canonical_short_names
+        # that caused historical revenue / labor / hourly rows to land on the
+        # wrong location_id. Wipe those three tables exactly once and wait for
+        # the owner to re-upload on the Analytics Ingestion page — this is far
+        # cleaner than trying to detect-and-reassociate.
+        RESET_TARGET = 1
+        current_ver = (await session.execute(
+            select(SystemSettings.analytics_reset_version).limit(1)
+        )).scalar_one_or_none()
+        if current_ver is None or current_ver < RESET_TARGET:
+            logger.info(
+                "Analytics data reset v%d: wiping daily_revenues / hourly_revenue / daily_labor.",
+                RESET_TARGET,
+            )
+            await session.execute(text("DELETE FROM hourly_revenue"))
+            await session.execute(text("DELETE FROM daily_revenues"))
+            await session.execute(text("DELETE FROM daily_labor"))
+            # Also clear ingestion_runs history that referenced now-missing rows
+            await session.execute(text("DELETE FROM ingestion_runs"))
+            # Bump the marker (create the row if it doesn't exist)
+            existing_settings = (await session.execute(
+                select(SystemSettings).limit(1)
+            )).scalar_one_or_none()
+            if existing_settings is None:
+                session.add(SystemSettings(id=1, analytics_reset_version=RESET_TARGET))
+            else:
+                existing_settings.analytics_reset_version = RESET_TARGET
+            await session.commit()
+            logger.info("Analytics data reset complete. Re-upload files on Analytics Ingestion.")
 
         # Purge any stray revenue / hourly rows attached to labor-only
         # locations (Bakery, Warehouse, or any row with no POS channel IDs).
