@@ -185,6 +185,7 @@ async def startup():
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
         by_address = {loc.address: loc for loc in all_locs}
+        mapped_addresses = {row[0] for row in CANONICAL_MAPPINGS}
         targets: list[tuple[Location, str, str, str, int | None, int | None]] = []
         needs_update = False
         for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
@@ -201,13 +202,32 @@ async def startup():
                 needs_update = True
             targets.append((loc, short_name, gd_store_id, gd_label, tm_id, dd_id))
 
+        # Non-sales locations (e.g. warehouse) must not hold any POS channel
+        # IDs — these get nulled on every boot so a stray admin link can't
+        # send store revenue to the wrong row.
+        non_sales = [
+            loc for loc in all_locs
+            if loc.address not in mapped_addresses
+            and (
+                loc.godaddy_store_id is not None
+                or loc.tapmango_location_id is not None
+                or loc.doordash_store_id is not None
+            )
+        ]
+        if non_sales:
+            needs_update = True
+
         mappings_changed = False
         if needs_update:
             # Two-phase update: unique constraints on godaddy_store_id /
             # tapmango_location_id / doordash_store_id mean we can't directly
-            # swap values between locations. Null them first, flush, then
-            # apply the canonical mapping.
+            # swap values between locations. Null everything in the affected
+            # set first, flush, then apply the canonical mapping.
             for loc, *_ in targets:
+                loc.godaddy_store_id = None
+                loc.tapmango_location_id = None
+                loc.doordash_store_id = None
+            for loc in non_sales:
                 loc.godaddy_store_id = None
                 loc.tapmango_location_id = None
                 loc.doordash_store_id = None
