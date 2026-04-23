@@ -113,15 +113,25 @@ async def gmail_oauth_callback(
     limiting who can kick off the /start flow (which requires owner role).
     """
     from app.services.gmail_watcher import exchange_code_for_tokens
+    from urllib.parse import quote
+    from app.config import settings
+
+    # Pick the frontend URL — prefer the first CORS origin (the actual site).
+    origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    frontend_base = origins[0] if origins else "https://sixbeans.onrender.com"
+
     try:
         await exchange_code_for_tokens(db, code)
     except Exception as exc:
         logger.exception("Gmail OAuth code exchange failed")
+        msg = quote(str(exc)[:100])
         return RedirectResponse(
-            url=f"/portal/admin/analytics?gmail_error={str(exc)[:100]}"
+            url=f"{frontend_base}/portal/admin/analytics?gmail_error={msg}"
         )
 
-    return RedirectResponse(url="/portal/admin/analytics?gmail_connected=1")
+    return RedirectResponse(
+        url=f"{frontend_base}/portal/admin/analytics?gmail_connected=1"
+    )
 
 
 # ----------------------------------------------------------------------

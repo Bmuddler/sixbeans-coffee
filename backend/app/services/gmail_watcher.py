@@ -42,49 +42,67 @@ def get_oauth_redirect_uri() -> str:
 
 
 def build_authorization_url() -> str:
-    """Return the Google consent URL for the one-time owner consent flow."""
-    from google_auth_oauthlib.flow import Flow
+    """Return the Google consent URL for the one-time owner consent flow.
 
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": settings.gmail_oauth_client_id,
-                "client_secret": settings.gmail_oauth_client_secret,
-                "redirect_uris": [settings.gmail_oauth_redirect_uri],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=settings.gmail_oauth_redirect_uri,
-    )
-    auth_url, _ = flow.authorization_url(
-        access_type="offline",
-        include_granted_scopes="true",
-        prompt="consent",  # force refresh_token issuance even if re-consenting
-    )
-    return auth_url
+    We use a direct URL builder (not google_auth_oauthlib.Flow) to avoid
+    PKCE code_verifier state between the /start and /callback requests —
+    Google OAuth for web server apps doesn't require PKCE, and we're a
+    confidential client with a client_secret.
+    """
+    from urllib.parse import urlencode
+
+    params = {
+        "client_id": settings.gmail_oauth_client_id,
+        "redirect_uri": settings.gmail_oauth_redirect_uri,
+        "response_type": "code",
+        "scope": " ".join(SCOPES),
+        "access_type": "offline",
+        "include_granted_scopes": "true",
+        "prompt": "consent",
+    }
+    return f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
 
 
 async def exchange_code_for_tokens(db: AsyncSession, code: str, user_id: int | None = None) -> dict:
     """Exchange an OAuth code for tokens and stash the refresh token in the vault."""
-    from google_auth_oauthlib.flow import Flow
+    import httpx
 
-    flow = Flow.from_client_config(
-        {
-            "web": {
+    # Direct token exchange — no PKCE, just client_id + client_secret.
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
                 "client_id": settings.gmail_oauth_client_id,
                 "client_secret": settings.gmail_oauth_client_secret,
-                "redirect_uris": [settings.gmail_oauth_redirect_uri],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-            }
-        },
-        scopes=SCOPES,
-        redirect_uri=settings.gmail_oauth_redirect_uri,
-    )
-    flow.fetch_token(code=code)
-    creds = flow.credentials
+                "code": code,
+                "redirect_uri": settings.gmail_oauth_redirect_uri,
+                "grant_type": "authorization_code",
+            },
+        )
+    if resp.status_code != 200:
+        logger.error("Google token exchange failed: %s %s", resp.status_code, resp.text)
+        raise RuntimeError(f"Token exchange failed: {resp.text[:300]}")
+
+    token_data = resp.json()
+    payload = {
+        "refresh_token": token_data.get("refresh_token"),
+        "access_token": token_data.get("access_token"),
+        "token_uri": "https://oauth2.googleapis.com/token",
+        "client_id": settings.gmail_oauth_client_id,
+        "client_secret": settings.gmail_oauth_client_secret,
+        "scopes": SCOPES,
+        "expiry": None,
+    }
+    if not payload["refresh_token"]:
+        logger.warning("Google returned no refresh_token — user may have already consented")
+
+    await save_session(db, VAULT_SOURCE, payload, captured_by_user_id=user_id)
+    return {"ok": True}
+
+
+# Legacy stub for compat — delete when no callers remain
+async def _unused_flow_legacy():
+    pass
 
     payload = {
         "refresh_token": creds.refresh_token,
