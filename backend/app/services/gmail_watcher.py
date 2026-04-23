@@ -33,7 +33,12 @@ from app.services.scraper_session_vault import load_session, save_session
 
 logger = logging.getLogger(__name__)
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    # Used by the daily analytics health-check cron to email the owner
+    # when yesterday's ingest is missing or failed.
+    "https://www.googleapis.com/auth/gmail.send",
+]
 VAULT_SOURCE = "gmail_oauth"  # key under which we store the refresh token
 
 
@@ -244,3 +249,28 @@ async def fetch_latest_doordash_zip(db: AsyncSession, since_days: int = 14) -> d
         "Fetched DoorDash zip '%s' with %d CSVs", zip_filename, len(csvs),
     )
     return csvs
+
+
+async def send_email(
+    db: AsyncSession,
+    *,
+    to: str,
+    subject: str,
+    body: str,
+) -> None:
+    """Send a plain-text email from the connected Gmail account.
+
+    Used by the analytics health-check cron to alert the owner when
+    yesterday's ingest is missing or failed. The sending mailbox is
+    whichever account the owner granted OAuth — typically blend556@gmail.com.
+    """
+    import base64
+    from email.mime.text import MIMEText
+
+    service = await _get_gmail_service(db)
+    msg = MIMEText(body)
+    msg["To"] = to
+    msg["Subject"] = subject
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    logger.info("Sent alert email to %s (subject=%r)", to, subject)

@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     doordash_report_from_email: str = "no-reply@doordash.com"
     doordash_report_inbox: str = "blend556@gmail.com"
 
+    # Analytics health-check alerts (daily cron)
+    analytics_alert_recipient: str = "logcastles@gmail.com"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
