@@ -147,6 +147,9 @@ export function InsightsPage() {
         </div>
       </div>
 
+      {/* Data freshness — shows which sources have gaps in the selected window */}
+      <DataFreshnessBanner window={window} />
+
       {/* DoorDash freshness banner */}
       {pulse?.doordash_data_through && (
         <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
@@ -738,4 +741,58 @@ function heatColor(t: number): string {
   const g = Math.round(lightG + (darkG - lightG) * clamped);
   const b = Math.round(lightB + (darkB - lightB) * clamped);
   return `rgb(${r},${g},${b})`;
+}
+
+// -------------------------------------------------------------
+// Data freshness banner — flags days missing in the selected window
+// -------------------------------------------------------------
+
+const SOURCE_LABEL: Record<string, string> = {
+  godaddy:  'GoDaddy',
+  tapmango: 'TapMango',
+  doordash: 'DoorDash',
+  homebase: 'Homebase labor',
+};
+
+function DataFreshnessBanner({ window }: { window: InsightsWindow }) {
+  const { data } = useQuery({
+    queryKey: ['insights-freshness', JSON.stringify(window)],
+    queryFn: () => insights.dataFreshness(window),
+  });
+
+  if (!data) return null;
+
+  const gaps = Object.entries(data.sources)
+    .filter(([, s]) => s.missing > 0)
+    .map(([src, s]) => ({ src, ...s }));
+
+  if (gaps.length === 0) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 border border-green-100 rounded-lg px-3 py-2">
+        <CheckCircle2 className="h-3.5 w-3.5" />
+        <span>All 4 sources have data for every day in this window.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+      <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+      <div className="flex-1">
+        <p className="font-medium mb-1">Some sources have missing days in this window:</p>
+        <ul className="space-y-0.5">
+          {gaps.map((g) => (
+            <li key={g.src} title={`Missing dates: ${g.missing_dates.join(', ')}`}>
+              <span className="font-medium">{SOURCE_LABEL[g.src] ?? g.src}</span>:
+              {' '}missing {g.missing} of {data.window.days} days
+              {g.latest_present && ` · latest data ${g.latest_present}`}
+            </li>
+          ))}
+        </ul>
+        <p className="text-[10px] text-amber-700 mt-1">
+          Drop the missing files on the Analytics Ingestion page — they'll silently replace whatever's there.
+        </p>
+      </div>
+    </div>
+  );
 }

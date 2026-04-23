@@ -735,6 +735,18 @@ export const insights = {
   actionInbox: () =>
     api.get('/insights/action-inbox').then((r) => r.data as { actions: any[] }),
 
+  dataFreshness: (window: InsightsWindow) =>
+    api.get('/insights/data-freshness', { params: windowParams(window) })
+      .then((r) => r.data as {
+        window: { start: string; end: string; days: number };
+        sources: Record<'godaddy' | 'tapmango' | 'doordash' | 'homebase', {
+          present: number;
+          missing: number;
+          missing_dates: string[];
+          latest_present: string | null;
+        }>;
+      }),
+
   heatmap: (params: {
     location_id: number;
     start_date?: string;

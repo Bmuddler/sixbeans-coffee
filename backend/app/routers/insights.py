@@ -490,3 +490,78 @@ async def heatmap(
         "max_value": max_val,
         "grid": grid,  # grid[dow][slot]
     }
+
+
+
+# ----------------------------------------------------------------------
+# Data freshness — which sources have data for each day in the window
+# ----------------------------------------------------------------------
+
+@router.get("/data-freshness")
+async def data_freshness(
+    days: int = Query(7, ge=1, le=90),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Per-source coverage report for the selected window.
+
+    For each data source, returns:
+      - expected: total number of dates in the window
+      - present: days with at least one row
+      - missing_dates: ISO-formatted list of dates with nothing yet
+
+    Lets the Insights page tell the owner 'DoorDash is missing for the
+    last 3 days, Homebase for 2' without having to dig.
+    """
+    curr_start, curr_end = _resolve_window(days, start_date, end_date)
+    all_days: list[date] = []
+    d = curr_start
+    while d <= curr_end:
+        all_days.append(d)
+        d += timedelta(days=1)
+    expected = len(all_days)
+    all_days_set = set(all_days)
+
+    # Per-channel revenue coverage
+    rev_rows = (await db.execute(
+        select(DailyRevenue.date, DailyRevenue.channel)
+        .where(and_(DailyRevenue.date >= curr_start, DailyRevenue.date <= curr_end))
+    )).all()
+    per_channel: dict[str, set[date]] = {
+        CHANNEL_GODADDY: set(), CHANNEL_TAPMANGO: set(), CHANNEL_DOORDASH: set(),
+    }
+    for row in rev_rows:
+        if row.channel in per_channel:
+            per_channel[row.channel].add(row.date)
+
+    # Labor coverage
+    labor_rows = (await db.execute(
+        select(DailyLabor.date)
+        .where(and_(DailyLabor.date >= curr_start, DailyLabor.date <= curr_end))
+    )).all()
+    labor_days = {row.date for row in labor_rows}
+
+    def _summary(present_days: set) -> dict:
+        missing = sorted(all_days_set - present_days)
+        return {
+            "present": len(present_days & all_days_set),
+            "missing": len(missing),
+            "missing_dates": [d.isoformat() for d in missing],
+            "latest_present": max(present_days).isoformat() if present_days else None,
+        }
+
+    return {
+        "window": {
+            "start": curr_start.isoformat(),
+            "end": curr_end.isoformat(),
+            "days": expected,
+        },
+        "sources": {
+            "godaddy":  _summary(per_channel[CHANNEL_GODADDY]),
+            "tapmango": _summary(per_channel[CHANNEL_TAPMANGO]),
+            "doordash": _summary(per_channel[CHANNEL_DOORDASH]),
+            "homebase": _summary(labor_days),
+        },
+    }
