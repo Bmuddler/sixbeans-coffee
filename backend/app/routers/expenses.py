@@ -133,6 +133,48 @@ async def create_expense(
     return _serialize_expense(e)
 
 
+# ------------------------- Settings -----------------------------------
+# Declared BEFORE the /{expense_id} routes so FastAPI's route matcher
+# reaches these first — otherwise PATCH /expenses/settings gets caught
+# by the numeric {expense_id} path and returns 422.
+
+@router.get("/settings")
+async def get_settings(
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _settings_row(db)
+    return {
+        "labor_burden_multiplier": row.labor_burden_multiplier,
+        "cogs_percent": row.cogs_percent,
+    }
+
+
+@router.patch("/settings")
+async def update_settings(
+    body: SettingsPatch,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    row = await _settings_row(db)
+    if body.labor_burden_multiplier is not None:
+        if body.labor_burden_multiplier < 1.0 or body.labor_burden_multiplier > 2.0:
+            raise HTTPException(status_code=400, detail="labor_burden_multiplier out of range (1.0 - 2.0)")
+        row.labor_burden_multiplier = body.labor_burden_multiplier
+    if body.cogs_percent is not None:
+        if body.cogs_percent < 0 or body.cogs_percent > 1:
+            raise HTTPException(status_code=400, detail="cogs_percent must be between 0 and 1")
+        row.cogs_percent = body.cogs_percent
+    row.updated_at = datetime.utcnow()
+    await db.commit()
+    return {
+        "labor_burden_multiplier": row.labor_burden_multiplier,
+        "cogs_percent": row.cogs_percent,
+    }
+
+
+# ------------------------- Single-row CRUD ----------------------------
+
 @router.patch("/{expense_id}")
 async def update_expense(
     expense_id: int,
@@ -173,43 +215,6 @@ async def delete_expense(
     await db.delete(e)
     await db.commit()
     return {"ok": True}
-
-
-# ------------------------- Settings -----------------------------------
-
-@router.get("/settings")
-async def get_settings(
-    current_user: User = Depends(require_roles(UserRole.owner)),
-    db: AsyncSession = Depends(get_db),
-):
-    row = await _settings_row(db)
-    return {
-        "labor_burden_multiplier": row.labor_burden_multiplier,
-        "cogs_percent": row.cogs_percent,
-    }
-
-
-@router.patch("/settings")
-async def update_settings(
-    body: SettingsPatch,
-    current_user: User = Depends(require_roles(UserRole.owner)),
-    db: AsyncSession = Depends(get_db),
-):
-    row = await _settings_row(db)
-    if body.labor_burden_multiplier is not None:
-        if body.labor_burden_multiplier < 1.0 or body.labor_burden_multiplier > 2.0:
-            raise HTTPException(status_code=400, detail="labor_burden_multiplier out of range (1.0 - 2.0)")
-        row.labor_burden_multiplier = body.labor_burden_multiplier
-    if body.cogs_percent is not None:
-        if body.cogs_percent < 0 or body.cogs_percent > 1:
-            raise HTTPException(status_code=400, detail="cogs_percent must be between 0 and 1")
-        row.cogs_percent = body.cogs_percent
-    row.updated_at = datetime.utcnow()
-    await db.commit()
-    return {
-        "labor_burden_multiplier": row.labor_burden_multiplier,
-        "cogs_percent": row.cogs_percent,
-    }
 
 
 # ------------------------- P&L Excel seed -----------------------------
@@ -318,6 +323,9 @@ async def seed_from_pnl(
     # each per-store column block until we hit the shared-overhead markers.
     to_create: list[tuple[int | None, str, float]] = []
     in_shared_section = False
+    in_cogs_section = False  # items inside "All 6 Shops COGS" — SKIPPED, because
+                             # cost of goods is modeled as revenue × cogs_percent,
+                             # not tracked per-line here.
     shared_col = 0  # Overall Monthly / COGS live in column A
 
     for i in range(store_header_row_idx + 1, len(rows)):
@@ -330,11 +338,19 @@ async def seed_from_pnl(
 
         # Section transitions
         lowered_first = first_text.lower()
-        if any(marker in lowered_first for marker in SHARED_SECTION_MARKERS):
+        if "all 6 shops cogs" in lowered_first:
             in_shared_section = True
+            in_cogs_section = True
+            continue
+        if "overall monthly" in lowered_first:
+            in_shared_section = True
+            in_cogs_section = False
             continue
 
         if in_shared_section:
+            if in_cogs_section:
+                # COGS section — skip. Handled by SystemSettings.cogs_percent.
+                continue
             # Shared overhead / COGS — single column block: (category, amount, ...)
             amt = _as_float(row[1]) if len(row) > 1 else None
             if first_text and amt is not None and first_text.lower() not in SKIP_CATEGORIES:
