@@ -165,58 +165,40 @@ async def startup():
         # how duplicate canonical_short_name and duplicate godaddy_store_id
         # rows were able to sneak in and cause the revenue-misrouting bugs.
         # Each statement is idempotent via dynamic existence check.
-        async def _ensure_unique(table: str, column: str, name: str) -> None:
-            exists = await conn.execute(text(
-                "SELECT 1 FROM pg_constraint WHERE conname = :n"
-            ), {"n": name})
-            if exists.scalar_one_or_none():
-                return
-            # Soft-fail if the DB has lingering duplicates — we don't want
-            # to block boot. Log and move on; the SQL in the owner doc
-            # handles dedupe.
-            try:
-                await conn.execute(text(
-                    f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({column})"
-                ))
-                logger.info("Added missing unique constraint %s on %s(%s)", name, table, column)
-            except Exception as exc:
-                logger.warning(
-                    "Could not add unique constraint %s on %s(%s) — likely duplicate rows: %s",
-                    name, table, column, exc,
-                )
-
-        await _ensure_unique("locations", "canonical_short_name", "uq_locations_canonical_short_name")
-        await _ensure_unique("locations", "godaddy_store_id", "uq_locations_godaddy_store_id")
-        await _ensure_unique("locations", "tapmango_location_id", "uq_locations_tapmango_location_id")
-        await _ensure_unique("locations", "doordash_store_id", "uq_locations_doordash_store_id")
-
-        # Composite unique constraints
-        async def _ensure_composite_unique(table: str, columns: str, name: str) -> None:
+        # Each ALTER runs in its own savepoint so a failure (lingering
+        # duplicate rows) doesn't poison the outer transaction.
+        async def _ensure_constraint(table: str, columns: str, name: str) -> None:
             exists = await conn.execute(text(
                 "SELECT 1 FROM pg_constraint WHERE conname = :n"
             ), {"n": name})
             if exists.scalar_one_or_none():
                 return
             try:
-                await conn.execute(text(
-                    f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({columns})"
-                ))
-                logger.info("Added missing composite unique %s on %s(%s)", name, table, columns)
+                async with conn.begin_nested():
+                    await conn.execute(text(
+                        f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({columns})"
+                    ))
+                logger.info("Added unique constraint %s on %s(%s)", name, table, columns)
             except Exception as exc:
+                # Savepoint rolled back automatically on exit; outer tx is fine.
                 logger.warning(
-                    "Could not add composite unique %s on %s(%s) — likely duplicates: %s",
-                    name, table, columns, exc,
+                    "Could not add unique constraint %s on %s(%s) — likely duplicate rows, skipping: %s",
+                    name, table, columns, str(exc).splitlines()[0] if str(exc) else exc,
                 )
 
-        await _ensure_composite_unique(
+        await _ensure_constraint("locations", "canonical_short_name", "uq_locations_canonical_short_name")
+        await _ensure_constraint("locations", "godaddy_store_id", "uq_locations_godaddy_store_id")
+        await _ensure_constraint("locations", "tapmango_location_id", "uq_locations_tapmango_location_id")
+        await _ensure_constraint("locations", "doordash_store_id", "uq_locations_doordash_store_id")
+        await _ensure_constraint(
             "daily_revenues", "location_id, date, channel",
             "uq_daily_revenue_location_date_channel",
         )
-        await _ensure_composite_unique(
+        await _ensure_constraint(
             "hourly_revenue", "location_id, date, hour, quarter, channel",
             "uq_hourly_revenue_slot",
         )
-        await _ensure_composite_unique(
+        await _ensure_constraint(
             "daily_labor", "location_id, date",
             "uq_daily_labor_location_date",
         )
