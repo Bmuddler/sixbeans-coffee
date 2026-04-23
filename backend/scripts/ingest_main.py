@@ -254,7 +254,11 @@ async def _run_doordash(db: AsyncSession, target_date: date) -> dict:
 # ----------------------------------------------------------------------
 
 
-ALL_SOURCES = ("godaddy", "tapmango_orders", "tapmango_api", "doordash")
+# GoDaddy is handled by the Cowork task on the owner's PC, which downloads
+# the daily Transactions Report and POSTs it to /ingest/godaddy-excel. The
+# server-side `godaddy` scraper runner is kept for manual invocation
+# (--source godaddy) but is excluded from the default nightly run.
+ALL_SOURCES = ("tapmango_orders", "tapmango_api", "doordash")
 
 
 async def run_all(sources: Iterable[str], target_date: date) -> dict[str, dict]:
