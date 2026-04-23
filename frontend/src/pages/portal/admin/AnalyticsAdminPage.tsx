@@ -38,7 +38,7 @@ const SOURCE_META: Record<
   },
   tapmango_portal: {
     label: 'TapMango Portal',
-    blurb: 'Nightly Orders CSV export scraper',
+    blurb: 'Local Cowork task uploads Orders CSV nightly',
     loginHint: 'https://portal.tapmango.com/Orders/Index',
     icon: Cookie,
   },
@@ -142,8 +142,16 @@ export function AnalyticsAdminPage() {
 
   const gmailStatus = sessions.find((s) => s.source === 'gmail_oauth');
 
-  // For GoDaddy the cookie vault isn't used — status comes from recent uploads.
+  // GoDaddy and TapMango Portal are driven by Cowork uploads, not the
+  // Render-side cookie vault — their status comes from recent IngestionRun
+  // rows (tapmango_orders is the backend source key for TapMango Portal).
   const godaddyLastRun = runs?.find((r: any) => r.source === 'godaddy');
+  const tapmangoLastRun = runs?.find((r: any) => r.source === 'tapmango_orders');
+  const localWorkflowSources = new Set(['godaddy', 'tapmango_portal']);
+  const lastRunBySource: Record<string, any> = {
+    godaddy: godaddyLastRun,
+    tapmango_portal: tapmangoLastRun,
+  };
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
@@ -174,20 +182,21 @@ export function AnalyticsAdminPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-gray-900">{meta.label}</p>
-                    {s.source === 'godaddy' ? (
-                      <GodaddyBadge lastRun={godaddyLastRun} />
+                    {localWorkflowSources.has(s.source) ? (
+                      <LocalWorkflowBadge lastRun={lastRunBySource[s.source]} />
                     ) : (
                       <StatusBadge session={s} />
                     )}
                   </div>
                   <p className="text-sm text-gray-500">{meta.blurb}</p>
 
-                  {s.source === 'godaddy' ? (
-                    godaddyLastRun ? (
+                  {localWorkflowSources.has(s.source) ? (
+                    lastRunBySource[s.source] ? (
                       <p className="text-xs text-gray-400 mt-1">
                         Last upload:{' '}
-                        {new Date(godaddyLastRun.started_at).toLocaleString()}
-                        {godaddyLastRun.status && ` · ${godaddyLastRun.status}`}
+                        {new Date(lastRunBySource[s.source].started_at).toLocaleString()}
+                        {lastRunBySource[s.source].status &&
+                          ` · ${lastRunBySource[s.source].status}`}
                       </p>
                     ) : (
                       <p className="text-xs text-gray-400 mt-1">
@@ -212,7 +221,7 @@ export function AnalyticsAdminPage() {
                   )}
                 </div>
 
-                {s.source === 'godaddy' ? (
+                {localWorkflowSources.has(s.source) ? (
                   <span className="text-xs text-gray-400 italic">
                     Local workflow
                   </span>
@@ -430,7 +439,7 @@ function RunStatusIcon({ status }: { status: string }) {
   return <ShieldCheck className={clsx(common, 'text-gray-400')} />;
 }
 
-function GodaddyBadge({ lastRun }: { lastRun: any }) {
+function LocalWorkflowBadge({ lastRun }: { lastRun: any }) {
   if (!lastRun) {
     return (
       <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
