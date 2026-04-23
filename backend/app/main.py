@@ -17,6 +17,7 @@ from app.models.system_settings import SystemSettings
 from app.routers import (
     analytics_admin,
     applications,
+    expenses,
     insights,
     audit,
     auth,
@@ -73,6 +74,7 @@ app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["S
 app.include_router(usfoods.router, prefix="/api/usfoods", tags=["US Foods"])
 app.include_router(analytics_admin.router, prefix="/api", tags=["Analytics Admin"])
 app.include_router(insights.router, prefix="/api", tags=["Insights"])
+app.include_router(expenses.router, prefix="/api", tags=["Expenses"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
@@ -147,6 +149,14 @@ async def startup():
             "ALTER TABLE ingestion_runs ADD CONSTRAINT ck_ingestion_runs_source "
             "CHECK (source in ('godaddy','tapmango_orders','tapmango_api','doordash','homebase'))"
         ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS labor_burden_multiplier "
+            "DOUBLE PRECISION NOT NULL DEFAULT 1.25"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS cogs_percent "
+            "DOUBLE PRECISION NOT NULL DEFAULT 0.22"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -217,6 +227,14 @@ async def startup():
             await session.flush()
             all_locs = list(all_locs) + [bakery]
             by_address[bakery.address] = bakery
+
+        # Warehouse is an existing row (no address). Make sure it has a
+        # canonical_short_name so the expenses admin UI can reference it.
+        for loc in all_locs:
+            if loc.name and "warehouse" in loc.name.lower():
+                if loc.canonical_short_name != "WAREHOUSE":
+                    loc.canonical_short_name = "WAREHOUSE"
+                break
         mapped_addresses = {row[0] for row in CANONICAL_MAPPINGS}
         targets: list[tuple[Location, str, str, str, int | None, int | None]] = []
         needs_update = False
