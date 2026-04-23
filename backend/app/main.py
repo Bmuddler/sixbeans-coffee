@@ -238,12 +238,18 @@ async def startup():
         # Bakery and Warehouse both have empty addresses so they can't be
         # routed via the CANONICAL_MAPPINGS address table. Assign their
         # canonical_short_name by name-match instead.
+        name_short_changed = False
         for loc in all_locs:
             lname = (loc.name or "").lower()
             if "bakery" in lname and loc.canonical_short_name != "BAKERY":
                 loc.canonical_short_name = "BAKERY"
+                name_short_changed = True
             elif "warehouse" in lname and loc.canonical_short_name != "WAREHOUSE":
                 loc.canonical_short_name = "WAREHOUSE"
+                name_short_changed = True
+        if name_short_changed:
+            await session.commit()
+            logger.info("Bakery / Warehouse canonical_short_names assigned.")
 
         by_address = {loc.address: loc for loc in all_locs}
         mapped_addresses = {row[0] for row in CANONICAL_MAPPINGS}

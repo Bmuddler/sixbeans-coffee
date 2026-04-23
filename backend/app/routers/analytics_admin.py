@@ -855,6 +855,15 @@ async def ingest_batch(
     by_tapmango_id = {str(loc.tapmango_location_id): loc for loc in locations if loc.tapmango_location_id}
     by_doordash_id = {str(loc.doordash_store_id): loc for loc in locations if loc.doordash_store_id}
     by_short_name = {loc.canonical_short_name: loc for loc in locations if loc.canonical_short_name}
+    # Fallback lookup by name substring for BAKERY / WAREHOUSE in case
+    # their canonical_short_name was nulled at some point.
+    by_name_substr: dict[str, Location] = {}
+    for loc in locations:
+        lname = (loc.name or "").lower()
+        if "bakery" in lname:
+            by_name_substr["BAKERY"] = loc
+        elif "warehouse" in lname:
+            by_name_substr["WAREHOUSE"] = loc
 
     # Map every known godaddy terminal_id to its Location. `godaddy_terminal_ids`
     # is a comma-separated list because stores may have >1 physical terminal.
@@ -954,12 +963,17 @@ async def ingest_batch(
 
             elif source == "tapmango":
                 m = _TAPMANGO_RE.match(name.split("/")[-1])
-                target_date = datetime.strptime(m.group("start"), "%Y%m%d").date()
+                start_d = datetime.strptime(m.group("start"), "%Y%m%d").date()
+                end_d = datetime.strptime(m.group("end"), "%Y%m%d").date()
                 from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
+                # Pass target_date=None for multi-day files so the parser
+                # emits a row per (store, date) across the whole range.
+                target_for_parse = start_d if start_d == end_d else None
                 parsed = parse_tapmango_orders_csv(
-                    file_bytes=data, source_file=name, target_date=target_date,
+                    file_bytes=data, source_file=name, target_date=target_for_parse,
                 )
-                stores = 0
+                stores_touched: set[int] = set()
+                dates_touched: set = set()
                 for row in parsed:
                     loc = by_tapmango_id.get(row.external_store_id)
                     if not loc:
@@ -967,10 +981,15 @@ async def ingest_batch(
                         continue
                     await _upsert_daily_revenue(db, loc.id, row)
                     await _upsert_hourly_rows(db, loc.id, row.raw_notes.get("hourly_rows") or [])
-                    stores += 1
+                    stores_touched.add(loc.id)
+                    dates_touched.add(row.date)
                 per_file.append({
-                    "file": name, "source": source, "date": target_date.isoformat(),
-                    "stores": stores,
+                    "file": name, "source": source,
+                    "stores": len(stores_touched),
+                    "date_range": (
+                        f"{min(dates_touched).isoformat()} -> {max(dates_touched).isoformat()}"
+                        if dates_touched else None
+                    ),
                 })
 
             elif source == "doordash":
@@ -1016,7 +1035,7 @@ async def ingest_batch(
                     continue
                 rows_ingested = 0
                 for b in buckets:
-                    loc = by_short_name.get(b.location_short_name)
+                    loc = by_short_name.get(b.location_short_name) or by_name_substr.get(b.location_short_name)
                     if not loc:
                         unmapped_counts["homebase"].add(b.location_short_name)
                         continue
