@@ -186,22 +186,22 @@ async def startup():
         CANONICAL_MAPPINGS = [
             ("21788 Bear Valley Rd", "APPLE_VALLEY_HS",
              "7160b3ac-5321-403c-b849-e4f041ef7574",
-             "Six Beans Coffee Co. - AV HS", 2360, None),
+             "Six Beans Coffee Co. - AV HS", 2360, 27728588),
             ("15760 Ranchero Rd", "HESPERIA",
              "ab50508a-8f15-4235-b54d-b5e6151fa474",
-             "Six Beans Coffee Co. - Ranchero", 7226, None),
+             "Six Beans Coffee Co. - Ranchero", 7226, 27795480),
             ("921 Barstow Rd", "BARSTOW",
              "99842f2c-4850-4f3d-bebc-2a5459654a1b",
-             "Six Beans Coffee Co. - Barstow", 8772, None),
+             "Six Beans Coffee Co. - Barstow", 8772, 27728689),
             ("12875 Bear Valley Rd", "VICTORVILLE",
              "28f4c6a9-e59f-4d31-a47b-73b4b7270330",
              "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
             ("13730 Apple Valley Rd", "YUCCA_LOMA",
              "7d0f498a-44d1-4176-978b-fec7aa58b00d",
-             "Six Beans Coffee Co. - Yucca Loma", 10958, None),
+             "Six Beans Coffee Co. - Yucca Loma", 10958, 27798819),
             ("14213 7th St", "SEVENTH_STREET",
              "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
-             "Six Beans Coffee Co. - 7th Street", 12497, None),
+             "Six Beans Coffee Co. - 7th Street", 12497, 36236401),
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
 
