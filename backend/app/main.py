@@ -122,6 +122,9 @@ async def startup():
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS canonical_short_name VARCHAR(50)"
         ))
         await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_store_id VARCHAR(50)"
+        ))
+        await conn.execute(text(
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_dropdown_label VARCHAR(200)"
         ))
         await conn.execute(text(
@@ -151,21 +154,30 @@ async def startup():
 
         # Backfill canonical short names and external IDs for analytics ingestion.
         # Matches on address (unique per location) to avoid ambiguity.
+        # Tuple: (address_match, canonical_short_name, godaddy_store_id, godaddy_dropdown_label,
+        #         tapmango_location_id, doordash_store_id)
         CANONICAL_MAPPINGS = [
-            # (address_match, canonical_short_name, godaddy_dropdown_label, tapmango_location_id, doordash_store_id)
-            ("21788 Bear Valley Rd", "APPLE_VALLEY_HS", "Six Beans Coffee Co. - AV HS", 2360, None),
-            ("15760 Ranchero Rd", "HESPERIA", "Six Beans Coffee Co. - Ranchero", 7226, None),
-            ("921 Barstow Rd", "BARSTOW", "Six Beans Coffee Co. - Barstow", 8772, None),
-            ("12875 Bear Valley Rd", "VICTORVILLE", "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
-            ("13730 Apple Valley Rd", "YUCCA_LOMA", "Six Beans Coffee Co. - Yucca Loma", 10958, None),
-            ("14213 7th St", "SEVENTH_STREET", "Six Beans Coffee Co. - 7th Street", 12497, None),
+            ("21788 Bear Valley Rd", "APPLE_VALLEY_HS",
+             "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
+             "Six Beans Coffee Co. - AV HS", 2360, None),
+            ("15760 Ranchero Rd", "HESPERIA",
+             None, "Six Beans Coffee Co. - Ranchero", 7226, None),
+            ("921 Barstow Rd", "BARSTOW",
+             None, "Six Beans Coffee Co. - Barstow", 8772, None),
+            ("12875 Bear Valley Rd", "VICTORVILLE",
+             None, "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
+            ("13730 Apple Valley Rd", "YUCCA_LOMA",
+             None, "Six Beans Coffee Co. - Yucca Loma", 10958, None),
+            ("14213 7th St", "SEVENTH_STREET",
+             None, "Six Beans Coffee Co. - 7th Street", 12497, None),
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
         mappings_changed = False
-        for address_match, short_name, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
+        for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
             for loc in all_locs:
                 if loc.address == address_match and loc.canonical_short_name != short_name:
                     loc.canonical_short_name = short_name
+                    loc.godaddy_store_id = gd_store_id
                     loc.godaddy_dropdown_label = gd_label
                     loc.tapmango_location_id = tm_id
                     loc.doordash_store_id = dd_id

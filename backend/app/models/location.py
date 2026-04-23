@@ -27,6 +27,10 @@ class Location(Base):
 
     # External IDs for ingestion mapping. Nullable because not every location
     # participates in every channel, and new IDs get auto-discovered on ingest.
+    # GoDaddy Commerce uses UUIDs in the URL (.../home/store?storeId=<UUID>).
+    # `godaddy_store_id` is that UUID; `godaddy_dropdown_label` is the display
+    # name kept for diagnostics / auto-discovery.
+    godaddy_store_id = Column(String(50), nullable=True, unique=True, index=True)
     godaddy_dropdown_label = Column(String(200), nullable=True)
     tapmango_location_id = Column(Integer, nullable=True, unique=True, index=True)
     doordash_store_id = Column(Integer, nullable=True, unique=True, index=True)
