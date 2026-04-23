@@ -193,10 +193,19 @@ async def store_scorecards(
     prev_end = curr_start - timedelta(days=1)
     prev_start = prev_end - timedelta(days=span - 1)
 
-    # Only surface locations that have canonical_short_name set (the 6 real shops)
+    # Only surface sales locations — the 6 shops with at least one POS
+    # channel mapped. Bakery / Warehouse are labor-only and never rung up
+    # revenue, so they shouldn't appear on the store-scorecard list.
     locations = (await db.execute(
         select(Location)
-        .where(Location.canonical_short_name.isnot(None))
+        .where(
+            Location.canonical_short_name.isnot(None),
+            (
+                Location.godaddy_store_id.isnot(None)
+                | Location.tapmango_location_id.isnot(None)
+                | Location.doordash_store_id.isnot(None)
+            ),
+        )
         .order_by(Location.canonical_short_name)
     )).scalars().all()
 

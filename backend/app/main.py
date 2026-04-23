@@ -302,6 +302,33 @@ async def startup():
             await session.commit()
             logger.info("Analytics canonical mappings backfilled for %d locations.", len(CANONICAL_MAPPINGS))
 
+        # Purge any stray revenue / hourly rows attached to labor-only
+        # locations (Bakery, Warehouse, or any row with no POS channel IDs).
+        # These land there only when an earlier iteration of the mapping
+        # had a channel ID pointed at the wrong row.
+        non_sales_ids_result = await session.execute(text("""
+            SELECT id FROM locations
+            WHERE godaddy_store_id IS NULL
+              AND tapmango_location_id IS NULL
+              AND doordash_store_id IS NULL
+        """))
+        non_sales_ids = [r[0] for r in non_sales_ids_result.all()]
+        if non_sales_ids:
+            deleted_rev = await session.execute(text(
+                "DELETE FROM daily_revenues WHERE location_id = ANY(:ids)"
+            ), {"ids": non_sales_ids})
+            deleted_hour = await session.execute(text(
+                "DELETE FROM hourly_revenue WHERE location_id = ANY(:ids)"
+            ), {"ids": non_sales_ids})
+            await session.commit()
+            rc_rev = getattr(deleted_rev, "rowcount", 0) or 0
+            rc_hour = getattr(deleted_hour, "rowcount", 0) or 0
+            if rc_rev or rc_hour:
+                logger.info(
+                    "Purged %d daily_revenues + %d hourly_revenue rows from "
+                    "non-sales locations %s.", rc_rev, rc_hour, non_sales_ids,
+                )
+
         # Set owners to not require password change
         from app.models.user import UserRole, user_locations
         await session.execute(
