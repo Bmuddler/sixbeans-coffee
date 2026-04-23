@@ -33,6 +33,7 @@ import { SettingsPage } from '@/pages/portal/SettingsPage';
 import { SupplyOrderPage } from '@/pages/portal/SupplyOrderPage';
 import { USFoodsPage } from '@/pages/portal/USFoodsPage';
 import { AnalyticsAdminPage } from '@/pages/portal/admin/AnalyticsAdminPage';
+import { ExpensesAdminPage } from '@/pages/portal/admin/ExpensesAdminPage';
 import { InsightsPage } from '@/pages/portal/InsightsPage';
 
 export function App() {
@@ -134,6 +135,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
               <AnalyticsAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/admin/expenses"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+              <ExpensesAdminPage />
             </ProtectedRoute>
           }
         />

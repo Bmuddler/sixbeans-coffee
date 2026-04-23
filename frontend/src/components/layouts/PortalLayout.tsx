@@ -75,6 +75,12 @@ const navItems: NavItem[] = [
     roles: [UserRole.OWNER],
   },
   {
+    to: '/portal/admin/expenses',
+    label: 'Expenses',
+    icon: <DollarSign className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
+  },
+  {
     to: '/portal/payroll',
     label: 'Payroll',
     icon: <DollarSign className="h-5 w-5" />,

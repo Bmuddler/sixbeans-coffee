@@ -662,6 +662,48 @@ export const analyticsAdminUploads = {
   },
 };
 
+// ---- Editable expenses admin page ----
+export type ExpenseRow = {
+  id: number;
+  location_id: number | null;
+  category: string;
+  amount: number;
+  notes: string | null;
+  updated_at: string | null;
+};
+
+export type ExpenseLocation = {
+  id: number;
+  name: string;
+  canonical_short_name: string;
+};
+
+export const expensesApi = {
+  list: () =>
+    api.get<{ expenses: ExpenseRow[]; locations: ExpenseLocation[] }>('/expenses')
+      .then((r) => r.data),
+  create: (body: { location_id: number | null; category: string; amount: number; notes?: string | null }) =>
+    api.post<ExpenseRow>('/expenses', body).then((r) => r.data),
+  update: (id: number, body: Partial<{ category: string; amount: number; notes: string | null }>) =>
+    api.patch<ExpenseRow>(`/expenses/${id}`, body).then((r) => r.data),
+  remove: (id: number) => api.delete(`/expenses/${id}`).then((r) => r.data),
+  getSettings: () =>
+    api.get<{ labor_burden_multiplier: number; cogs_percent: number }>('/expenses/settings')
+      .then((r) => r.data),
+  updateSettings: (body: { labor_burden_multiplier?: number; cogs_percent?: number }) =>
+    api.patch('/expenses/settings', body).then((r) => r.data),
+  seedFromPnl: async (file: File, replaceExisting: boolean) => {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const res = await api.post(
+      `/expenses/seed-from-pnl?replace_existing=${replaceExisting}`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+    return res.data;
+  },
+};
+
 export type InsightsWindow =
   | { days: number }
   | { start_date: string; end_date?: string };
