@@ -650,12 +650,23 @@ export const analyticsAdmin = {
 // Owner Insights dashboard
 // ============================================================
 
-export const insights = {
-  companyPulse: (days: number = 7) =>
-    api.get('/insights/company-pulse', { params: { days } }).then((r) => r.data),
+export type InsightsWindow =
+  | { days: number }
+  | { start_date: string; end_date?: string };
 
-  storeScorecards: (days: number = 7) =>
-    api.get('/insights/store-scorecards', { params: { days } }).then((r) => r.data),
+function windowParams(w: InsightsWindow): Record<string, string | number> {
+  if ('days' in w) return { days: w.days };
+  return w.end_date
+    ? { start_date: w.start_date, end_date: w.end_date }
+    : { start_date: w.start_date };
+}
+
+export const insights = {
+  companyPulse: (window: InsightsWindow = { days: 7 }) =>
+    api.get('/insights/company-pulse', { params: windowParams(window) }).then((r) => r.data),
+
+  storeScorecards: (window: InsightsWindow = { days: 7 }) =>
+    api.get('/insights/store-scorecards', { params: windowParams(window) }).then((r) => r.data),
 
   storeDaily: (locationId: number, days: number = 30) =>
     api.get(`/insights/store/${locationId}/daily`, { params: { days } }).then((r) => r.data),

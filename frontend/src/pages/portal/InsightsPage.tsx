@@ -1,21 +1,39 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import {
   TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, XCircle,
-  DollarSign, Receipt, Store, ChevronRight,
+  DollarSign, Receipt, Store, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
-import { insights } from '@/lib/api';
+import { insights, type InsightsWindow } from '@/lib/api';
 
-const WINDOW_OPTIONS = [
-  { days: 1, label: 'Today' },
-  { days: 7, label: 'Last 7 days' },
-  { days: 28, label: 'Last 28 days' },
-  { days: 90, label: 'Last 90 days' },
+type PresetKey = 'today' | 'yesterday' | '7d' | '28d' | '90d' | 'custom';
+
+const PRESETS: { key: PresetKey; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: 'yesterday', label: 'Yesterday' },
+  { key: '7d', label: 'Last 7 days' },
+  { key: '28d', label: 'Last 28 days' },
+  { key: '90d', label: 'Last 90 days' },
+  { key: 'custom', label: 'Custom' },
 ];
+
+// Return YYYY-MM-DD for "today in Pacific time" so browsers in any
+// timezone agree with the backend's _pacific_today().
+function pacificDate(offsetDays = 0): string {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  });
+  const today = fmt.format(new Date()); // 'YYYY-MM-DD'
+  if (!offsetDays) return today;
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return fmt.format(d);
+}
 
 const CHANNEL_COLORS: Record<string, string> = {
   godaddy: '#5CB832',
@@ -30,17 +48,46 @@ const CHANNEL_LABEL: Record<string, string> = {
 };
 
 export function InsightsPage() {
-  const [days, setDays] = useState(7);
+  const [preset, setPreset] = useState<PresetKey>('7d');
+  const [customStart, setCustomStart] = useState<string>(() => pacificDate(-6));
+  const [customEnd, setCustomEnd] = useState<string>(() => pacificDate(0));
   const [drillDownId, setDrillDownId] = useState<number | null>(null);
+  const [inboxCollapsed, setInboxCollapsed] = useState<boolean>(
+    () => localStorage.getItem('insights.inboxCollapsed') === '1',
+  );
+
+  useEffect(() => {
+    localStorage.setItem('insights.inboxCollapsed', inboxCollapsed ? '1' : '0');
+  }, [inboxCollapsed]);
+
+  const window = useMemo<InsightsWindow>(() => {
+    switch (preset) {
+      case 'today': {
+        const d = pacificDate(0);
+        return { start_date: d, end_date: d };
+      }
+      case 'yesterday': {
+        const d = pacificDate(-1);
+        return { start_date: d, end_date: d };
+      }
+      case '7d':  return { days: 7 };
+      case '28d': return { days: 28 };
+      case '90d': return { days: 90 };
+      case 'custom':
+        return { start_date: customStart, end_date: customEnd };
+    }
+  }, [preset, customStart, customEnd]);
+
+  const windowKey = JSON.stringify(window);
 
   const { data: pulse, isLoading: pulseLoading } = useQuery({
-    queryKey: ['insights-pulse', days],
-    queryFn: () => insights.companyPulse(days),
+    queryKey: ['insights-pulse', windowKey],
+    queryFn: () => insights.companyPulse(window),
   });
 
   const { data: scorecardsData, isLoading: scorecardsLoading } = useQuery({
-    queryKey: ['insights-scorecards', days],
-    queryFn: () => insights.storeScorecards(days),
+    queryKey: ['insights-scorecards', windowKey],
+    queryFn: () => insights.storeScorecards(window),
   });
 
   const { data: inboxData } = useQuery({
@@ -62,19 +109,41 @@ export function InsightsPage() {
             Revenue and trends across all 6 shops
           </p>
         </div>
-        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-          {WINDOW_OPTIONS.map((opt) => (
-            <button
-              key={opt.days}
-              onClick={() => setDays(opt.days)}
-              className={clsx(
-                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                days === opt.days ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600',
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-wrap">
+            {PRESETS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setPreset(opt.key)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                  preset === opt.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {preset === 'custom' && (
+            <div className="flex items-center gap-2 text-sm">
+              <input
+                type="date"
+                value={customStart}
+                max={customEnd}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1"
+              />
+              <span className="text-gray-400">→</span>
+              <input
+                type="date"
+                value={customEnd}
+                min={customStart}
+                max={pacificDate(0)}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="border border-gray-300 rounded-md px-2 py-1"
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -130,18 +199,35 @@ export function InsightsPage() {
       {/* Action inbox */}
       {actions.length > 0 && (
         <Card>
-          <div className="flex items-center gap-2 mb-4">
+          <button
+            type="button"
+            onClick={() => setInboxCollapsed((v) => !v)}
+            className="w-full flex items-center gap-2 text-left"
+            aria-expanded={!inboxCollapsed}
+            aria-controls="action-inbox-body"
+          >
             <AlertTriangle className="h-5 w-5 text-orange-500" />
             <h2 className="text-lg font-semibold">Action Inbox</h2>
             <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
               {actions.length}
             </span>
-          </div>
-          <div className="divide-y divide-gray-100">
-            {actions.map((a, i) => (
-              <ActionRow key={i} action={a} />
-            ))}
-          </div>
+            <span className="ml-auto text-xs text-gray-400">
+              {inboxCollapsed ? 'Show' : 'Hide'}
+            </span>
+            <ChevronDown
+              className={clsx(
+                'h-4 w-4 text-gray-400 transition-transform',
+                inboxCollapsed && '-rotate-90',
+              )}
+            />
+          </button>
+          {!inboxCollapsed && (
+            <div id="action-inbox-body" className="divide-y divide-gray-100 mt-4">
+              {actions.map((a, i) => (
+                <ActionRow key={i} action={a} />
+              ))}
+            </div>
+          )}
         </Card>
       )}
 

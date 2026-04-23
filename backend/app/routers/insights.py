@@ -37,6 +37,42 @@ def _pacific_today() -> date:
     return datetime.now(pytz.timezone("America/Los_Angeles")).date()
 
 
+def _resolve_window(
+    days: int,
+    start_date: str | None,
+    end_date: str | None,
+) -> tuple[date, date]:
+    """Resolve the (curr_start, curr_end) window.
+
+    If an explicit start_date / end_date pair is given it takes precedence
+    over ``days`` and is clamped between 1 and 365 days. Otherwise the
+    window is the last ``days`` days ending at Pacific today.
+    """
+    if start_date or end_date:
+        try:
+            start = date.fromisoformat(start_date) if start_date else _pacific_today()
+            end = date.fromisoformat(end_date) if end_date else start
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail=f"start_date / end_date must be YYYY-MM-DD ({exc})",
+            )
+        if end < start:
+            start, end = end, start
+        span = (end - start).days + 1
+        if span > 365:
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=400,
+                detail="Date range too large (max 365 days)",
+            )
+        return start, end
+
+    today = _pacific_today()
+    return today - timedelta(days=days - 1), today
+
+
 def _sum_rows(rows) -> dict:
     """Sum a list of DailyRevenue rows into totals."""
     total_gross = 0.0
@@ -75,22 +111,26 @@ def _sum_rows(rows) -> dict:
 @router.get("/company-pulse")
 async def company_pulse(
     days: int = Query(7, ge=1, le=90),
+    start_date: str | None = Query(None, description="YYYY-MM-DD — overrides `days` when set"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD — defaults to start_date when only start is set"),
     current_user: User = Depends(require_roles(UserRole.owner)),
     db: AsyncSession = Depends(get_db),
 ):
     """High-level numbers for the top of the dashboard.
 
-    Returns totals for the current window (last N days) plus the prior
-    window of the same length for a week-over-week comparison.
+    Returns totals for the current window plus the prior window of the
+    same length for a period-over-period comparison. Use
+    ``start_date`` / ``end_date`` to pick an arbitrary range (e.g. a
+    specific day), otherwise defaults to the last ``days`` days.
     """
-    today = _pacific_today()
-    curr_start = today - timedelta(days=days - 1)
+    curr_start, curr_end = _resolve_window(days, start_date, end_date)
+    span = (curr_end - curr_start).days + 1
     prev_end = curr_start - timedelta(days=1)
-    prev_start = prev_end - timedelta(days=days - 1)
+    prev_start = prev_end - timedelta(days=span - 1)
 
     curr_rows = (await db.execute(
         select(DailyRevenue).where(
-            and_(DailyRevenue.date >= curr_start, DailyRevenue.date <= today)
+            and_(DailyRevenue.date >= curr_start, DailyRevenue.date <= curr_end)
         )
     )).scalars().all()
     prev_rows = (await db.execute(
@@ -117,8 +157,8 @@ async def company_pulse(
     return {
         "window": {
             "start": curr_start.isoformat(),
-            "end": today.isoformat(),
-            "days": days,
+            "end": curr_end.isoformat(),
+            "days": span,
         },
         "current": curr,
         "previous": prev,
@@ -138,14 +178,16 @@ async def company_pulse(
 @router.get("/store-scorecards")
 async def store_scorecards(
     days: int = Query(7, ge=1, le=90),
+    start_date: str | None = Query(None, description="YYYY-MM-DD — overrides `days` when set"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD — defaults to start_date when only start is set"),
     current_user: User = Depends(require_roles(UserRole.owner)),
     db: AsyncSession = Depends(get_db),
 ):
-    """One scorecard per canonical location with totals, channel mix, and WoW delta."""
-    today = _pacific_today()
-    curr_start = today - timedelta(days=days - 1)
+    """One scorecard per canonical location with totals, channel mix, and period-over-period delta."""
+    curr_start, curr_end = _resolve_window(days, start_date, end_date)
+    span = (curr_end - curr_start).days + 1
     prev_end = curr_start - timedelta(days=1)
-    prev_start = prev_end - timedelta(days=days - 1)
+    prev_start = prev_end - timedelta(days=span - 1)
 
     # Only surface locations that have canonical_short_name set (the 6 real shops)
     locations = (await db.execute(
@@ -156,7 +198,7 @@ async def store_scorecards(
 
     rev_rows = (await db.execute(
         select(DailyRevenue).where(
-            and_(DailyRevenue.date >= prev_start, DailyRevenue.date <= today)
+            and_(DailyRevenue.date >= prev_start, DailyRevenue.date <= curr_end)
         )
     )).scalars().all()
 
@@ -168,8 +210,8 @@ async def store_scorecards(
     scorecards = []
     for loc in locations:
         loc_rows = by_loc.get(loc.id, [])
-        curr_rows_loc = [r for r in loc_rows if r.date >= curr_start]
-        prev_rows_loc = [r for r in loc_rows if r.date < curr_start]
+        curr_rows_loc = [r for r in loc_rows if curr_start <= r.date <= curr_end]
+        prev_rows_loc = [r for r in loc_rows if prev_start <= r.date <= prev_end]
         curr = _sum_rows(curr_rows_loc)
         prev = _sum_rows(prev_rows_loc)
 
@@ -194,8 +236,8 @@ async def store_scorecards(
     return {
         "window": {
             "start": curr_start.isoformat(),
-            "end": today.isoformat(),
-            "days": days,
+            "end": curr_end.isoformat(),
+            "days": span,
         },
         "scorecards": scorecards,
     }
