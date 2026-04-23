@@ -15,7 +15,9 @@ from app.seed_supply_catalog import seed_supply_catalog
 from app.seed_usfoods import seed_usfoods
 from app.models.system_settings import SystemSettings
 from app.routers import (
+    analytics_admin,
     applications,
+    insights,
     audit,
     auth,
     cash_drawer,
@@ -69,6 +71,8 @@ app.include_router(applications.router, prefix="/api/applications", tags=["Appli
 app.include_router(supply_orders.router, prefix="/api/supply-orders", tags=["Supply Orders"])
 app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["Supply Reports"])
 app.include_router(usfoods.router, prefix="/api/usfoods", tags=["US Foods"])
+app.include_router(analytics_admin.router, prefix="/api", tags=["Analytics Admin"])
+app.include_router(insights.router, prefix="/api", tags=["Insights"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
@@ -117,6 +121,22 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE time_off_requests ADD COLUMN IF NOT EXISTS end_time TIME"
         ))
+        # Analytics ingestion — external IDs on locations
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS canonical_short_name VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_store_id VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_dropdown_label VARCHAR(200)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS tapmango_location_id INTEGER"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS doordash_store_id INTEGER"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS
@@ -135,6 +155,46 @@ async def startup():
         if changed:
             await session.commit()
             logger.info("Locations synced.")
+
+        # Backfill canonical short names and external IDs for analytics ingestion.
+        # Matches on address (unique per location) to avoid ambiguity.
+        # Tuple: (address_match, canonical_short_name, godaddy_store_id, godaddy_dropdown_label,
+        #         tapmango_location_id, doordash_store_id)
+        CANONICAL_MAPPINGS = [
+            ("21788 Bear Valley Rd", "APPLE_VALLEY_HS",
+             "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
+             "Six Beans Coffee Co. - AV HS", 2360, None),
+            ("15760 Ranchero Rd", "HESPERIA",
+             "7d0f498a-44d1-4176-978b-fec7aa58b00d",
+             "Six Beans Coffee Co. - Ranchero", 7226, None),
+            ("921 Barstow Rd", "BARSTOW",
+             "28f4c6a9-e59f-4d31-a47b-73b4b7270330",
+             "Six Beans Coffee Co. - Barstow", 8772, None),
+            ("12875 Bear Valley Rd", "VICTORVILLE",
+             "99842f2c-4850-4f3d-bebc-2a5459654a1b",
+             "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
+            ("13730 Apple Valley Rd", "YUCCA_LOMA",
+             "ab50508a-8f15-4235-b54d-b5e6151fa474",
+             "Six Beans Coffee Co. - Yucca Loma", 10958, None),
+            ("14213 7th St", "SEVENTH_STREET",
+             "7160b3ac-5321-403c-b849-e4f041ef7574",
+             "Six Beans Coffee Co. - 7th Street", 12497, None),
+        ]
+        all_locs = (await session.execute(select(Location))).scalars().all()
+        mappings_changed = False
+        for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
+            for loc in all_locs:
+                if loc.address == address_match and loc.canonical_short_name != short_name:
+                    loc.canonical_short_name = short_name
+                    loc.godaddy_store_id = gd_store_id
+                    loc.godaddy_dropdown_label = gd_label
+                    loc.tapmango_location_id = tm_id
+                    loc.doordash_store_id = dd_id
+                    mappings_changed = True
+                    break
+        if mappings_changed:
+            await session.commit()
+            logger.info("Analytics canonical mappings backfilled for %d locations.", len(CANONICAL_MAPPINGS))
 
         # Set owners to not require password change
         from app.models.user import UserRole, user_locations

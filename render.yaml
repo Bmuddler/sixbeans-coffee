@@ -33,6 +33,46 @@ services:
       - key: GODADDY_API_SECRET
         sync: false
 
+  # Nightly ingestion cron — runs the analytics pipeline (GoDaddy scrape,
+  # TapMango orders scrape, TapMango API pull, DoorDash gmail fetch).
+  # Uses a Playwright-capable Docker image so Chromium works in the cron env.
+  - type: cron
+    name: sixbeans-ingest
+    runtime: docker
+    region: oregon
+    plan: starter
+    rootDir: backend
+    dockerfilePath: ./Dockerfile.ingest
+    # 9 PM Pacific = 05:00 UTC (PDT) / 04:00 UTC (PST).
+    # Cron time is UTC; 0 5 = 10 PM PDT / 9 PM PST. Render treats this as UTC.
+    schedule: "0 5 * * *"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sixbeans-db
+          property: connectionString
+      # All of these are set once on the web service and shared here via
+      # a Render Environment Group (create in dashboard: Settings > Env Groups).
+      # Until the group is set up, duplicate the values manually.
+      - key: TAPMANGO_API_KEY
+        sync: false
+      - key: SCRAPER_SESSION_ENCRYPTION_KEY
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_ID
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_OAUTH_REDIRECT_URI
+        sync: false
+      - key: DOORDASH_REPORT_FROM_EMAIL
+        value: no-reply@doordash.com
+      - key: DOORDASH_REPORT_INBOX
+        sync: false
+      - key: SQUARE_ACCESS_TOKEN
+        sync: false
+      - key: JWT_SECRET_KEY
+        sync: false
+
   - type: web
     name: sixbeans
     runtime: static
