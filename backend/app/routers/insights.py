@@ -18,14 +18,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import require_roles
+from app.models.daily_labor import DailyLabor
 from app.models.daily_revenue import (
     CHANNEL_DOORDASH,
     CHANNEL_GODADDY,
     CHANNEL_TAPMANGO,
     DailyRevenue,
 )
+from app.models.expense import Expense
+from app.models.hourly_revenue import HourlyRevenue
 from app.models.ingestion_run import IngestionRun, STATUS_FAILED, STATUS_PARTIAL
 from app.models.location import Location
+from app.models.system_settings import SystemSettings
 from app.models.user import User, UserRole
 
 logger = logging.getLogger(__name__)
@@ -390,3 +394,90 @@ async def action_inbox(
             })
 
     return {"actions": actions}
+
+
+# ----------------------------------------------------------------------
+# Heatmap: day-of-week × (hour | quarter-hour)
+# ----------------------------------------------------------------------
+
+@router.get("/heatmap")
+async def heatmap(
+    location_id: int = Query(..., description="Which store"),
+    start_date: str | None = Query(None, description="YYYY-MM-DD (defaults to 4 weeks ago)"),
+    end_date: str | None = Query(None, description="YYYY-MM-DD (defaults to yesterday)"),
+    granularity: str = Query("hour", pattern="^(hour|quarter)$"),
+    metric: str = Query("txns", pattern="^(txns|gross)$"),
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Average `metric` per (day-of-week, time-slot) cell across the window.
+
+    - day-of-week: 0 = Monday through 6 = Sunday (ISO).
+    - time-slot: 0..23 if granularity=hour, 0..95 (hour*4 + quarter) if quarter.
+    - Cell value = sum / number of dates in the window that fell on that dow.
+      So if the window covers 4 Tuesdays, a Tuesday cell is the average across
+      those 4 Tuesdays' txn counts (or gross $).
+
+    Aggregates across all channels (godaddy + tapmango). DoorDash has no
+    hourly rows so it's implicitly excluded.
+    """
+    today = _pacific_today()
+    try:
+        start = date.fromisoformat(start_date) if start_date else today - timedelta(days=28)
+        end = date.fromisoformat(end_date) if end_date else today - timedelta(days=1)
+    except ValueError as exc:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail=f"Bad date: {exc}")
+    if end < start:
+        start, end = end, start
+
+    rows = (await db.execute(
+        select(HourlyRevenue).where(
+            HourlyRevenue.location_id == location_id,
+            HourlyRevenue.date >= start,
+            HourlyRevenue.date <= end,
+        )
+    )).scalars().all()
+
+    # Count how many dates of each weekday appear in [start, end]
+    dow_date_counts: dict[int, int] = defaultdict(int)
+    d = start
+    while d <= end:
+        dow_date_counts[d.weekday()] += 1
+        d += timedelta(days=1)
+
+    # Aggregate by (dow, slot) -> metric total
+    def slot_of(hour: int, quarter: int) -> int:
+        return hour if granularity == "hour" else hour * 4 + quarter
+
+    slots = 24 if granularity == "hour" else 96
+    grid: list[list[float]] = [[0.0] * slots for _ in range(7)]  # grid[dow][slot]
+
+    for r in rows:
+        dow = r.date.weekday()
+        s = slot_of(r.hour, r.quarter)
+        if metric == "txns":
+            grid[dow][s] += r.txns
+        else:
+            grid[dow][s] += r.gross
+
+    # Average across the number of matching days per weekday
+    max_val = 0.0
+    for dow in range(7):
+        denom = dow_date_counts.get(dow, 0) or 1
+        for s in range(slots):
+            grid[dow][s] = round(grid[dow][s] / denom, 2 if metric == "gross" else 3)
+            if grid[dow][s] > max_val:
+                max_val = grid[dow][s]
+
+    return {
+        "location_id": location_id,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "granularity": granularity,
+        "metric": metric,
+        "slots": slots,
+        "dow_date_counts": dict(dow_date_counts),
+        "max_value": max_val,
+        "grid": grid,  # grid[dow][slot]
+    }

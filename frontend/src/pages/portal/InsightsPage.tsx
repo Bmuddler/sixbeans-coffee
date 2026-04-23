@@ -231,6 +231,9 @@ export function InsightsPage() {
         </Card>
       )}
 
+      {/* Heatmap */}
+      <HeatmapSection scorecards={scorecards} />
+
       {/* Store scorecards */}
       <div>
         <h2 className="text-lg font-semibold mb-3">Stores</h2>
@@ -533,4 +536,206 @@ function StoreDrillDown({
       )}
     </Modal>
   );
+}
+
+// -------------------------------------------------------------
+// Heatmap: day-of-week × hour/quarter
+// -------------------------------------------------------------
+
+const DOW_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+function HeatmapSection({ scorecards }: { scorecards: any[] }) {
+  const [storeId, setStoreId] = useState<number | null>(null);
+  const [granularity, setGranularity] = useState<'hour' | 'quarter'>('hour');
+  const [metric, setMetric] = useState<'txns' | 'gross'>('txns');
+  const [start, setStart] = useState<string>(() => pacificDate(-27));
+  const [end, setEnd] = useState<string>(() => pacificDate(-1));
+
+  // Default to the first scorecard once they load
+  useEffect(() => {
+    if (storeId === null && scorecards.length > 0) {
+      setStoreId(scorecards[0].location_id);
+    }
+  }, [storeId, scorecards]);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['insights-heatmap', storeId, start, end, granularity, metric],
+    queryFn: () => insights.heatmap({
+      location_id: storeId!,
+      start_date: start,
+      end_date: end,
+      granularity,
+      metric,
+    }),
+    enabled: storeId !== null,
+  });
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <h2 className="text-lg font-semibold">When are we busy?</h2>
+        <select
+          value={storeId ?? ''}
+          onChange={(e) => setStoreId(parseInt(e.target.value, 10))}
+          className="border border-gray-300 rounded-md px-2 py-1 text-sm"
+        >
+          {scorecards.map((s: any) => (
+            <option key={s.location_id} value={s.location_id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+        <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
+          {(['hour', 'quarter'] as const).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGranularity(g)}
+              className={clsx(
+                'px-2 py-1 rounded text-xs font-medium transition-colors',
+                granularity === g ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600',
+              )}
+            >
+              {g === 'hour' ? '1 hr' : '15 min'}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-md p-0.5">
+          {(['txns', 'gross'] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setMetric(m)}
+              className={clsx(
+                'px-2 py-1 rounded text-xs font-medium transition-colors',
+                metric === m ? 'bg-white shadow-sm text-gray-900' : 'text-gray-600',
+              )}
+            >
+              {m === 'txns' ? 'Transactions' : 'Revenue $'}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 ml-auto text-xs text-gray-500">
+          <input
+            type="date"
+            value={start}
+            max={end}
+            onChange={(e) => setStart(e.target.value)}
+            className="border border-gray-300 rounded-md px-1.5 py-0.5"
+          />
+          <span>→</span>
+          <input
+            type="date"
+            value={end}
+            min={start}
+            max={pacificDate(0)}
+            onChange={(e) => setEnd(e.target.value)}
+            className="border border-gray-300 rounded-md px-1.5 py-0.5"
+          />
+        </div>
+      </div>
+
+      {isLoading || !data ? (
+        <LoadingSpinner />
+      ) : data.max_value === 0 ? (
+        <p className="text-sm text-gray-500">
+          No hourly data in this window. If you've uploaded GoDaddy / TapMango
+          files for these dates since the heatmap launched, re-upload them from
+          the Analytics Ingestion page to populate hourly buckets.
+        </p>
+      ) : (
+        <HeatmapGrid
+          grid={data.grid}
+          maxValue={data.max_value}
+          granularity={data.granularity}
+          metric={data.metric}
+        />
+      )}
+    </Card>
+  );
+}
+
+function HeatmapGrid({
+  grid, maxValue, granularity, metric,
+}: {
+  grid: number[][];
+  maxValue: number;
+  granularity: 'hour' | 'quarter';
+  metric: 'txns' | 'gross';
+}) {
+  const slots = granularity === 'hour' ? 24 : 96;
+  const cellWidth = granularity === 'hour' ? 28 : 9;
+  const cellHeight = 22;
+
+  const fmt = (v: number) => metric === 'gross'
+    ? `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    : v.toFixed(1);
+
+  const slotLabel = (s: number) => {
+    if (granularity === 'hour') {
+      const h = s;
+      if (h === 0) return '12a';
+      if (h < 12) return `${h}a`;
+      if (h === 12) return '12p';
+      return `${h - 12}p`;
+    } else {
+      const h = Math.floor(s / 4);
+      const q = (s % 4) * 15;
+      if (q !== 0) return '';  // only label on the hour tick
+      return h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
+    }
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <div className="inline-block">
+        {/* Hour labels */}
+        <div className="flex pl-10">
+          {Array.from({ length: slots }).map((_, s) => (
+            <div
+              key={s}
+              className="text-[10px] text-gray-500 text-center"
+              style={{ width: cellWidth }}
+            >
+              {slotLabel(s)}
+            </div>
+          ))}
+        </div>
+        {/* DOW rows */}
+        {grid.map((row, dow) => (
+          <div key={dow} className="flex items-center">
+            <div className="w-10 text-xs text-gray-600 pr-2 text-right">
+              {DOW_LABELS[dow]}
+            </div>
+            {row.map((v, s) => {
+              const intensity = maxValue > 0 ? v / maxValue : 0;
+              return (
+                <div
+                  key={s}
+                  title={`${DOW_LABELS[dow]} ${slotLabel(s) || `slot ${s}`} · ${fmt(v)}`}
+                  style={{
+                    width: cellWidth,
+                    height: cellHeight,
+                    backgroundColor: heatColor(intensity),
+                  }}
+                  className="border border-white"
+                />
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function heatColor(t: number): string {
+  // 0 = light gray, 1 = deep green (#5CB832 brand color)
+  if (t <= 0) return '#F3F4F6';
+  const clamped = Math.max(0, Math.min(1, t));
+  // Interpolate toward green from very light to full color.
+  const lightR = 240, lightG = 249, lightB = 235;
+  const darkR = 45, darkG = 120, darkB = 30;
+  const r = Math.round(lightR + (darkR - lightR) * clamped);
+  const g = Math.round(lightG + (darkG - lightG) * clamped);
+  const b = Math.round(lightB + (darkB - lightB) * clamped);
+  return `rgb(${r},${g},${b})`;
 }

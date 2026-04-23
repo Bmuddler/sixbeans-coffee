@@ -727,6 +727,24 @@ export const insights = {
 
   actionInbox: () =>
     api.get('/insights/action-inbox').then((r) => r.data as { actions: any[] }),
+
+  heatmap: (params: {
+    location_id: number;
+    start_date?: string;
+    end_date?: string;
+    granularity?: 'hour' | 'quarter';
+    metric?: 'txns' | 'gross';
+  }) =>
+    api.get('/insights/heatmap', { params }).then((r) => r.data as {
+      location_id: number;
+      start_date: string;
+      end_date: string;
+      granularity: 'hour' | 'quarter';
+      metric: 'txns' | 'gross';
+      slots: number;
+      max_value: number;
+      grid: number[][];
+    }),
 };
 
 export default api;
