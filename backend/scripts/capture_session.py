@@ -39,30 +39,47 @@ async def capture(source: str) -> None:
         print("  playwright install chromium")
         sys.exit(1)
 
+    # Path to the user's real Chrome profile — much harder to detect
+    # than vanilla Playwright Chromium because it IS real Chrome.
+    import os
+    chrome_paths = [
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ]
+    chrome_exe = next((p for p in chrome_paths if os.path.exists(p)), None)
+
+    profile_dir = str(Path(__file__).parent / f".chrome_profile_{source}")
+
     async with async_playwright() as pw:
-        # Launch with anti-detection flags — GoDaddy's bot filter blocks
-        # the default Playwright Chromium otherwise.
-        browser = await pw.chromium.launch(
-            headless=False,
-            args=[
+        # Use persistent context with real Chrome (channel='chrome') — defeats
+        # most automation detection because it's the actual installed browser.
+        launch_kwargs = {
+            "user_data_dir": profile_dir,
+            "headless": False,
+            "accept_downloads": True,
+            "viewport": {"width": 1280, "height": 800},
+            "args": [
                 "--disable-blink-features=AutomationControlled",
-                "--no-sandbox",
+                "--no-first-run",
+                "--no-default-browser-check",
             ],
-        )
-        context = await browser.new_context(
-            accept_downloads=True,
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
-        )
-        # Remove the navigator.webdriver flag that gives away automation
+            "ignore_default_args": ["--enable-automation"],
+        }
+        if chrome_exe:
+            launch_kwargs["executable_path"] = chrome_exe
+            print(f"Using real Chrome at {chrome_exe}")
+        else:
+            launch_kwargs["channel"] = "chrome"
+            print("Using Playwright's Chromium (Chrome not found)")
+
+        context = await pw.chromium.launch_persistent_context(**launch_kwargs)
+
+        # Remove webdriver flag
         await context.add_init_script(
             "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
-        page = await context.new_page()
+
+        page = context.pages[0] if context.pages else await context.new_page()
 
         print(f"\nOpening {target['label']}…")
         await page.goto(target["url"], wait_until="domcontentloaded")
@@ -75,7 +92,7 @@ async def capture(source: str) -> None:
         input("\nPress Enter once logged in... ")
 
         storage_state = await context.storage_state()
-        await browser.close()
+        await context.close()
 
     # Save to file
     out_path = Path(__file__).parent / f"{source}_storage_state.json"
