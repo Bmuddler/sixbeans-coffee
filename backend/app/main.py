@@ -308,25 +308,26 @@ async def startup():
 
         # One-shot analytics-data self-heal.
         # Bump TARGET when the Locations table had duplicate canonical_short_names
-        # that caused historical revenue / labor / hourly rows to land on the
-        # wrong location_id. Wipe those three tables exactly once and wait for
-        # the owner to re-upload on the Analytics Ingestion page — this is far
-        # cleaner than trying to detect-and-reassociate.
-        RESET_TARGET = 1
+        # that caused historical revenue / labor / hourly / expense rows to land
+        # on the wrong location_id. Wipe the affected tables exactly once and
+        # wait for the owner to re-upload / re-import — cleaner than trying
+        # to detect-and-reassociate every row.
+        #   v1: revenue + labor (initial dedupe)
+        #   v2: revenue + labor + expenses (dedupe revealed expenses were also wrong)
+        RESET_TARGET = 2
         current_ver = (await session.execute(
             select(SystemSettings.analytics_reset_version).limit(1)
         )).scalar_one_or_none()
         if current_ver is None or current_ver < RESET_TARGET:
             logger.info(
-                "Analytics data reset v%d: wiping daily_revenues / hourly_revenue / daily_labor.",
-                RESET_TARGET,
+                "Analytics data reset v%d: wiping daily_revenues / hourly_revenue / "
+                "daily_labor / expenses.", RESET_TARGET,
             )
             await session.execute(text("DELETE FROM hourly_revenue"))
             await session.execute(text("DELETE FROM daily_revenues"))
             await session.execute(text("DELETE FROM daily_labor"))
-            # Also clear ingestion_runs history that referenced now-missing rows
+            await session.execute(text("DELETE FROM expenses"))
             await session.execute(text("DELETE FROM ingestion_runs"))
-            # Bump the marker (create the row if it doesn't exist)
             existing_settings = (await session.execute(
                 select(SystemSettings).limit(1)
             )).scalar_one_or_none()
@@ -335,7 +336,10 @@ async def startup():
             else:
                 existing_settings.analytics_reset_version = RESET_TARGET
             await session.commit()
-            logger.info("Analytics data reset complete. Re-upload files on Analytics Ingestion.")
+            logger.info(
+                "Analytics data reset complete. Re-upload files on Analytics Ingestion "
+                "and re-click 'Import from P&L Excel' on the Expenses page."
+            )
 
         # Purge any stray revenue / hourly rows attached to labor-only
         # locations (Bakery, Warehouse, or any row with no POS channel IDs).
