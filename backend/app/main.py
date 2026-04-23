@@ -160,38 +160,65 @@ async def startup():
         # Matches on address (unique per location) to avoid ambiguity.
         # Tuple: (address_match, canonical_short_name, godaddy_store_id, godaddy_dropdown_label,
         #         tapmango_location_id, doordash_store_id)
+        # GoDaddy UUIDs verified against manually-downloaded settlement reports
+        # for 2026-04-21 — the six Cowork-downloaded workbooks match by
+        # Net Payment Summary totals to the following store addresses.
         CANONICAL_MAPPINGS = [
             ("21788 Bear Valley Rd", "APPLE_VALLEY_HS",
-             "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
+             "7160b3ac-5321-403c-b849-e4f041ef7574",
              "Six Beans Coffee Co. - AV HS", 2360, None),
             ("15760 Ranchero Rd", "HESPERIA",
-             "7d0f498a-44d1-4176-978b-fec7aa58b00d",
+             "ab50508a-8f15-4235-b54d-b5e6151fa474",
              "Six Beans Coffee Co. - Ranchero", 7226, None),
             ("921 Barstow Rd", "BARSTOW",
-             "28f4c6a9-e59f-4d31-a47b-73b4b7270330",
+             "99842f2c-4850-4f3d-bebc-2a5459654a1b",
              "Six Beans Coffee Co. - Barstow", 8772, None),
             ("12875 Bear Valley Rd", "VICTORVILLE",
-             "99842f2c-4850-4f3d-bebc-2a5459654a1b",
+             "28f4c6a9-e59f-4d31-a47b-73b4b7270330",
              "Six Beans Coffee Co (Bear Valley Rd)", 9908, 27659027),
             ("13730 Apple Valley Rd", "YUCCA_LOMA",
-             "ab50508a-8f15-4235-b54d-b5e6151fa474",
+             "7d0f498a-44d1-4176-978b-fec7aa58b00d",
              "Six Beans Coffee Co. - Yucca Loma", 10958, None),
             ("14213 7th St", "SEVENTH_STREET",
-             "7160b3ac-5321-403c-b849-e4f041ef7574",
+             "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
              "Six Beans Coffee Co. - 7th Street", 12497, None),
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
-        mappings_changed = False
+        by_address = {loc.address: loc for loc in all_locs}
+        targets: list[tuple[Location, str, str, str, int | None, int | None]] = []
+        needs_update = False
         for address_match, short_name, gd_store_id, gd_label, tm_id, dd_id in CANONICAL_MAPPINGS:
-            for loc in all_locs:
-                if loc.address == address_match and loc.canonical_short_name != short_name:
-                    loc.canonical_short_name = short_name
-                    loc.godaddy_store_id = gd_store_id
-                    loc.godaddy_dropdown_label = gd_label
-                    loc.tapmango_location_id = tm_id
-                    loc.doordash_store_id = dd_id
-                    mappings_changed = True
-                    break
+            loc = by_address.get(address_match)
+            if loc is None:
+                continue
+            if (
+                loc.canonical_short_name != short_name
+                or loc.godaddy_store_id != gd_store_id
+                or loc.godaddy_dropdown_label != gd_label
+                or loc.tapmango_location_id != tm_id
+                or loc.doordash_store_id != dd_id
+            ):
+                needs_update = True
+            targets.append((loc, short_name, gd_store_id, gd_label, tm_id, dd_id))
+
+        mappings_changed = False
+        if needs_update:
+            # Two-phase update: unique constraints on godaddy_store_id /
+            # tapmango_location_id / doordash_store_id mean we can't directly
+            # swap values between locations. Null them first, flush, then
+            # apply the canonical mapping.
+            for loc, *_ in targets:
+                loc.godaddy_store_id = None
+                loc.tapmango_location_id = None
+                loc.doordash_store_id = None
+            await session.flush()
+            for loc, short_name, gd_store_id, gd_label, tm_id, dd_id in targets:
+                loc.canonical_short_name = short_name
+                loc.godaddy_store_id = gd_store_id
+                loc.godaddy_dropdown_label = gd_label
+                loc.tapmango_location_id = tm_id
+                loc.doordash_store_id = dd_id
+            mappings_changed = True
         if mappings_changed:
             await session.commit()
             logger.info("Analytics canonical mappings backfilled for %d locations.", len(CANONICAL_MAPPINGS))
