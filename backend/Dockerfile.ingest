@@ -21,4 +21,4 @@ COPY . ./
 
 # Entrypoint: the orchestrator. Render cron sets its own schedule; this
 # just runs the pipeline once on each invocation.
-CMD ["python", "-m", "backend.scripts.ingest_main"]
+CMD ["python", "-m", "scripts.ingest_main"]

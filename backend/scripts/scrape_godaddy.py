@@ -39,7 +39,7 @@ from app.models.location import Location
 from app.services.parsers.godaddy_excel import parse_godaddy_excel
 from app.services.scraper_session_vault import VaultError
 from app.services.parsers import ParsedRevenueRow
-from backend.scripts.scraper_base import (
+from scripts.scraper_base import (
     playwright_context_for_source,
     report_expired,
     report_success,

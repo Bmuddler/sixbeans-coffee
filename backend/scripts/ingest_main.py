@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _run_godaddy(db: AsyncSession, target_date: date) -> dict:
-    from backend.scripts.scrape_godaddy import run_godaddy_scrape
+    from scripts.scrape_godaddy import run_godaddy_scrape
     try:
         return await run_godaddy_scrape(db, target_date)
     except Exception as exc:
@@ -68,7 +68,7 @@ async def _run_godaddy(db: AsyncSession, target_date: date) -> dict:
 
 
 async def _run_tapmango_orders(db: AsyncSession, target_date: date) -> dict:
-    from backend.scripts.scrape_tapmango import run_tapmango_orders_scrape
+    from scripts.scrape_tapmango import run_tapmango_orders_scrape
     try:
         return await run_tapmango_orders_scrape(db, target_date)
     except Exception as exc:

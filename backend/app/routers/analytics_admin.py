@@ -200,11 +200,11 @@ async def trigger_manual_run(
         }
 
     if source == "tapmango_api":
-        from backend.scripts.ingest_main import _run_tapmango_api
+        from scripts.ingest_main import _run_tapmango_api
         return await _run_tapmango_api(db, parsed_date)
 
     if source == "doordash":
-        from backend.scripts.ingest_main import _run_doordash
+        from scripts.ingest_main import _run_doordash
         return await _run_doordash(db, parsed_date)
 
     raise HTTPException(status_code=400, detail=f"Unknown source: {source}")

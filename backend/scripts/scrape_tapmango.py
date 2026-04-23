@@ -36,7 +36,7 @@ from app.models.scraper_session import SOURCE_TAPMANGO_PORTAL
 from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
 from app.services.parsers import ParsedRevenueRow
 from app.services.scraper_session_vault import VaultError
-from backend.scripts.scraper_base import (
+from scripts.scraper_base import (
     playwright_context_for_source,
     report_expired,
     report_success,
