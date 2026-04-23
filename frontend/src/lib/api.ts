@@ -619,4 +619,31 @@ export const usfoods = {
     api.get('/usfoods/analytics', { params }).then((r) => r.data),
 };
 
+// ============================================================
+// Analytics Ingestion admin
+// ============================================================
+
+export const analyticsAdmin = {
+  listSessions: () =>
+    api.get('/analytics/admin/sessions').then((r) => r.data as { sources: Array<any> }),
+
+  uploadSession: (source: 'godaddy' | 'tapmango_portal', storage_state: any) =>
+    api.post(`/analytics/admin/sessions/${source}`, storage_state).then((r) => r.data),
+
+  gmailOauthStart: () =>
+    api.get('/analytics/admin/oauth/gmail/start').then((r) => r.data as { url: string }),
+
+  listRuns: (params?: { limit?: number; source?: string }) =>
+    api.get('/analytics/admin/runs', { params }).then((r) => r.data as any[]),
+
+  triggerRun: (source: string, target_date?: string) =>
+    api.post(`/analytics/admin/runs/trigger/${source}`, { target_date }).then((r) => r.data),
+
+  listUnknownStores: () =>
+    api.get('/analytics/admin/mapping/unknown').then((r) => r.data as { unmapped: Array<any> }),
+
+  assignMapping: (source: string, external_id: string, location_id: number) =>
+    api.post('/analytics/admin/mapping', { source, external_id, location_id }).then((r) => r.data),
+};
+
 export default api;
