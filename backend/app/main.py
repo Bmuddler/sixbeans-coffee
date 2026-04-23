@@ -117,6 +117,19 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE time_off_requests ADD COLUMN IF NOT EXISTS end_time TIME"
         ))
+        # Analytics ingestion — external IDs on locations
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS canonical_short_name VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_dropdown_label VARCHAR(200)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS tapmango_location_id INTEGER"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS doordash_store_id INTEGER"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS

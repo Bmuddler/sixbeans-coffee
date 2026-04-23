@@ -37,9 +37,28 @@ class Settings(BaseSettings):
     # Anthropic (Claude)
     anthropic_api_key: str = ""
 
-    # GoDaddy
+    # GoDaddy (legacy — no public merchant API; ingestion via scraper below)
     godaddy_api_key: str = ""
     godaddy_api_secret: str = ""
+
+    # ---- Analytics ingestion ----
+    # TapMango loyalty/orders API
+    tapmango_api_key: str = ""
+    tapmango_api_base_url: str = "https://openapi.tapmango.com/api/v1"
+
+    # Encryption key for scraper session cookies persisted in DB
+    scraper_session_encryption_key: str = ""
+
+    # Gmail OAuth (for DoorDash weekly email watcher)
+    gmail_oauth_client_id: str = ""
+    gmail_oauth_client_secret: str = ""
+    gmail_oauth_redirect_uri: str = (
+        "http://localhost:5173/portal/admin/oauth/callback/gmail"
+    )
+
+    # DoorDash report routing
+    doordash_report_from_email: str = "no-reply@doordash.com"
+    doordash_report_inbox: str = "blend556@gmail.com"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
