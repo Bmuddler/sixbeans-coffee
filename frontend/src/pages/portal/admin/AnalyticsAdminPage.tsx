@@ -32,7 +32,7 @@ const SOURCE_META: Record<
 > = {
   godaddy: {
     label: 'GoDaddy Commerce',
-    blurb: 'Nightly Transactions Report scraper',
+    blurb: 'Local Cowork task uploads Transactions Reports nightly',
     loginHint: 'https://spa.commerce.godaddy.com/home/store',
     icon: Cookie,
   },
@@ -142,6 +142,9 @@ export function AnalyticsAdminPage() {
 
   const gmailStatus = sessions.find((s) => s.source === 'gmail_oauth');
 
+  // For GoDaddy the cookie vault isn't used — status comes from recent uploads.
+  const godaddyLastRun = runs?.find((r: any) => r.source === 'godaddy');
+
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
@@ -171,23 +174,49 @@ export function AnalyticsAdminPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <p className="font-medium text-gray-900">{meta.label}</p>
-                    <StatusBadge session={s} />
+                    {s.source === 'godaddy' ? (
+                      <GodaddyBadge lastRun={godaddyLastRun} />
+                    ) : (
+                      <StatusBadge session={s} />
+                    )}
                   </div>
                   <p className="text-sm text-gray-500">{meta.blurb}</p>
-                  {s.captured_at && (
-                    <p className="text-xs text-gray-400 mt-1">
-                      Connected {new Date(s.captured_at).toLocaleString()}
-                      {s.last_used_at &&
-                        ` · last sync ${new Date(s.last_used_at).toLocaleString()}`}
-                    </p>
-                  )}
-                  {s.last_failure_reason && (
-                    <p className="text-xs text-red-600 mt-1">
-                      Last failure: {s.last_failure_reason}
-                    </p>
+
+                  {s.source === 'godaddy' ? (
+                    godaddyLastRun ? (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Last upload:{' '}
+                        {new Date(godaddyLastRun.started_at).toLocaleString()}
+                        {godaddyLastRun.status && ` · ${godaddyLastRun.status}`}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-gray-400 mt-1">
+                        Waiting for first Cowork upload
+                      </p>
+                    )
+                  ) : (
+                    <>
+                      {s.captured_at && (
+                        <p className="text-xs text-gray-400 mt-1">
+                          Connected {new Date(s.captured_at).toLocaleString()}
+                          {s.last_used_at &&
+                            ` · last sync ${new Date(s.last_used_at).toLocaleString()}`}
+                        </p>
+                      )}
+                      {s.last_failure_reason && (
+                        <p className="text-xs text-red-600 mt-1">
+                          Last failure: {s.last_failure_reason}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
-                {s.source === 'gmail_oauth' ? (
+
+                {s.source === 'godaddy' ? (
+                  <span className="text-xs text-gray-400 italic">
+                    Local workflow
+                  </span>
+                ) : s.source === 'gmail_oauth' ? (
                   <Button
                     size="sm"
                     onClick={handleGmailConnect}
@@ -399,4 +428,36 @@ function RunStatusIcon({ status }: { status: string }) {
   if (status === 'running')
     return <RefreshCw className={clsx(common, 'text-blue-500 animate-spin')} />;
   return <ShieldCheck className={clsx(common, 'text-gray-400')} />;
+}
+
+function GodaddyBadge({ lastRun }: { lastRun: any }) {
+  if (!lastRun) {
+    return (
+      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
+        awaiting upload
+      </span>
+    );
+  }
+  // Fresh = uploaded within the last 36 hours
+  const ageMs = Date.now() - new Date(lastRun.started_at).getTime();
+  const fresh = ageMs < 36 * 60 * 60 * 1000;
+  if (lastRun.status === 'success' && fresh) {
+    return (
+      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+        synced
+      </span>
+    );
+  }
+  if (lastRun.status === 'failed') {
+    return (
+      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
+        last upload failed
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+      stale (no recent upload)
+    </span>
+  );
 }
