@@ -56,11 +56,24 @@ async def playwright_context_for_source(
     async with async_playwright() as pw:
         browser = await pw.chromium.launch(
             headless=headless,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
         context = await browser.new_context(
             storage_state=storage_state,
             accept_downloads=True,
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
+        )
+        await context.add_init_script(
+            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
         )
         page = await context.new_page()
         try:
