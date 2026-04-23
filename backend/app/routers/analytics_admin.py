@@ -167,8 +167,10 @@ async def list_recent_runs(
             "target_date": r.target_date.isoformat(),
             "location_id": r.location_id,
             "status": r.status,
-            "started_at": r.started_at.isoformat() if r.started_at else None,
-            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            # Stored as naive UTC; suffix 'Z' so browsers parse it as UTC
+            # rather than local time.
+            "started_at": r.started_at.isoformat() + "Z" if r.started_at else None,
+            "finished_at": r.finished_at.isoformat() + "Z" if r.finished_at else None,
             "records_ingested": r.records_ingested,
             "error_message": r.error_message,
             "notes": r.notes,

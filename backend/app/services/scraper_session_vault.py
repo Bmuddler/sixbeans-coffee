@@ -174,8 +174,9 @@ async def session_status(db: AsyncSession, source: str) -> dict:
             row.last_used_at is not None and
             (row.last_failure_at is None or row.last_used_at > row.last_failure_at)
         ),
-        "captured_at": row.captured_at.isoformat() if row.captured_at else None,
-        "last_used_at": row.last_used_at.isoformat() if row.last_used_at else None,
-        "last_failure_at": row.last_failure_at.isoformat() if row.last_failure_at else None,
+        # Stored as naive UTC; suffix 'Z' so browsers parse as UTC, not local.
+        "captured_at": row.captured_at.isoformat() + "Z" if row.captured_at else None,
+        "last_used_at": row.last_used_at.isoformat() + "Z" if row.last_used_at else None,
+        "last_failure_at": row.last_failure_at.isoformat() + "Z" if row.last_failure_at else None,
         "last_failure_reason": row.last_failure_reason,
     }
