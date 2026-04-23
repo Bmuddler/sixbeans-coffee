@@ -28,8 +28,9 @@ class TapMangoApiError(Exception):
 
 
 def _headers() -> dict[str, str]:
+    # TapMango's Open API uses standard Bearer auth.
     return {
-        "Authentication": f"ApiKey: {settings.tapmango_api_key}",
+        "Authorization": f"Bearer {settings.tapmango_api_key}",
         "Content-Type": "application/json",
     }
 
