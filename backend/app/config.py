@@ -1,4 +1,14 @@
+import os
+import sys
+
 from pydantic_settings import BaseSettings
+
+
+# Sentinel used by the original code as a placeholder. Any deploy still using
+# this string is refusing to boot — it indicates the operator forgot to set
+# a real JWT_SECRET_KEY in the environment, which would allow trivial token
+# forgery.
+_JWT_INSECURE_DEFAULT = "change-me-in-production"
 
 
 class Settings(BaseSettings):
@@ -9,8 +19,9 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite+aiosqlite:///./sixbeans.db"
 
-    # JWT
-    jwt_secret_key: str = "change-me-in-production"
+    # JWT — MUST be set via JWT_SECRET_KEY env var. The default placeholder
+    # is rejected at import time; never ship the app without a real secret.
+    jwt_secret_key: str = _JWT_INSECURE_DEFAULT
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 43200
     refresh_token_expire_days: int = 90
@@ -63,7 +74,28 @@ class Settings(BaseSettings):
     # Analytics health-check alerts (daily cron)
     analytics_alert_recipient: str = "logcastles@gmail.com"
 
+    # Shared secret that physical kiosk devices must send in an
+    # X-Kiosk-Secret header on every request to /api/kiosk/*. Leave empty
+    # in environments where the kiosk flow is unused.
+    kiosk_shared_secret: str = ""
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
+
+
+# H1 guard: refuse to boot with the insecure placeholder JWT secret.
+# The sole exception is debug mode (local dev w/ the default DB) where
+# we noisily warn instead of crashing so the dev experience isn't broken
+# on fresh clones. In any prod-ish deploy DEBUG is False.
+if settings.jwt_secret_key == _JWT_INSECURE_DEFAULT:
+    msg = (
+        "FATAL: JWT_SECRET_KEY is unset or matches the insecure default "
+        "('change-me-in-production'). Set a real value in your environment "
+        "before starting the app — otherwise token forgery is trivial."
+    )
+    if settings.debug:
+        print(f"WARNING: {msg}", file=sys.stderr)
+    else:
+        raise SystemExit(msg)

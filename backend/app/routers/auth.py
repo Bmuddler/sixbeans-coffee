@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.dependencies import get_current_user
-from app.models.user import User
+from app.dependencies import get_current_user, require_roles
+from app.models.user import User, UserRole
 from app.schemas.user import UserCreate, UserResponse
 from app.services.auth_service import (
     create_access_token,
@@ -151,7 +151,19 @@ async def change_password(
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+async def register(
+    user_data: UserCreate,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new user account.
+
+    Owner-only. The `role` field on the payload is IGNORED — new accounts
+    always start as `employee` and must be promoted explicitly by an owner
+    through the admin user-management flow. This prevents the historical
+    bug where `POST /auth/register` on a public deploy could mint owner
+    accounts by setting role=owner in the body.
+    """
     result = await db.execute(select(User).where(User.email == user_data.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -163,13 +175,14 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
     user = User(
         email=user_data.email, phone=user_data.phone,
         first_name=user_data.first_name, last_name=user_data.last_name,
-        role=user_data.role, hashed_password=hash_password(user_data.password),
+        role=UserRole.employee,  # force employee; owners promote via /users
+        hashed_password=hash_password(user_data.password),
         pin_last_four=user_data.pin_last_four, must_change_password=False,
     )
     db.add(user)
     await db.flush()
 
-    await log_action(db, user.id, "register", "user", user.id)
+    await log_action(db, current_user.id, "register_user", "user", user.id)
     return UserResponse(
         id=user.id, email=user.email, phone=user.phone,
         first_name=user.first_name, last_name=user.last_name,

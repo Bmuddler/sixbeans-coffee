@@ -680,9 +680,16 @@ async def elite_scorecards(
     prev_end = curr_start - timedelta(days=1)
     prev_start = prev_end - timedelta(days=span - 1)
 
+    # Resilient SystemSettings read — auto-create the row if missing so a
+    # fresh / post-wipe DB doesn't crash this endpoint, and fall back to
+    # conservative defaults if individual columns are NULL for any reason.
     settings_row = (await db.execute(select(SystemSettings).limit(1))).scalar_one_or_none()
-    burden = settings_row.labor_burden_multiplier if settings_row else 1.25
-    cogs_pct = settings_row.cogs_percent if settings_row else 0.22
+    if settings_row is None:
+        settings_row = SystemSettings(id=1)
+        db.add(settings_row)
+        await db.flush()
+    burden = getattr(settings_row, "labor_burden_multiplier", None) or 1.25
+    cogs_pct = getattr(settings_row, "cogs_percent", None) or 0.22
 
     locations = (await db.execute(
         select(Location).where(

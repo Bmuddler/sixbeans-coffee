@@ -157,6 +157,69 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS cogs_percent "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.22"
         ))
+
+        # H2: ensure unique constraints declared in the SQLAlchemy models
+        # actually exist on the live DB. create_all() only adds constraints
+        # when a table is first created, so tables that predate the
+        # `unique=True` declarations never got the enforcement — which is
+        # how duplicate canonical_short_name and duplicate godaddy_store_id
+        # rows were able to sneak in and cause the revenue-misrouting bugs.
+        # Each statement is idempotent via dynamic existence check.
+        async def _ensure_unique(table: str, column: str, name: str) -> None:
+            exists = await conn.execute(text(
+                "SELECT 1 FROM pg_constraint WHERE conname = :n"
+            ), {"n": name})
+            if exists.scalar_one_or_none():
+                return
+            # Soft-fail if the DB has lingering duplicates — we don't want
+            # to block boot. Log and move on; the SQL in the owner doc
+            # handles dedupe.
+            try:
+                await conn.execute(text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({column})"
+                ))
+                logger.info("Added missing unique constraint %s on %s(%s)", name, table, column)
+            except Exception as exc:
+                logger.warning(
+                    "Could not add unique constraint %s on %s(%s) — likely duplicate rows: %s",
+                    name, table, column, exc,
+                )
+
+        await _ensure_unique("locations", "canonical_short_name", "uq_locations_canonical_short_name")
+        await _ensure_unique("locations", "godaddy_store_id", "uq_locations_godaddy_store_id")
+        await _ensure_unique("locations", "tapmango_location_id", "uq_locations_tapmango_location_id")
+        await _ensure_unique("locations", "doordash_store_id", "uq_locations_doordash_store_id")
+
+        # Composite unique constraints
+        async def _ensure_composite_unique(table: str, columns: str, name: str) -> None:
+            exists = await conn.execute(text(
+                "SELECT 1 FROM pg_constraint WHERE conname = :n"
+            ), {"n": name})
+            if exists.scalar_one_or_none():
+                return
+            try:
+                await conn.execute(text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {name} UNIQUE ({columns})"
+                ))
+                logger.info("Added missing composite unique %s on %s(%s)", name, table, columns)
+            except Exception as exc:
+                logger.warning(
+                    "Could not add composite unique %s on %s(%s) — likely duplicates: %s",
+                    name, table, columns, exc,
+                )
+
+        await _ensure_composite_unique(
+            "daily_revenues", "location_id, date, channel",
+            "uq_daily_revenue_location_date_channel",
+        )
+        await _ensure_composite_unique(
+            "hourly_revenue", "location_id, date, hour, quarter, channel",
+            "uq_hourly_revenue_slot",
+        )
+        await _ensure_composite_unique(
+            "daily_labor", "location_id, date",
+            "uq_daily_labor_location_date",
+        )
         await conn.execute(text(
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS godaddy_terminal_ids "
             "VARCHAR(500)"
