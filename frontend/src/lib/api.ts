@@ -650,6 +650,18 @@ export const analyticsAdmin = {
 // Owner Insights dashboard
 // ============================================================
 
+// ---- Homebase timesheets upload (multi-file drag-and-drop) ----
+export const analyticsAdminUploads = {
+  homebaseTimesheets: async (files: File[]) => {
+    const form = new FormData();
+    for (const f of files) form.append('files', f, f.name);
+    const res = await api.post('/analytics/admin/ingest/homebase-timesheets', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
+};
+
 export type InsightsWindow =
   | { days: number }
   | { start_date: string; end_date?: string };

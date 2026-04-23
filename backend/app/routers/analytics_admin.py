@@ -25,14 +25,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies import require_roles
+from app.models.daily_labor import DailyLabor
 from app.models.daily_revenue import CHANNEL_GODADDY, CHANNEL_TAPMANGO, DailyRevenue
 from app.models.ingestion_run import (
-    IngestionRun, SOURCE_GODADDY, SOURCE_TAPMANGO_ORDERS,
+    IngestionRun, SOURCE_GODADDY, SOURCE_HOMEBASE, SOURCE_TAPMANGO_ORDERS,
     STATUS_SUCCESS, STATUS_FAILED,
 )
 from app.models.location import Location
 from app.models.user import User, UserRole
 from app.services.parsers.godaddy_excel import parse_godaddy_excel
+from app.services.parsers.homebase_timesheets_csv import parse_homebase_timesheets_csv
 from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
 from app.services.scraper_session_vault import (
     VaultError,
@@ -569,4 +571,132 @@ async def ingest_tapmango_csv(
         "stores_ingested": len(ingested),
         "unmapped_tapmango_ids": unmapped,
         "ingested": ingested,
+    }
+
+
+@router.post("/ingest/homebase-timesheets")
+async def ingest_homebase_timesheets(
+    files: list[UploadFile] = File(..., description="One or more Homebase timesheets CSVs (one per store)"),
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest Homebase timesheet CSV exports and upsert DailyLabor rows.
+
+    Accepts multiple files in a single request — one file per store per
+    date range is the expected pattern. Each file's row 0 identifies the
+    Homebase store which is mapped to our canonical_short_name.
+
+    Owner-only; no cron path (uploads are interactive via the admin UI
+    drag-and-drop zone until the kiosk portal replaces Homebase).
+    """
+    locations = (await db.execute(
+        select(Location).where(Location.canonical_short_name.isnot(None))
+    )).scalars().all()
+    by_short_name = {loc.canonical_short_name: loc for loc in locations}
+
+    per_file: list[dict] = []
+    overall_rows_ingested = 0
+    overall_date_min = None
+    overall_date_max = None
+
+    for file in files:
+        file_bytes = await file.read()
+        if not file_bytes:
+            per_file.append({"file": file.filename, "error": "empty file"})
+            continue
+
+        buckets, diag = parse_homebase_timesheets_csv(
+            file_bytes=file_bytes,
+            source_file=file.filename or "homebase_timesheets.csv",
+        )
+
+        if diag.get("error"):
+            per_file.append({"file": file.filename, "error": diag["error"]})
+            continue
+
+        # Upsert one DailyLabor per (store, date) bucket
+        per_store: list[dict] = []
+        unknown_short_names: list[str] = []
+        for b in buckets:
+            loc = by_short_name.get(b.location_short_name)
+            if not loc:
+                unknown_short_names.append(b.location_short_name)
+                continue
+
+            existing = (await db.execute(
+                select(DailyLabor).where(
+                    DailyLabor.location_id == loc.id,
+                    DailyLabor.date == b.date,
+                )
+            )).scalar_one_or_none()
+
+            if existing:
+                existing.total_hours = round(b.total_hours, 2)
+                existing.regular_hours = round(b.regular_hours, 2)
+                existing.ot_hours = round(b.ot_hours, 2)
+                existing.labor_cost = round(b.labor_cost, 2)
+                existing.headcount = len(b.employees)
+                existing.source_file = diag.get("source_file")
+                existing.updated_at = datetime.utcnow()
+            else:
+                db.add(DailyLabor(
+                    location_id=loc.id,
+                    date=b.date,
+                    total_hours=round(b.total_hours, 2),
+                    regular_hours=round(b.regular_hours, 2),
+                    ot_hours=round(b.ot_hours, 2),
+                    labor_cost=round(b.labor_cost, 2),
+                    headcount=len(b.employees),
+                    source_file=diag.get("source_file"),
+                ))
+
+            per_store.append({
+                "location": loc.name,
+                "canonical_short_name": b.location_short_name,
+                "date": b.date.isoformat(),
+                "total_hours": round(b.total_hours, 2),
+                "ot_hours": round(b.ot_hours, 2),
+                "labor_cost": round(b.labor_cost, 2),
+                "headcount": len(b.employees),
+            })
+
+            overall_rows_ingested += 1
+            if overall_date_min is None or b.date < overall_date_min:
+                overall_date_min = b.date
+            if overall_date_max is None or b.date > overall_date_max:
+                overall_date_max = b.date
+
+        per_file.append({
+            "file": file.filename,
+            "header_store": diag.get("header_store"),
+            "header_short": diag.get("header_short"),
+            "rows_ingested": len(per_store),
+            "excluded_rows": diag.get("excluded_rows", 0),
+            "unknown_short_names": unknown_short_names,
+            "days": per_store,
+        })
+
+    # Record one aggregate IngestionRun row for the batch
+    if overall_rows_ingested > 0:
+        run = IngestionRun(
+            source=SOURCE_HOMEBASE,
+            target_date=overall_date_max,
+            status=STATUS_SUCCESS,
+            records_ingested=overall_rows_ingested,
+            notes=f"{len(files)} files, days {overall_date_min.isoformat()}..{overall_date_max.isoformat()}",
+            finished_at=datetime.utcnow(),
+        )
+        db.add(run)
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "files_received": len(files),
+        "rows_ingested": overall_rows_ingested,
+        "date_range": {
+            "start": overall_date_min.isoformat() if overall_date_min else None,
+            "end": overall_date_max.isoformat() if overall_date_max else None,
+        },
+        "per_file": per_file,
     }

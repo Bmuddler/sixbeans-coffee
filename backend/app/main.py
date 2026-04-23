@@ -182,9 +182,28 @@ async def startup():
             ("14213 7th St", "SEVENTH_STREET",
              "42fa2bf7-6b6e-4f2a-a4b2-61db54d2043a",
              "Six Beans Coffee Co. - 7th Street", 12497, None),
+            # Bakery is a labor-only location (no direct POS revenue).
+            # Its address is a sentinel so the seed loop finds it; if a
+            # real physical address ever exists, update this value and
+            # the boot backfill will keep the row in sync.
+            ("Bakery (internal)", "BAKERY", None, None, None, None),
         ]
         all_locs = (await session.execute(select(Location))).scalars().all()
         by_address = {loc.address: loc for loc in all_locs}
+        # The Bakery is a labor-only location (no POS sales). Create it
+        # lazily if no row matches its sentinel address; downstream analytics
+        # route Adelia's Homebase shifts to this location.
+        if "Bakery (internal)" not in by_address:
+            bakery = Location(
+                name="Six Beans - Bakery",
+                address="Bakery (internal)",
+                canonical_short_name="BAKERY",
+                is_active=True,
+            )
+            session.add(bakery)
+            await session.flush()
+            all_locs = list(all_locs) + [bakery]
+            by_address[bakery.address] = bakery
         mapped_addresses = {row[0] for row in CANONICAL_MAPPINGS}
         targets: list[tuple[Location, str, str, str, int | None, int | None]] = []
         needs_update = False

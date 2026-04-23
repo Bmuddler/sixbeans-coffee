@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useRef, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
@@ -11,11 +11,13 @@ import {
   ShieldCheck,
   Mail,
   Cookie,
+  Upload,
+  Clock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
-import { analyticsAdmin, locations as locationsApi } from '@/lib/api';
+import { analyticsAdmin, analyticsAdminUploads, locations as locationsApi } from '@/lib/api';
 
 type SessionStatus = {
   source: string;
@@ -300,6 +302,9 @@ export function AnalyticsAdminPage() {
         </Card>
       )}
 
+      {/* Homebase timesheets upload */}
+      <HomebaseUploadCard onUploaded={() => qc.invalidateQueries({ queryKey: ['analytics-admin-runs'] })} />
+
       {/* Manual triggers + run history */}
       <Card>
         <div className="flex items-center justify-between mb-4">
@@ -468,5 +473,121 @@ function LocalWorkflowBadge({ lastRun }: { lastRun: any }) {
     <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
       stale (no recent upload)
     </span>
+  );
+}
+
+function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [result, setResult] = useState<any | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: (files: File[]) => analyticsAdminUploads.homebaseTimesheets(files),
+    onSuccess: (data) => {
+      setResult(data);
+      const rows = data?.rows_ingested ?? 0;
+      toast.success(`Ingested ${rows} day-store rows`);
+      onUploaded();
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail ?? 'Upload failed');
+    },
+  });
+
+  const accept = (fileList: FileList | File[]) => {
+    const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.csv'));
+    if (!files.length) {
+      toast.error('Drop one or more .csv Homebase timesheet exports');
+      return;
+    }
+    mutation.mutate(files);
+  };
+
+  return (
+    <Card>
+      <div className="flex items-center gap-2 mb-3">
+        <Clock className="h-5 w-5 text-blue-500" />
+        <h2 className="text-lg font-semibold">Homebase labor</h2>
+        <span className="text-xs text-gray-400">
+          Drop the weekly timesheet CSVs (one per store)
+        </span>
+      </div>
+
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => inputRef.current?.click()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') inputRef.current?.click();
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          if (e.dataTransfer.files?.length) accept(e.dataTransfer.files);
+        }}
+        className={clsx(
+          'border-2 border-dashed rounded-lg px-4 py-8 text-center cursor-pointer transition-colors',
+          dragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400',
+          mutation.isPending && 'opacity-50 pointer-events-none',
+        )}
+      >
+        <Upload className="h-7 w-7 text-gray-400 mx-auto mb-2" />
+        <p className="text-sm text-gray-700">
+          {mutation.isPending ? 'Uploading…' : 'Drag CSVs here, or click to pick files'}
+        </p>
+        <p className="text-xs text-gray-400 mt-1">
+          Export from Homebase → Timesheets → Export CSV, one file per location.
+        </p>
+        <input
+          ref={inputRef}
+          type="file"
+          accept=".csv,text/csv"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) accept(e.target.files);
+            e.target.value = '';
+          }}
+        />
+      </div>
+
+      {result && (
+        <div className="mt-4 space-y-2">
+          <p className="text-sm text-gray-700">
+            {result.rows_ingested} store-days ingested
+            {result.date_range?.start && result.date_range?.end &&
+              ` · ${result.date_range.start} → ${result.date_range.end}`}
+          </p>
+          <div className="divide-y divide-gray-100 border border-gray-100 rounded-md">
+            {result.per_file?.map((pf: any, i: number) => (
+              <div key={i} className="px-3 py-2 flex items-start gap-2">
+                {pf.error ? (
+                  <XCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-mono text-gray-700 truncate">{pf.file}</p>
+                  {pf.error ? (
+                    <p className="text-xs text-red-600">{pf.error}</p>
+                  ) : (
+                    <p className="text-xs text-gray-500">
+                      {pf.header_short} · {pf.rows_ingested} day-rows · {pf.excluded_rows} owner rows excluded
+                      {pf.unknown_short_names?.length > 0 &&
+                        ` · unknown store: ${pf.unknown_short_names.join(', ')}`}
+                    </p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }

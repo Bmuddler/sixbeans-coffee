@@ -29,5 +29,6 @@ from app.models.usfoods import (  # noqa: E402, F401
     USFoodsPriceHistory,
 )
 from app.models.daily_revenue import DailyRevenue  # noqa: E402, F401
+from app.models.daily_labor import DailyLabor  # noqa: E402, F401
 from app.models.ingestion_run import IngestionRun  # noqa: E402, F401
 from app.models.scraper_session import ScraperSession  # noqa: E402, F401
