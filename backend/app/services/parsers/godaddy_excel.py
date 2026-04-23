@@ -12,11 +12,12 @@ GoDaddy's real export is a multi-sheet workbook:
   - "Card Payment Tips by Employee"     - (some stores)
   - "Card Payments (N)"                 - PER-ORDER detail, N is the count
   - "Cash Payments (N)"                 - PER-ORDER detail
+  - "Other Purchases (N)"               - PER-ORDER detail (gift cards, etc.)
   - "Card Declines (N)"                 - (some stores)
   - "Cash Refunds (N)"                  - (some stores)
 
 Transaction rows live on sheets matching
-    ^(Card|Cash) Payments \\(\\d+\\)$
+    ^(Card|Cash) Payments \\(\\d+\\)$  or  ^Other Purchases \\(\\d+\\)$
 Each has headers: Date, Transaction ID, Status, Reference IDs, Channel,
 Terminal ID, Customer Details, Employee, Subtotal, Tip.
 
@@ -36,7 +37,10 @@ from app.services.parsers import ParsedRevenueRow
 logger = logging.getLogger(__name__)
 
 # Sheet names that contain per-order transaction rows we want to sum.
-DETAIL_SHEET_RE = re.compile(r"^(Card|Cash)\s+Payments\s+\(\d+\)\s*$", re.IGNORECASE)
+DETAIL_SHEET_RE = re.compile(
+    r"^(?:(?:Card|Cash)\s+Payments|Other\s+Purchases)\s+\(\d+\)\s*$",
+    re.IGNORECASE,
+)
 REFUND_SHEET_RE = re.compile(r"^(Card|Cash)\s+Refunds\s+\(\d+\)\s*$", re.IGNORECASE)
 
 
@@ -184,7 +188,7 @@ def parse_godaddy_excel(
 
     wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
 
-    gross = 0.0
+    subtotal_sum = 0.0
     tip = 0.0
     count = 0
     refund_total = 0.0
@@ -195,7 +199,7 @@ def parse_godaddy_excel(
         ws = wb[sheet_name]
         if DETAIL_SHEET_RE.match(sheet_name):
             sub, tp, c = _sum_detail_sheet(ws)
-            gross += sub
+            subtotal_sum += sub
             tip += tp
             count += c
             sheets_read.append(f"{sheet_name}:{c}")
@@ -206,8 +210,13 @@ def parse_godaddy_excel(
             if summary_net is None:
                 summary_net = _read_summary_total(ws)
 
-    # Net = gross + tip - refunds (matches how GoDaddy's summary sheet computes it)
-    net = gross + tip - refund_total
+    # GoDaddy's settlement report defines:
+    #   Total Payments = subtotal + tips  (what customers paid pre-refund)
+    #   Net Payments   = Total Payments - refunds
+    # Store `gross_revenue` as Total Payments so the dashboard reconciles
+    # directly with the settlement figure.
+    gross = subtotal_sum + tip
+    net = gross - refund_total
 
     if count == 0 and summary_net is None:
         logger.warning(
@@ -227,6 +236,7 @@ def parse_godaddy_excel(
         raw_notes={
             "source_file": source_file,
             "sheets_read": sheets_read,
+            "subtotal_sum": round(subtotal_sum, 2),
             "summary_net_from_workbook": summary_net,
             "refund_total": round(refund_total, 2) if refund_total else 0.0,
             "parsed_at": datetime.utcnow().isoformat(),
