@@ -212,22 +212,28 @@ async def startup():
         ))
 
     async with async_session() as session:
-        # Sync locations with SEED_LOCATIONS
+        # Sync locations with SEED_LOCATIONS — INSERT-ONLY.
+        #
+        # There was a catastrophic bug here: the previous implementation
+        # paired existing_locs[i] with SEED_LOCATIONS[i] by position and
+        # overwrote the existing row's name/address/etc. with the seed's
+        # values whenever the addresses didn't line up. Because DB
+        # iteration order is unstable (PostgreSQL makes no ordering
+        # guarantee without ORDER BY), that loop quietly rewrote every
+        # location row on boot, making revenue appear to "move" between
+        # shops even though daily_revenues.location_id never changed.
+        # The symptom was: the scorecards label each location_id with a
+        # different shop every few boots.
         existing_locs = (await session.execute(select(Location))).scalars().all()
         existing_addresses = {loc.address for loc in existing_locs}
         changed = False
-        for i, loc in enumerate(existing_locs):
-            if i < len(SEED_LOCATIONS) and loc.address != SEED_LOCATIONS[i]["address"]:
-                for key, val in SEED_LOCATIONS[i].items():
-                    setattr(loc, key, val)
-                changed = True
         for seed_loc in SEED_LOCATIONS:
             if seed_loc["address"] not in existing_addresses:
                 session.add(Location(**seed_loc, is_active=True))
                 changed = True
         if changed:
             await session.commit()
-            logger.info("Locations synced.")
+            logger.info("Locations synced (new rows added).")
 
         # Backfill canonical short names and external IDs for analytics ingestion.
         # Matches on address (unique per location) to avoid ambiguity.
