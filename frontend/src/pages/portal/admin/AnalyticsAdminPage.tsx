@@ -1,4 +1,4 @@
-import { useRef, useState, useMemo } from 'react';
+import { useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { clsx } from 'clsx';
@@ -7,58 +7,23 @@ import {
   AlertTriangle,
   XCircle,
   RefreshCw,
-  Link2,
-  ShieldCheck,
   Mail,
-  Cookie,
   Upload,
-  Clock,
+  ShieldCheck,
 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Modal } from '@/components/ui/Modal';
 import { analyticsAdmin, analyticsAdminUploads, locations as locationsApi } from '@/lib/api';
 
-type SessionStatus = {
-  source: string;
-  connected: boolean;
-  captured_at: string | null;
-  last_used_at: string | null;
-  last_failure_at: string | null;
-  last_failure_reason: string | null;
-};
-
-const SOURCE_META: Record<
-  string,
-  { label: string; blurb: string; loginHint: string; icon: typeof Cookie }
-> = {
-  godaddy: {
-    label: 'GoDaddy Commerce',
-    blurb: 'Local Cowork task uploads Transactions Reports nightly',
-    loginHint: 'https://spa.commerce.godaddy.com/home/store',
-    icon: Cookie,
-  },
-  tapmango_portal: {
-    label: 'TapMango Portal',
-    blurb: 'Local Cowork task uploads Orders CSV nightly',
-    loginHint: 'https://portal.tapmango.com/Orders/Index',
-    icon: Cookie,
-  },
-  gmail_oauth: {
-    label: 'Gmail (DoorDash watcher)',
-    blurb: 'Weekly DoorDash email watcher on blend556@gmail.com',
-    loginHint: 'Uses Google OAuth consent',
-    icon: Mail,
-  },
+const SOURCE_LABELS: Record<string, { label: string; icon: typeof Upload; color: string }> = {
+  godaddy:  { label: 'GoDaddy Commerce',     icon: Upload, color: '#5CB832' },
+  tapmango: { label: 'TapMango Orders',      icon: Upload, color: '#F59E0B' },
+  doordash: { label: 'DoorDash Financials',  icon: Upload, color: '#EF4444' },
+  homebase: { label: 'Homebase Timesheets',  icon: Upload, color: '#3B82F6' },
 };
 
 export function AnalyticsAdminPage() {
   const qc = useQueryClient();
-
-  const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['analytics-admin-sessions'],
-    queryFn: analyticsAdmin.listSessions,
-  });
 
   const { data: runs, isLoading: runsLoading } = useQuery({
     queryKey: ['analytics-admin-runs'],
@@ -76,28 +41,11 @@ export function AnalyticsAdminPage() {
     queryFn: locationsApi.list,
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: ({ source, json }: { source: 'godaddy' | 'tapmango_portal'; json: any }) =>
-      analyticsAdmin.uploadSession(source, json),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['analytics-admin-sessions'] });
-      setUploadModal(null);
-      setUploadText('');
-      toast.success('Session saved');
-    },
-    onError: (err: any) =>
-      toast.error(err?.response?.data?.detail ?? 'Failed to save session'),
-  });
-
   const triggerMutation = useMutation({
     mutationFn: (source: string) => analyticsAdmin.triggerRun(source),
     onSuccess: (data: any) => {
       qc.invalidateQueries({ queryKey: ['analytics-admin-runs'] });
-      if (data?.status === 'skipped') {
-        toast(data.reason ?? 'Use Render dashboard to trigger', { icon: 'ℹ️' });
-      } else {
-        toast.success(`Ran — status: ${data?.status ?? 'done'}`);
-      }
+      toast.success(`Ran — status: ${data?.status ?? 'done'}`);
     },
     onError: () => toast.error('Run failed'),
   });
@@ -113,147 +61,26 @@ export function AnalyticsAdminPage() {
     onError: () => toast.error('Failed to save mapping'),
   });
 
-  const [uploadModal, setUploadModal] = useState<
-    null | 'godaddy' | 'tapmango_portal'
-  >(null);
-  const [uploadText, setUploadText] = useState('');
-
-  const sessions = sessionsData?.sources ?? [];
   const unmapped = unknownData?.unmapped ?? [];
-
-  const handleGmailConnect = async () => {
-    try {
-      const res = await analyticsAdmin.gmailOauthStart();
-      window.location.href = res.url;
-    } catch {
-      toast.error('Could not start Gmail consent flow');
-    }
-  };
-
-  const handleUploadSubmit = () => {
-    if (!uploadModal) return;
-    let parsed: any;
-    try {
-      parsed = JSON.parse(uploadText);
-    } catch {
-      toast.error('Invalid JSON — paste the full storage_state object');
-      return;
-    }
-    uploadMutation.mutate({ source: uploadModal, json: parsed });
-  };
-
-  const gmailStatus = sessions.find((s) => s.source === 'gmail_oauth');
-
-  // GoDaddy and TapMango Portal are driven by Cowork uploads, not the
-  // Render-side cookie vault — their status comes from recent IngestionRun
-  // rows (tapmango_orders is the backend source key for TapMango Portal).
-  const godaddyLastRun = runs?.find((r: any) => r.source === 'godaddy');
-  const tapmangoLastRun = runs?.find((r: any) => r.source === 'tapmango_orders');
-  const localWorkflowSources = new Set(['godaddy', 'tapmango_portal']);
-  const lastRunBySource: Record<string, any> = {
-    godaddy: godaddyLastRun,
-    tapmango_portal: tapmangoLastRun,
-  };
 
   return (
     <div className="max-w-5xl mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 mb-1">Analytics Ingestion</h1>
         <p className="text-sm text-gray-500">
-          Connect the 3 data sources and monitor nightly sync status.
+          Drop your daily files — GoDaddy, TapMango, DoorDash, Homebase — in one place.
+          Re-uploading the same day silently replaces the old data, never doubles.
         </p>
       </div>
 
-      {/* Data source connections */}
-      <Card>
-        <h2 className="text-lg font-semibold mb-4">Data Sources</h2>
-        <div className="space-y-3">
-          {sessionsLoading && <p className="text-sm text-gray-500">Loading…</p>}
-          {sessions.map((s: SessionStatus) => {
-            const meta = SOURCE_META[s.source];
-            if (!meta) return null;
-            const Icon = meta.icon;
-            return (
-              <div
-                key={s.source}
-                className="flex items-center gap-4 border border-gray-200 rounded-lg p-4"
-              >
-                <div className="h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center">
-                  <Icon className="h-5 w-5 text-gray-600" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <p className="font-medium text-gray-900">{meta.label}</p>
-                    {localWorkflowSources.has(s.source) ? (
-                      <LocalWorkflowBadge lastRun={lastRunBySource[s.source]} />
-                    ) : (
-                      <StatusBadge session={s} />
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-500">{meta.blurb}</p>
+      <UnifiedUploadCard
+        onUploaded={() => {
+          qc.invalidateQueries({ queryKey: ['analytics-admin-runs'] });
+          qc.invalidateQueries({ queryKey: ['analytics-admin-unknown'] });
+        }}
+      />
 
-                  {localWorkflowSources.has(s.source) ? (
-                    lastRunBySource[s.source] ? (
-                      <p className="text-xs text-gray-400 mt-1">
-                        Last upload:{' '}
-                        {new Date(lastRunBySource[s.source].started_at).toLocaleString()}
-                        {lastRunBySource[s.source].status &&
-                          ` · ${lastRunBySource[s.source].status}`}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-gray-400 mt-1">
-                        Waiting for first Cowork upload
-                      </p>
-                    )
-                  ) : (
-                    <>
-                      {s.captured_at && (
-                        <p className="text-xs text-gray-400 mt-1">
-                          Connected {new Date(s.captured_at).toLocaleString()}
-                          {s.last_used_at &&
-                            ` · last sync ${new Date(s.last_used_at).toLocaleString()}`}
-                        </p>
-                      )}
-                      {s.last_failure_reason && (
-                        <p className="text-xs text-red-600 mt-1">
-                          Last failure: {s.last_failure_reason}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {localWorkflowSources.has(s.source) ? (
-                  <span className="text-xs text-gray-400 italic">
-                    Local workflow
-                  </span>
-                ) : s.source === 'gmail_oauth' ? (
-                  <Button
-                    size="sm"
-                    onClick={handleGmailConnect}
-                    icon={<Link2 className="h-4 w-4" />}
-                  >
-                    {s.connected ? 'Reconnect' : 'Connect Gmail'}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() =>
-                      setUploadModal(s.source as 'godaddy' | 'tapmango_portal')
-                    }
-                    icon={<Cookie className="h-4 w-4" />}
-                  >
-                    {s.connected ? 'Replace cookies' : 'Upload cookies'}
-                  </Button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      {/* Unknown stores */}
+      {/* Unknown stores (mapping) */}
       {unmapped.length > 0 && (
         <Card>
           <div className="flex items-center gap-2 mb-4">
@@ -302,26 +129,20 @@ export function AnalyticsAdminPage() {
         </Card>
       )}
 
-      {/* Homebase timesheets upload */}
-      <HomebaseUploadCard onUploaded={() => qc.invalidateQueries({ queryKey: ['analytics-admin-runs'] })} />
-
-      {/* Manual triggers + run history */}
+      {/* Run history */}
       <Card>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Recent runs</h2>
           <div className="flex gap-2">
-            {['tapmango_api', 'doordash'].map((src) => (
-              <Button
-                key={src}
-                size="sm"
-                variant="secondary"
-                onClick={() => triggerMutation.mutate(src)}
-                loading={triggerMutation.isPending && triggerMutation.variables === src}
-                icon={<RefreshCw className="h-4 w-4" />}
-              >
-                Run {src.replace('_', ' ')}
-              </Button>
-            ))}
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => triggerMutation.mutate('tapmango_api')}
+              loading={triggerMutation.isPending && triggerMutation.variables === 'tapmango_api'}
+              icon={<RefreshCw className="h-4 w-4" />}
+            >
+              Run TapMango API health-check
+            </Button>
           </div>
         </div>
 
@@ -358,135 +179,29 @@ export function AnalyticsAdminPage() {
           </div>
         )}
       </Card>
-
-      {/* Upload cookies modal */}
-      <Modal
-        open={!!uploadModal}
-        onClose={() => {
-          setUploadModal(null);
-          setUploadText('');
-        }}
-        title={
-          uploadModal
-            ? `Upload ${SOURCE_META[uploadModal].label} cookies`
-            : 'Upload cookies'
-        }
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600">
-            1. Log in at{' '}
-            <span className="font-mono text-xs bg-gray-100 px-1 py-0.5 rounded">
-              {uploadModal ? SOURCE_META[uploadModal].loginHint : ''}
-            </span>
-          </p>
-          <p className="text-sm text-gray-600">
-            2. Open DevTools → Application → Cookies → right-click → Export, OR
-            run{' '}
-            <code className="text-xs bg-gray-100 px-1 py-0.5 rounded">
-              context.storage_state()
-            </code>{' '}
-            from a Playwright session
-          </p>
-          <p className="text-sm text-gray-600">
-            3. Paste the full JSON below:
-          </p>
-          <textarea
-            className="w-full h-48 border border-gray-300 rounded-lg p-2 font-mono text-xs"
-            value={uploadText}
-            onChange={(e) => setUploadText(e.target.value)}
-            placeholder='{"cookies": [...], "origins": [...]}'
-          />
-          <Button
-            onClick={handleUploadSubmit}
-            loading={uploadMutation.isPending}
-            disabled={!uploadText.trim()}
-            className="w-full"
-          >
-            Save cookies
-          </Button>
-        </div>
-      </Modal>
     </div>
   );
 }
 
-function StatusBadge({ session }: { session: SessionStatus }) {
-  if (!session.captured_at) {
-    return (
-      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-        not connected
-      </span>
-    );
-  }
-  if (session.last_failure_at && (!session.last_used_at ||
-    new Date(session.last_failure_at) > new Date(session.last_used_at))) {
-    return (
-      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-        needs reconnect
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-      connected
-    </span>
-  );
-}
+// -------------------------------------------------------------
+// Unified drop zone — one handler for all 4 sources
+// -------------------------------------------------------------
 
-function RunStatusIcon({ status }: { status: string }) {
-  const common = 'h-5 w-5 flex-shrink-0';
-  if (status === 'success') return <CheckCircle2 className={clsx(common, 'text-green-500')} />;
-  if (status === 'partial')
-    return <AlertTriangle className={clsx(common, 'text-orange-500')} />;
-  if (status === 'failed') return <XCircle className={clsx(common, 'text-red-500')} />;
-  if (status === 'running')
-    return <RefreshCw className={clsx(common, 'text-blue-500 animate-spin')} />;
-  return <ShieldCheck className={clsx(common, 'text-gray-400')} />;
-}
-
-function LocalWorkflowBadge({ lastRun }: { lastRun: any }) {
-  if (!lastRun) {
-    return (
-      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
-        awaiting upload
-      </span>
-    );
-  }
-  // Fresh = uploaded within the last 36 hours
-  const ageMs = Date.now() - new Date(lastRun.started_at).getTime();
-  const fresh = ageMs < 36 * 60 * 60 * 1000;
-  if (lastRun.status === 'success' && fresh) {
-    return (
-      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-        synced
-      </span>
-    );
-  }
-  if (lastRun.status === 'failed') {
-    return (
-      <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">
-        last upload failed
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
-      stale (no recent upload)
-    </span>
-  );
-}
-
-function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
+function UnifiedUploadCard({ onUploaded }: { onUploaded: () => void }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [dragging, setDragging] = useState(false);
   const [result, setResult] = useState<any | null>(null);
 
   const mutation = useMutation({
-    mutationFn: (files: File[]) => analyticsAdminUploads.homebaseTimesheets(files),
+    mutationFn: (files: File[]) => analyticsAdminUploads.batch(files),
     onSuccess: (data) => {
       setResult(data);
-      const rows = data?.rows_ingested ?? 0;
-      toast.success(`Ingested ${rows} day-store rows`);
+      const ok = (data.per_file ?? []).filter((pf: any) => !pf.error).length;
+      const fail = (data.per_file ?? []).length - ok;
+      toast.success(
+        `Uploaded ${ok} file${ok === 1 ? '' : 's'}` +
+          (fail > 0 ? ` · ${fail} with errors` : ''),
+      );
       onUploaded();
     },
     onError: (err: any) => {
@@ -495,23 +210,24 @@ function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
   });
 
   const accept = (fileList: FileList | File[]) => {
-    const files = Array.from(fileList).filter((f) => f.name.toLowerCase().endsWith('.csv'));
-    if (!files.length) {
-      toast.error('Drop one or more .csv Homebase timesheet exports');
-      return;
-    }
+    const files = Array.from(fileList);
+    if (!files.length) return;
     mutation.mutate(files);
   };
 
   return (
     <Card>
-      <div className="flex items-center gap-2 mb-3">
-        <Clock className="h-5 w-5 text-blue-500" />
-        <h2 className="text-lg font-semibold">Homebase labor</h2>
-        <span className="text-xs text-gray-400">
-          Drop the weekly timesheet CSVs (one per store)
-        </span>
+      <div className="flex items-center gap-2 mb-2">
+        <Upload className="h-5 w-5 text-blue-500" />
+        <h2 className="text-lg font-semibold">Drop your daily data</h2>
       </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Mix and match. Filename tells the server which source it is:
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">godaddy_&lt;uuid&gt;_YYYY-MM-DD.xlsx</code> ·
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">Orders_YYYYMMDD_YYYYMMDD_.csv</code> ·
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">financial_YYYY-MM-DD_YYYY-MM-DD_*.zip</code> ·
+        <code className="mx-1 text-[11px] bg-gray-100 px-1 rounded">*_timesheets.csv</code>
+      </p>
 
       <div
         role="button"
@@ -531,22 +247,22 @@ function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
           if (e.dataTransfer.files?.length) accept(e.dataTransfer.files);
         }}
         className={clsx(
-          'border-2 border-dashed rounded-lg px-4 py-8 text-center cursor-pointer transition-colors',
+          'border-2 border-dashed rounded-lg px-4 py-10 text-center cursor-pointer transition-colors',
           dragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400',
           mutation.isPending && 'opacity-50 pointer-events-none',
         )}
       >
-        <Upload className="h-7 w-7 text-gray-400 mx-auto mb-2" />
+        <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
         <p className="text-sm text-gray-700">
-          {mutation.isPending ? 'Uploading…' : 'Drag CSVs here, or click to pick files'}
+          {mutation.isPending ? 'Uploading…' : 'Drag files here, or click to pick'}
         </p>
         <p className="text-xs text-gray-400 mt-1">
-          Export from Homebase → Timesheets → Export CSV, one file per location.
+          GoDaddy Excel · TapMango CSV · DoorDash ZIP · Homebase CSV
         </p>
         <input
           ref={inputRef}
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xlsx,.zip"
           multiple
           className="hidden"
           onChange={(e) => {
@@ -558,11 +274,6 @@ function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
 
       {result && (
         <div className="mt-4 space-y-2">
-          <p className="text-sm text-gray-700">
-            {result.rows_ingested} store-days ingested
-            {result.date_range?.start && result.date_range?.end &&
-              ` · ${result.date_range.start} → ${result.date_range.end}`}
-          </p>
           <div className="divide-y divide-gray-100 border border-gray-100 rounded-md">
             {result.per_file?.map((pf: any, i: number) => (
               <div key={i} className="px-3 py-2 flex items-start gap-2">
@@ -572,22 +283,65 @@ function HomebaseUploadCard({ onUploaded }: { onUploaded: () => void }) {
                   <CheckCircle2 className="h-4 w-4 text-green-500 flex-shrink-0 mt-0.5" />
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-mono text-gray-700 truncate">{pf.file}</p>
+                  <p className="text-sm font-mono text-gray-700 truncate">
+                    {pf.file}
+                    {pf.source && (
+                      <span
+                        className="ml-2 text-[10px] px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: (SOURCE_LABELS[pf.source]?.color ?? '#999') + '22',
+                          color: SOURCE_LABELS[pf.source]?.color ?? '#666',
+                        }}
+                      >
+                        {SOURCE_LABELS[pf.source]?.label ?? pf.source}
+                      </span>
+                    )}
+                  </p>
                   {pf.error ? (
                     <p className="text-xs text-red-600">{pf.error}</p>
                   ) : (
                     <p className="text-xs text-gray-500">
-                      {pf.header_short} · {pf.rows_ingested} day-rows · {pf.excluded_rows} owner rows excluded
-                      {pf.unknown_short_names?.length > 0 &&
-                        ` · unknown store: ${pf.unknown_short_names.join(', ')}`}
+                      {pf.source === 'godaddy' &&
+                        `${pf.location} · ${pf.date} · $${pf.gross?.toFixed?.(2)} · ${pf.txns} txns`}
+                      {pf.source === 'tapmango' &&
+                        `${pf.date} · ${pf.stores} store${pf.stores === 1 ? '' : 's'}`}
+                      {pf.source === 'doordash' &&
+                        `${pf.stores} store${pf.stores === 1 ? '' : 's'} · ${pf.date_range ?? ''}`}
+                      {pf.source === 'homebase' &&
+                        `${pf.header_store} · ${pf.rows_ingested} day-rows · ${pf.excluded_rows} owner rows excluded`}
                     </p>
                   )}
                 </div>
               </div>
             ))}
           </div>
+          {result.unmapped_ids && Object.keys(result.unmapped_ids).length > 0 && (
+            <div className="text-xs bg-orange-50 border border-orange-200 text-orange-800 rounded-md p-3">
+              <p className="font-medium mb-1">Unmapped store IDs — map below in "New stores detected":</p>
+              {Object.entries(result.unmapped_ids).map(([src, ids]: any) => (
+                <div key={src}>
+                  <span className="font-mono">{src}:</span> {(ids as string[]).join(', ')}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Card>
   );
+}
+
+// -------------------------------------------------------------
+// Icons
+// -------------------------------------------------------------
+
+function RunStatusIcon({ status }: { status: string }) {
+  const common = 'h-5 w-5 flex-shrink-0';
+  if (status === 'success') return <CheckCircle2 className={clsx(common, 'text-green-500')} />;
+  if (status === 'partial')
+    return <AlertTriangle className={clsx(common, 'text-orange-500')} />;
+  if (status === 'failed') return <XCircle className={clsx(common, 'text-red-500')} />;
+  if (status === 'running')
+    return <RefreshCw className={clsx(common, 'text-blue-500 animate-spin')} />;
+  return <ShieldCheck className={clsx(common, 'text-gray-400')} />;
 }

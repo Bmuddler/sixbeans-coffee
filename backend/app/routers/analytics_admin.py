@@ -34,6 +34,7 @@ from app.models.ingestion_run import (
 )
 from app.models.location import Location
 from app.models.user import User, UserRole
+from app.services.parsers.doordash_detailed_csv import parse_doordash_detailed_csv
 from app.services.parsers.godaddy_excel import parse_godaddy_excel
 
 
@@ -750,4 +751,251 @@ async def ingest_homebase_timesheets(
             "end": overall_date_max.isoformat() if overall_date_max else None,
         },
         "per_file": per_file,
+    }
+
+
+# ----------------------------------------------------------------------
+# Unified ingest - one drag-and-drop zone handles all four sources
+# ----------------------------------------------------------------------
+
+import io as _ingest_io
+import re as _ingest_re
+import zipfile as _ingest_zipfile
+
+_GODADDY_RE = _ingest_re.compile(
+    r"^godaddy_(?P<uuid>[0-9a-f-]{36})_(?P<date>\d{4}-\d{2}-\d{2})\.xlsx$",
+    _ingest_re.IGNORECASE,
+)
+_TAPMANGO_RE = _ingest_re.compile(
+    r"^Orders_(?P<start>\d{8})_(?P<end>\d{8})_?\.csv$",
+    _ingest_re.IGNORECASE,
+)
+_DOORDASH_RE = _ingest_re.compile(
+    r"^financial_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2}).*\.zip$",
+    _ingest_re.IGNORECASE,
+)
+_HOMEBASE_RE = _ingest_re.compile(
+    r"_(?P<start>\d{4}-\d{2}-\d{2})_(?P<end>\d{4}-\d{2}-\d{2})_timesheets\.csv$",
+    _ingest_re.IGNORECASE,
+)
+
+
+def _detect_source(name: str) -> str | None:
+    lname = name.split("/")[-1]
+    if _GODADDY_RE.match(lname):
+        return "godaddy"
+    if _DOORDASH_RE.match(lname):
+        return "doordash"
+    if _HOMEBASE_RE.search(lname):
+        return "homebase"
+    if _TAPMANGO_RE.match(lname):
+        return "tapmango"
+    return None
+
+
+async def _upsert_daily_revenue(db, loc_id: int, row) -> None:
+    """Silent-replace upsert on (location_id, date, channel)."""
+    existing = (await db.execute(
+        select(DailyRevenue).where(
+            DailyRevenue.location_id == loc_id,
+            DailyRevenue.date == row.date,
+            DailyRevenue.channel == row.channel,
+        )
+    )).scalar_one_or_none()
+    if existing:
+        existing.gross_revenue = row.gross_revenue
+        existing.net_revenue = row.net_revenue
+        existing.discount_total = row.discount_total
+        existing.tip_total = row.tip_total
+        existing.tax_total = row.tax_total
+        existing.commission_total = row.commission_total
+        existing.fee_total = row.fee_total
+        existing.transaction_count = row.transaction_count
+        existing.source_file = row.raw_notes.get("source_file")
+        existing.updated_at = datetime.utcnow()
+    else:
+        db.add(DailyRevenue(
+            location_id=loc_id,
+            date=row.date,
+            channel=row.channel,
+            gross_revenue=row.gross_revenue,
+            net_revenue=row.net_revenue,
+            discount_total=row.discount_total,
+            tip_total=row.tip_total,
+            tax_total=row.tax_total,
+            commission_total=row.commission_total,
+            fee_total=row.fee_total,
+            transaction_count=row.transaction_count,
+            source_file=row.raw_notes.get("source_file"),
+        ))
+
+
+@router.post("/ingest/batch")
+async def ingest_batch(
+    files: list[UploadFile] = File(..., description="Mix of GoDaddy / TapMango / DoorDash / Homebase files"),
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unified drag-and-drop ingestion.
+
+    Detects the source of each uploaded file from its filename and
+    routes to the appropriate parser. All writes silently replace
+    whatever data already exists for the (location, date, channel)
+    slice - no double-counting on reupload.
+    """
+    locations = (await db.execute(select(Location))).scalars().all()
+    by_godaddy_id = {loc.godaddy_store_id: loc for loc in locations if loc.godaddy_store_id}
+    by_tapmango_id = {str(loc.tapmango_location_id): loc for loc in locations if loc.tapmango_location_id}
+    by_doordash_id = {str(loc.doordash_store_id): loc for loc in locations if loc.doordash_store_id}
+    by_short_name = {loc.canonical_short_name: loc for loc in locations if loc.canonical_short_name}
+
+    per_file: list[dict] = []
+    unmapped_counts: dict[str, set[str]] = defaultdict(set)
+
+    for upload in files:
+        name = upload.filename or ""
+        source = _detect_source(name)
+        data = await upload.read()
+        if not data:
+            per_file.append({"file": name, "source": source, "error": "empty file"})
+            continue
+        if not source:
+            per_file.append({"file": name, "source": None, "error": "unknown file type"})
+            continue
+
+        try:
+            if source == "godaddy":
+                m = _GODADDY_RE.match(name.split("/")[-1])
+                uuid = m.group("uuid")
+                target_date = datetime.strptime(m.group("date"), "%Y-%m-%d").date()
+                loc = by_godaddy_id.get(uuid)
+                if not loc:
+                    unmapped_counts["godaddy"].add(uuid)
+                    per_file.append({"file": name, "source": source,
+                                     "error": f"unmapped godaddy_store_id={uuid}"})
+                    continue
+                parsed = parse_godaddy_excel(
+                    file_bytes=data, source_file=name,
+                    store_label=loc.godaddy_dropdown_label or loc.name,
+                    target_date=target_date,
+                )
+                for row in parsed:
+                    await _upsert_daily_revenue(db, loc.id, row)
+                    await _upsert_hourly_rows(db, loc.id, row.raw_notes.get("hourly_rows") or [])
+                per_file.append({
+                    "file": name, "source": source,
+                    "location": loc.name, "date": target_date.isoformat(),
+                    "gross": parsed[0].gross_revenue if parsed else 0,
+                    "txns": parsed[0].transaction_count if parsed else 0,
+                })
+
+            elif source == "tapmango":
+                m = _TAPMANGO_RE.match(name.split("/")[-1])
+                target_date = datetime.strptime(m.group("start"), "%Y%m%d").date()
+                from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
+                parsed = parse_tapmango_orders_csv(
+                    file_bytes=data, source_file=name, target_date=target_date,
+                )
+                stores = 0
+                for row in parsed:
+                    loc = by_tapmango_id.get(row.external_store_id)
+                    if not loc:
+                        unmapped_counts["tapmango"].add(row.external_store_id)
+                        continue
+                    await _upsert_daily_revenue(db, loc.id, row)
+                    await _upsert_hourly_rows(db, loc.id, row.raw_notes.get("hourly_rows") or [])
+                    stores += 1
+                per_file.append({
+                    "file": name, "source": source, "date": target_date.isoformat(),
+                    "stores": stores,
+                })
+
+            elif source == "doordash":
+                with _ingest_zipfile.ZipFile(_ingest_io.BytesIO(data)) as zf:
+                    detailed_name = next(
+                        (n for n in zf.namelist() if "DETAILED_TRANSACTIONS" in n.upper()
+                         and n.lower().endswith(".csv")),
+                        None,
+                    )
+                    if not detailed_name:
+                        per_file.append({"file": name, "source": source,
+                                         "error": "no DETAILED_TRANSACTIONS CSV in zip"})
+                        continue
+                    csv_bytes = zf.read(detailed_name)
+                parsed = parse_doordash_detailed_csv(
+                    file_bytes=csv_bytes, source_file=f"{name}:{detailed_name}",
+                )
+                stores_touched: set[int] = set()
+                dates: set = set()
+                for row in parsed:
+                    loc = by_doordash_id.get(row.external_store_id)
+                    if not loc:
+                        unmapped_counts["doordash"].add(row.external_store_id)
+                        continue
+                    await _upsert_daily_revenue(db, loc.id, row)
+                    await _upsert_hourly_rows(db, loc.id, row.raw_notes.get("hourly_rows") or [])
+                    stores_touched.add(loc.id)
+                    dates.add(row.date)
+                per_file.append({
+                    "file": name, "source": source,
+                    "stores": len(stores_touched),
+                    "date_range": (f"{min(dates).isoformat()} -> {max(dates).isoformat()}"
+                                   if dates else None),
+                })
+
+            elif source == "homebase":
+                from app.services.parsers.homebase_timesheets_csv import parse_homebase_timesheets_csv
+                buckets, diag = parse_homebase_timesheets_csv(
+                    file_bytes=data, source_file=name,
+                )
+                if diag.get("error"):
+                    per_file.append({"file": name, "source": source, "error": diag["error"]})
+                    continue
+                rows_ingested = 0
+                for b in buckets:
+                    loc = by_short_name.get(b.location_short_name)
+                    if not loc:
+                        unmapped_counts["homebase"].add(b.location_short_name)
+                        continue
+                    existing = (await db.execute(
+                        select(DailyLabor).where(
+                            DailyLabor.location_id == loc.id, DailyLabor.date == b.date,
+                        )
+                    )).scalar_one_or_none()
+                    if existing:
+                        existing.total_hours = round(b.total_hours, 2)
+                        existing.regular_hours = round(b.regular_hours, 2)
+                        existing.ot_hours = round(b.ot_hours, 2)
+                        existing.labor_cost = round(b.labor_cost, 2)
+                        existing.headcount = len(b.employees)
+                        existing.source_file = diag.get("source_file")
+                        existing.updated_at = datetime.utcnow()
+                    else:
+                        db.add(DailyLabor(
+                            location_id=loc.id, date=b.date,
+                            total_hours=round(b.total_hours, 2),
+                            regular_hours=round(b.regular_hours, 2),
+                            ot_hours=round(b.ot_hours, 2),
+                            labor_cost=round(b.labor_cost, 2),
+                            headcount=len(b.employees),
+                            source_file=diag.get("source_file"),
+                        ))
+                    rows_ingested += 1
+                per_file.append({
+                    "file": name, "source": source,
+                    "header_store": diag.get("header_short"),
+                    "rows_ingested": rows_ingested,
+                    "excluded_rows": diag.get("excluded_rows", 0),
+                })
+        except Exception as exc:
+            logger.exception("Batch ingest failed for %s", name)
+            per_file.append({"file": name, "source": source, "error": str(exc)[:400]})
+
+    await db.commit()
+
+    return {
+        "ok": True,
+        "files_received": len(files),
+        "per_file": per_file,
+        "unmapped_ids": {k: sorted(v) for k, v in unmapped_counts.items() if v},
     }

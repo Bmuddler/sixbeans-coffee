@@ -650,16 +650,23 @@ export const analyticsAdmin = {
 // Owner Insights dashboard
 // ============================================================
 
-// ---- Homebase timesheets upload (multi-file drag-and-drop) ----
+// ---- Unified drag-and-drop upload (GoDaddy / TapMango / DoorDash / Homebase) ----
 export const analyticsAdminUploads = {
-  homebaseTimesheets: async (files: File[]) => {
+  batch: async (files: File[]) => {
     const form = new FormData();
     for (const f of files) form.append('files', f, f.name);
-    const res = await api.post('/analytics/admin/ingest/homebase-timesheets', form, {
+    const res = await api.post('/analytics/admin/ingest/batch', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
-    return res.data;
+    return res.data as {
+      ok: boolean;
+      files_received: number;
+      per_file: any[];
+      unmapped_ids: Record<string, string[]>;
+    };
   },
+  // Kept for back-compat with anything still pointing at the old route.
+  homebaseTimesheets: async (files: File[]) => analyticsAdminUploads.batch(files),
 };
 
 // ---- Editable expenses admin page ----
