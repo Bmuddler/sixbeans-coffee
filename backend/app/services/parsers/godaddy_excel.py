@@ -97,14 +97,14 @@ def _sum_detail_sheet(ws) -> tuple[float, float, int]:
             break
 
         # A valid transaction row has a transaction ID if that column exists
-        if txn_id_col is not None:
+        if txn_id_col is not None and txn_id_col < len(row):
             tid = row[txn_id_col]
             if tid is None or str(tid).strip() == "":
                 continue
 
-        if subtotal_col is not None:
+        if subtotal_col is not None and subtotal_col < len(row):
             subtotal_sum += _as_float(row[subtotal_col])
-        if tip_col is not None:
+        if tip_col is not None and tip_col < len(row):
             tip_sum += _as_float(row[tip_col])
         count += 1
 
@@ -112,15 +112,23 @@ def _sum_detail_sheet(ws) -> tuple[float, float, int]:
 
 
 def _sum_refund_sheet(ws) -> float:
-    """Return the total refunded amount on a Card/Cash Refunds sheet."""
+    """Return the refunded amount from a Card/Cash Refunds sheet as a POSITIVE
+    number (i.e. abs of the subtotal column values — GoDaddy writes them
+    as negatives already, but we want the magnitude).
+
+    Sheet layout has extra cols (Surcharge, Total) after Tip, so we find
+    the 'Subtotal' column by header name, not by position.
+    """
     rows = list(ws.iter_rows(values_only=True))
     header_idx = _find_header_row(rows)
     if header_idx is None:
         return 0.0
+
     headers = [str(c).strip().lower() if c is not None else "" for c in rows[header_idx]]
-    # Amount column can be 'Amount', 'Refund Amount', or 'Subtotal'
+
+    # Prefer 'Total' on refund sheets (includes surcharge), fall back to Subtotal
     amt_col = None
-    for candidate in ("amount", "refund amount", "subtotal"):
+    for candidate in ("total", "amount", "refund amount", "subtotal"):
         if candidate in headers:
             amt_col = headers.index(candidate)
             break
@@ -134,7 +142,9 @@ def _sum_refund_sheet(ws) -> float:
         first = str(row[0]).strip().lower() if row[0] is not None else ""
         if first == "total":
             break
-        total += _as_float(row[amt_col])
+        # GoDaddy refunds are stored as negative numbers; abs() so our
+        # caller can subtract a positive amount.
+        total += abs(_as_float(row[amt_col] if amt_col < len(row) else 0))
     return total
 
 
