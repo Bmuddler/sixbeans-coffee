@@ -33,6 +33,7 @@ import { SettingsPage } from '@/pages/portal/SettingsPage';
 import { SupplyOrderPage } from '@/pages/portal/SupplyOrderPage';
 import { USFoodsPage } from '@/pages/portal/USFoodsPage';
 import { AnalyticsAdminPage } from '@/pages/portal/admin/AnalyticsAdminPage';
+import { InsightsPage } from '@/pages/portal/InsightsPage';
 
 export function App() {
   return (
@@ -117,6 +118,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
               <USFoodsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/insights"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+              <InsightsPage />
             </ProtectedRoute>
           }
         />

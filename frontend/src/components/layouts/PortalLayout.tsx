@@ -22,6 +22,7 @@ import {
   ShoppingCart,
   Truck,
   BarChart3,
+  TrendingUp,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
@@ -37,6 +38,12 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { to: '/portal/dashboard', label: 'Dashboard', icon: <LayoutDashboard className="h-5 w-5" /> },
+  {
+    to: '/portal/insights',
+    label: 'Insights',
+    icon: <TrendingUp className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
+  },
   { to: '/portal/schedule', label: 'Schedule', icon: <Calendar className="h-5 w-5" /> },
   { to: '/portal/time-off', label: 'Time Off', icon: <Palmtree className="h-5 w-5" /> },
   { to: '/portal/shift-swaps', label: 'Shift Swaps', icon: <ArrowLeftRight className="h-5 w-5" /> },

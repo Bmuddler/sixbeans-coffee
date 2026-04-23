@@ -1,0 +1,450 @@
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { clsx } from 'clsx';
+import {
+  TrendingUp, TrendingDown, AlertTriangle, CheckCircle2, XCircle,
+  DollarSign, Receipt, Store, ChevronRight,
+} from 'lucide-react';
+import { Card } from '@/components/ui/Card';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import { Modal } from '@/components/ui/Modal';
+import { insights } from '@/lib/api';
+
+const WINDOW_OPTIONS = [
+  { days: 1, label: 'Today' },
+  { days: 7, label: 'Last 7 days' },
+  { days: 28, label: 'Last 28 days' },
+  { days: 90, label: 'Last 90 days' },
+];
+
+const CHANNEL_COLORS: Record<string, string> = {
+  godaddy: '#5CB832',
+  tapmango: '#F59E0B',
+  doordash: '#EF4444',
+};
+
+const CHANNEL_LABEL: Record<string, string> = {
+  godaddy: 'In-store',
+  tapmango: 'TapMango',
+  doordash: 'DoorDash',
+};
+
+export function InsightsPage() {
+  const [days, setDays] = useState(7);
+  const [drillDownId, setDrillDownId] = useState<number | null>(null);
+
+  const { data: pulse, isLoading: pulseLoading } = useQuery({
+    queryKey: ['insights-pulse', days],
+    queryFn: () => insights.companyPulse(days),
+  });
+
+  const { data: scorecardsData, isLoading: scorecardsLoading } = useQuery({
+    queryKey: ['insights-scorecards', days],
+    queryFn: () => insights.storeScorecards(days),
+  });
+
+  const { data: inboxData } = useQuery({
+    queryKey: ['insights-inbox'],
+    queryFn: insights.actionInbox,
+    refetchInterval: 60000,
+  });
+
+  const scorecards = scorecardsData?.scorecards ?? [];
+  const actions = inboxData?.actions ?? [];
+
+  return (
+    <div className="max-w-7xl mx-auto p-6 space-y-6">
+      {/* Header + window picker */}
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-1">Company Insights</h1>
+          <p className="text-sm text-gray-500">
+            Revenue and trends across all 6 shops
+          </p>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {WINDOW_OPTIONS.map((opt) => (
+            <button
+              key={opt.days}
+              onClick={() => setDays(opt.days)}
+              className={clsx(
+                'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
+                days === opt.days ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* DoorDash freshness banner */}
+      {pulse?.doordash_data_through && (
+        <div className="flex items-center gap-2 text-xs text-gray-500 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+          <span>
+            DoorDash data current through{' '}
+            <strong>
+              {new Date(pulse.doordash_data_through + 'T00:00:00').toLocaleDateString()}
+            </strong>{' '}
+            (updates weekly on Mondays)
+          </span>
+        </div>
+      )}
+
+      {/* Company Pulse */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <PulseCard
+          label="Gross Revenue"
+          value={pulse?.current?.gross}
+          delta={pulse?.deltas?.gross_pct}
+          icon={<DollarSign className="h-5 w-5" />}
+          format="money"
+          loading={pulseLoading}
+        />
+        <PulseCard
+          label="Net Revenue"
+          value={pulse?.current?.net}
+          delta={pulse?.deltas?.net_pct}
+          icon={<DollarSign className="h-5 w-5" />}
+          format="money"
+          loading={pulseLoading}
+        />
+        <PulseCard
+          label="Transactions"
+          value={pulse?.current?.transactions}
+          delta={pulse?.deltas?.transactions_pct}
+          icon={<Receipt className="h-5 w-5" />}
+          format="int"
+          loading={pulseLoading}
+        />
+      </div>
+
+      {/* Channel breakdown */}
+      {pulse?.current?.by_channel && (
+        <Card>
+          <h2 className="text-lg font-semibold mb-4">Revenue by channel</h2>
+          <ChannelBars byChannel={pulse.current.by_channel} />
+        </Card>
+      )}
+
+      {/* Action inbox */}
+      {actions.length > 0 && (
+        <Card>
+          <div className="flex items-center gap-2 mb-4">
+            <AlertTriangle className="h-5 w-5 text-orange-500" />
+            <h2 className="text-lg font-semibold">Action Inbox</h2>
+            <span className="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">
+              {actions.length}
+            </span>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {actions.map((a, i) => (
+              <ActionRow key={i} action={a} />
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Store scorecards */}
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Stores</h2>
+        {scorecardsLoading ? (
+          <LoadingSpinner />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {scorecards.map((s: any) => (
+              <StoreCard
+                key={s.location_id}
+                scorecard={s}
+                onClick={() => setDrillDownId(s.location_id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Store drill-down */}
+      <StoreDrillDown
+        locationId={drillDownId}
+        onClose={() => setDrillDownId(null)}
+      />
+    </div>
+  );
+}
+
+// -------------------------------------------------------------
+// Sub-components
+// -------------------------------------------------------------
+
+function PulseCard({
+  label, value, delta, icon, format, loading,
+}: {
+  label: string;
+  value: number | undefined;
+  delta: number | null | undefined;
+  icon: React.ReactNode;
+  format: 'money' | 'int';
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <Card>
+        <LoadingSpinner />
+      </Card>
+    );
+  }
+
+  const formatted = format === 'money'
+    ? `$${(value ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+    : (value ?? 0).toLocaleString();
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <div className="h-10 w-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600">
+          {icon}
+        </div>
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">{label}</p>
+          <p className="text-xl font-bold text-gray-900">{formatted}</p>
+        </div>
+        {delta != null && (
+          <div
+            className={clsx(
+              'flex items-center gap-1 text-sm font-medium',
+              delta >= 0 ? 'text-green-600' : 'text-red-600',
+            )}
+          >
+            {delta >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+            {delta > 0 ? '+' : ''}{delta}%
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function ChannelBars({ byChannel }: { byChannel: Record<string, any> }) {
+  const entries = Object.entries(byChannel);
+  const max = Math.max(1, ...entries.map(([, v]: any) => v.gross));
+
+  return (
+    <div className="space-y-3">
+      {entries.map(([ch, v]: any) => (
+        <div key={ch}>
+          <div className="flex justify-between text-sm mb-1">
+            <span className="font-medium text-gray-700">
+              {CHANNEL_LABEL[ch] ?? ch}
+            </span>
+            <span className="text-gray-500">
+              ${v.gross.toLocaleString()} · {v.txns} txns
+            </span>
+          </div>
+          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${(v.gross / max) * 100}%`,
+                backgroundColor: CHANNEL_COLORS[ch] ?? '#6B7280',
+              }}
+            />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StoreCard({
+  scorecard,
+  onClick,
+}: {
+  scorecard: any;
+  onClick: () => void;
+}) {
+  const hasData = scorecard.current_gross > 0 || scorecard.current_transactions > 0;
+
+  return (
+    <Card
+      className="cursor-pointer hover:shadow-md transition-shadow"
+      onClick={onClick}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-gray-900 truncate">{scorecard.name}</h3>
+          <p className="text-xs text-gray-400 font-mono">
+            {scorecard.canonical_short_name}
+          </p>
+        </div>
+        <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
+      </div>
+
+      {!hasData ? (
+        <p className="text-sm text-gray-400 italic">No data yet for this window</p>
+      ) : (
+        <>
+          <div className="flex items-baseline justify-between mb-2">
+            <div>
+              <p className="text-2xl font-bold text-gray-900">
+                ${scorecard.current_gross.toLocaleString()}
+              </p>
+              <p className="text-xs text-gray-500">
+                {scorecard.current_transactions.toLocaleString()} transactions
+              </p>
+            </div>
+            {scorecard.wow_pct != null && (
+              <div
+                className={clsx(
+                  'flex items-center gap-1 text-sm font-medium',
+                  scorecard.wow_pct >= 0 ? 'text-green-600' : 'text-red-600',
+                )}
+              >
+                {scorecard.wow_pct >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                {scorecard.wow_pct > 0 ? '+' : ''}{scorecard.wow_pct}%
+              </div>
+            )}
+          </div>
+
+          <ChannelDots byChannel={scorecard.by_channel} />
+        </>
+      )}
+
+      <div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-100">
+        <SourceDot connected={scorecard.has_godaddy} label="GoDaddy" color="#5CB832" />
+        <SourceDot connected={scorecard.has_tapmango} label="TapMango" color="#F59E0B" />
+        <SourceDot connected={scorecard.has_doordash} label="DoorDash" color="#EF4444" />
+      </div>
+    </Card>
+  );
+}
+
+function ChannelDots({ byChannel }: { byChannel: Record<string, any> }) {
+  const total = Object.values(byChannel).reduce((s: number, v: any) => s + v.gross, 0);
+  if (!total) return null;
+  return (
+    <div className="flex gap-1 h-1.5 rounded-full overflow-hidden bg-gray-100">
+      {Object.entries(byChannel).map(([ch, v]: any) => (
+        <div
+          key={ch}
+          style={{
+            width: `${(v.gross / total) * 100}%`,
+            backgroundColor: CHANNEL_COLORS[ch] ?? '#6B7280',
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SourceDot({
+  connected,
+  label,
+  color,
+}: {
+  connected: boolean;
+  label: string;
+  color: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1 text-[10px] text-gray-500"
+      title={`${label}: ${connected ? 'connected' : 'not set up'}`}
+    >
+      <span
+        className={clsx('h-1.5 w-1.5 rounded-full', !connected && 'opacity-30')}
+        style={{ backgroundColor: color }}
+      />
+      {label}
+    </div>
+  );
+}
+
+function ActionRow({ action }: { action: any }) {
+  const Icon =
+    action.severity === 'error' ? XCircle :
+    action.severity === 'warning' ? AlertTriangle : CheckCircle2;
+  const color =
+    action.severity === 'error' ? 'text-red-500' :
+    action.severity === 'warning' ? 'text-orange-500' : 'text-green-500';
+
+  return (
+    <div className="py-3 flex items-start gap-3">
+      <Icon className={clsx('h-5 w-5 flex-shrink-0 mt-0.5', color)} />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-gray-900">{action.title}</p>
+        {action.detail && (
+          <p className="text-sm text-gray-500 mt-0.5">{action.detail}</p>
+        )}
+        {action.occurred_at && (
+          <p className="text-xs text-gray-400 mt-0.5">
+            {new Date(action.occurred_at + (action.occurred_at.length <= 10 ? 'T00:00:00' : '')).toLocaleString()}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StoreDrillDown({
+  locationId,
+  onClose,
+}: {
+  locationId: number | null;
+  onClose: () => void;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['insights-store-daily', locationId],
+    queryFn: () => insights.storeDaily(locationId!, 30),
+    enabled: !!locationId,
+  });
+
+  const series = data?.series ?? [];
+  const max = useMemo(
+    () => Math.max(1, ...series.map((s: any) => s.gross)),
+    [series],
+  );
+
+  return (
+    <Modal
+      open={!!locationId}
+      onClose={onClose}
+      title="Store details — last 30 days"
+      size="lg"
+    >
+      {isLoading ? (
+        <LoadingSpinner />
+      ) : series.length === 0 ? (
+        <p className="text-sm text-gray-500">No data yet for this store.</p>
+      ) : (
+        <div className="space-y-4">
+          <div className="overflow-x-auto">
+            <div className="flex items-end gap-1 h-40 min-w-fit">
+              {series.map((s: any) => (
+                <div
+                  key={s.date}
+                  className="flex flex-col items-center gap-1"
+                  title={`${s.date}: $${s.gross.toLocaleString()} · ${s.transactions} txns`}
+                >
+                  <div
+                    className="w-4 rounded-t transition-all"
+                    style={{
+                      height: `${(s.gross / max) * 140}px`,
+                      backgroundColor: '#5CB832',
+                      minHeight: '2px',
+                    }}
+                  />
+                  <span className="text-[9px] text-gray-400 rotate-45 origin-left">
+                    {s.date.slice(5)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 border-t border-gray-100 pt-3">
+            Bars show gross revenue per day. Hover for details.
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}

@@ -17,6 +17,7 @@ from app.models.system_settings import SystemSettings
 from app.routers import (
     analytics_admin,
     applications,
+    insights,
     audit,
     auth,
     cash_drawer,
@@ -71,6 +72,7 @@ app.include_router(supply_orders.router, prefix="/api/supply-orders", tags=["Sup
 app.include_router(supply_reports.router, prefix="/api/supply-reports", tags=["Supply Reports"])
 app.include_router(usfoods.router, prefix="/api/usfoods", tags=["US Foods"])
 app.include_router(analytics_admin.router, prefix="/api", tags=["Analytics Admin"])
+app.include_router(insights.router, prefix="/api", tags=["Insights"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},

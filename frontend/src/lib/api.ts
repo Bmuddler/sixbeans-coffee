@@ -646,4 +646,22 @@ export const analyticsAdmin = {
     api.post('/analytics/admin/mapping', { source, external_id, location_id }).then((r) => r.data),
 };
 
+// ============================================================
+// Owner Insights dashboard
+// ============================================================
+
+export const insights = {
+  companyPulse: (days: number = 7) =>
+    api.get('/insights/company-pulse', { params: { days } }).then((r) => r.data),
+
+  storeScorecards: (days: number = 7) =>
+    api.get('/insights/store-scorecards', { params: { days } }).then((r) => r.data),
+
+  storeDaily: (locationId: number, days: number = 30) =>
+    api.get(`/insights/store/${locationId}/daily`, { params: { days } }).then((r) => r.data),
+
+  actionInbox: () =>
+    api.get('/insights/action-inbox').then((r) => r.data as { actions: any[] }),
+};
+
 export default api;
