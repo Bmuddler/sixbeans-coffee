@@ -25,13 +25,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.dependencies import require_roles
-from app.models.daily_revenue import CHANNEL_GODADDY, DailyRevenue
+from app.models.daily_revenue import CHANNEL_GODADDY, CHANNEL_TAPMANGO, DailyRevenue
 from app.models.ingestion_run import (
-    IngestionRun, SOURCE_GODADDY, STATUS_SUCCESS, STATUS_FAILED,
+    IngestionRun, SOURCE_GODADDY, SOURCE_TAPMANGO_ORDERS,
+    STATUS_SUCCESS, STATUS_FAILED,
 )
 from app.models.location import Location
 from app.models.user import User, UserRole
 from app.services.parsers.godaddy_excel import parse_godaddy_excel
+from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
 from app.services.scraper_session_vault import (
     VaultError,
     save_session,
@@ -438,4 +440,133 @@ async def ingest_godaddy_excel(
         "date": parsed_date.isoformat(),
         "gross_revenue": parsed_rows[0].gross_revenue,
         "transactions": parsed_rows[0].transaction_count,
+    }
+
+
+@router.post("/ingest/tapmango-csv")
+async def ingest_tapmango_csv(
+    file: UploadFile = File(...),
+    target_date: str = Form(..., description="YYYY-MM-DD — the report's date"),
+    x_cron_key: str | None = Header(None, alias="X-Cron-Key"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest a TapMango Portal Orders CSV covering every store for one day.
+
+    Unlike GoDaddy, one CSV holds rows for every location — each row
+    carries a `Location Id` that maps to `Location.tapmango_location_id`.
+    The parser fans out into one aggregated row per store; this endpoint
+    then upserts a DailyRevenue for each.
+
+    Called by the Cowork task on the owner's PC after it downloads the
+    daily export from portal.tapmango.com/Orders/Index.
+
+    Auth: X-Cron-Key matches settings.jwt_secret_key.
+    """
+    if not x_cron_key or not hmac.compare_digest(x_cron_key, settings.jwt_secret_key):
+        raise HTTPException(status_code=401, detail="Invalid cron key")
+
+    try:
+        parsed_date = datetime.strptime(target_date, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="target_date must be YYYY-MM-DD")
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    run = IngestionRun(
+        source=SOURCE_TAPMANGO_ORDERS,
+        target_date=parsed_date,
+    )
+    db.add(run)
+    await db.flush()
+
+    try:
+        parsed_rows = parse_tapmango_orders_csv(
+            file_bytes=file_bytes,
+            source_file=file.filename or f"tapmango_orders_{parsed_date}.csv",
+            target_date=parsed_date,
+        )
+
+        if not parsed_rows:
+            run.status = STATUS_FAILED
+            run.error_message = "Parser returned no rows for this target_date"
+            run.finished_at = datetime.utcnow()
+            await db.commit()
+            raise HTTPException(status_code=422, detail=run.error_message)
+
+        # Preload the location map: tapmango_location_id -> Location.
+        locs = (await db.execute(
+            select(Location).where(Location.tapmango_location_id.isnot(None))
+        )).scalars().all()
+        by_tm_id = {str(loc.tapmango_location_id): loc for loc in locs}
+
+        ingested: list[dict] = []
+        unmapped: list[str] = []
+
+        for row in parsed_rows:
+            loc = by_tm_id.get(row.external_store_id)
+            if not loc:
+                unmapped.append(row.external_store_id)
+                continue
+
+            existing = (await db.execute(
+                select(DailyRevenue).where(
+                    DailyRevenue.location_id == loc.id,
+                    DailyRevenue.date == row.date,
+                    DailyRevenue.channel == row.channel,
+                )
+            )).scalar_one_or_none()
+
+            if existing:
+                existing.gross_revenue = row.gross_revenue
+                existing.net_revenue = row.net_revenue
+                existing.discount_total = row.discount_total
+                existing.tip_total = row.tip_total
+                existing.tax_total = row.tax_total
+                existing.transaction_count = row.transaction_count
+                existing.source_file = row.raw_notes.get("source_file")
+                existing.updated_at = datetime.utcnow()
+            else:
+                db.add(DailyRevenue(
+                    location_id=loc.id,
+                    date=row.date,
+                    channel=row.channel,
+                    gross_revenue=row.gross_revenue,
+                    net_revenue=row.net_revenue,
+                    discount_total=row.discount_total,
+                    tip_total=row.tip_total,
+                    tax_total=row.tax_total,
+                    transaction_count=row.transaction_count,
+                    source_file=row.raw_notes.get("source_file"),
+                ))
+            ingested.append({
+                "location": loc.name,
+                "tapmango_location_id": row.external_store_id,
+                "gross_revenue": row.gross_revenue,
+                "transactions": row.transaction_count,
+            })
+
+        run.status = STATUS_SUCCESS
+        run.records_ingested = len(ingested)
+        if unmapped:
+            run.notes = f"Unmapped tapmango store IDs (add to mapping): {', '.join(unmapped)}"
+        run.finished_at = datetime.utcnow()
+        await db.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("TapMango CSV upload failed for %s", parsed_date)
+        run.status = STATUS_FAILED
+        run.error_message = str(exc)[:500]
+        run.finished_at = datetime.utcnow()
+        await db.commit()
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    return {
+        "ok": True,
+        "date": parsed_date.isoformat(),
+        "stores_ingested": len(ingested),
+        "unmapped_tapmango_ids": unmapped,
+        "ingested": ingested,
     }
