@@ -27,6 +27,7 @@ from app.database import get_db
 from app.dependencies import require_roles
 from app.models.daily_labor import DailyLabor
 from app.models.daily_revenue import CHANNEL_GODADDY, CHANNEL_TAPMANGO, DailyRevenue
+from app.models.hourly_revenue import HourlyRevenue
 from app.models.ingestion_run import (
     IngestionRun, SOURCE_GODADDY, SOURCE_HOMEBASE, SOURCE_TAPMANGO_ORDERS,
     STATUS_SUCCESS, STATUS_FAILED,
@@ -34,6 +35,46 @@ from app.models.ingestion_run import (
 from app.models.location import Location
 from app.models.user import User, UserRole
 from app.services.parsers.godaddy_excel import parse_godaddy_excel
+
+
+async def _upsert_hourly_rows(db, location_id: int, hourly_rows: list[dict]) -> int:
+    """Upsert HourlyRevenue rows for a given location. Returns count written.
+
+    Replaces any existing rows for the (location, date, channel) days
+    present in `hourly_rows` so a re-upload produces the current slice
+    rather than adding on top of stale quarters. Safe for empty input.
+    """
+    if not hourly_rows:
+        return 0
+
+    # Collect the (date, channel) pairs we're about to write so we can
+    # clear any stale quarter rows for those days first.
+    pairs = {(r["date"], r["channel"]) for r in hourly_rows}
+    for d, ch in pairs:
+        stale = (await db.execute(
+            select(HourlyRevenue).where(
+                HourlyRevenue.location_id == location_id,
+                HourlyRevenue.date == d,
+                HourlyRevenue.channel == ch,
+            )
+        )).scalars().all()
+        for row in stale:
+            await db.delete(row)
+    await db.flush()
+
+    count = 0
+    for r in hourly_rows:
+        db.add(HourlyRevenue(
+            location_id=location_id,
+            date=r["date"],
+            hour=r["hour"],
+            quarter=r["quarter"],
+            channel=r["channel"],
+            txns=r["txns"],
+            gross=r["gross"],
+        ))
+        count += 1
+    return count
 from app.services.parsers.homebase_timesheets_csv import parse_homebase_timesheets_csv
 from app.services.parsers.tapmango_orders_csv import parse_tapmango_orders_csv
 from app.services.scraper_session_vault import (
@@ -422,6 +463,11 @@ async def ingest_godaddy_excel(
                     source_file=row.raw_notes.get("source_file"),
                 ))
 
+            # Hourly heatmap rows for this (location, day)
+            await _upsert_hourly_rows(
+                db, loc.id, row.raw_notes.get("hourly_rows") or [],
+            )
+
         run.status = STATUS_SUCCESS
         run.records_ingested = len(parsed_rows)
         run.finished_at = datetime.utcnow()
@@ -542,6 +588,11 @@ async def ingest_tapmango_csv(
                     transaction_count=row.transaction_count,
                     source_file=row.raw_notes.get("source_file"),
                 ))
+            # Hourly heatmap rows for this (location, day)
+            await _upsert_hourly_rows(
+                db, loc.id, row.raw_notes.get("hourly_rows") or [],
+            )
+
             ingested.append({
                 "location": loc.name,
                 "tapmango_location_id": row.external_store_id,

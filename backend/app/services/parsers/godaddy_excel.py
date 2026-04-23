@@ -28,6 +28,7 @@ We aggregate those sheets and cross-check the total against
 import io
 import logging
 import re
+from collections import defaultdict
 from datetime import date as date_cls, datetime
 from typing import Any
 
@@ -67,16 +68,45 @@ def _find_header_row(rows: list[tuple]) -> int | None:
     return None
 
 
-def _sum_detail_sheet(ws) -> tuple[float, float, int]:
-    """Return (subtotal, tip, count) by reading one Card/Cash Payments sheet.
+HourBucketKey = tuple[date_cls, int, int]  # (date, hour 0-23, quarter 0-3)
 
-    Stops at the 'Total' summary row that GoDaddy appends at the bottom.
+
+def _parse_gd_datetime(val: Any) -> datetime | None:
+    """GoDaddy writes 'M/D/YYYY, H:MM AM' in the Date column."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    s = str(val).strip()
+    if not s:
+        return None
+    # Comma before time, e.g. "4/21/2026, 6:44 AM"
+    for fmt in (
+        "%m/%d/%Y, %I:%M %p",
+        "%m/%d/%Y, %H:%M",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%Y %I:%M %p",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y",
+    ):
+        try:
+            return datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _sum_detail_sheet(ws) -> tuple[float, float, int, dict[HourBucketKey, tuple[int, float]]]:
+    """Return (subtotal, tip, count, hourly_buckets) for one Card/Cash/Other Purchases sheet.
+
+    hourly_buckets maps (date, hour, quarter) -> (txns, gross) using the row
+    timestamps so the 15-min heatmap can reconstruct traffic patterns.
     """
     rows = list(ws.iter_rows(values_only=True))
     header_idx = _find_header_row(rows)
     if header_idx is None:
         logger.warning("Sheet '%s': header row not found", ws.title)
-        return 0.0, 0.0, 0
+        return 0.0, 0.0, 0, {}
 
     headers = [str(c).strip() if c is not None else "" for c in rows[header_idx]]
     # Case-insensitive column lookup
@@ -84,6 +114,7 @@ def _sum_detail_sheet(ws) -> tuple[float, float, int]:
     for i, h in enumerate(headers):
         col_idx[h.lower()] = i
 
+    date_col = col_idx.get("date")
     subtotal_col = col_idx.get("subtotal")
     tip_col = col_idx.get("tip")
     txn_id_col = col_idx.get("transaction id")
@@ -91,6 +122,7 @@ def _sum_detail_sheet(ws) -> tuple[float, float, int]:
     subtotal_sum = 0.0
     tip_sum = 0.0
     count = 0
+    buckets: dict[HourBucketKey, list] = defaultdict(lambda: [0, 0.0])
 
     for row in rows[header_idx + 1:]:
         if not row or all(v is None or v == "" for v in row):
@@ -106,13 +138,25 @@ def _sum_detail_sheet(ws) -> tuple[float, float, int]:
             if tid is None or str(tid).strip() == "":
                 continue
 
+        row_subtotal = 0.0
+        row_tip = 0.0
         if subtotal_col is not None and subtotal_col < len(row):
-            subtotal_sum += _as_float(row[subtotal_col])
+            row_subtotal = _as_float(row[subtotal_col])
+            subtotal_sum += row_subtotal
         if tip_col is not None and tip_col < len(row):
-            tip_sum += _as_float(row[tip_col])
+            row_tip = _as_float(row[tip_col])
+            tip_sum += row_tip
         count += 1
 
-    return subtotal_sum, tip_sum, count
+        # Bucket into (date, hour, quarter)
+        ts = _parse_gd_datetime(row[date_col] if date_col is not None and date_col < len(row) else None)
+        if ts is not None:
+            key = (ts.date(), ts.hour, ts.minute // 15)
+            b = buckets[key]
+            b[0] += 1
+            b[1] += row_subtotal + row_tip  # customer-paid total for this txn
+
+    return subtotal_sum, tip_sum, count, {k: tuple(v) for k, v in buckets.items()}
 
 
 def _sum_refund_sheet(ws) -> float:
@@ -194,14 +238,19 @@ def parse_godaddy_excel(
     refund_total = 0.0
     summary_net: float | None = None
     sheets_read: list[str] = []
+    hourly: dict[HourBucketKey, list] = defaultdict(lambda: [0, 0.0])
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         if DETAIL_SHEET_RE.match(sheet_name):
-            sub, tp, c = _sum_detail_sheet(ws)
+            sub, tp, c, sheet_hourly = _sum_detail_sheet(ws)
             subtotal_sum += sub
             tip += tp
             count += c
+            for k, (bt, bg) in sheet_hourly.items():
+                entry = hourly[k]
+                entry[0] += bt
+                entry[1] += bg
             sheets_read.append(f"{sheet_name}:{c}")
         elif REFUND_SHEET_RE.match(sheet_name):
             refund_total += _sum_refund_sheet(ws)
@@ -225,6 +274,16 @@ def parse_godaddy_excel(
         )
         return []
 
+    # Flatten hourly buckets into a list of dicts for the caller to upsert.
+    hourly_rows = [
+        {
+            "date": d, "hour": h, "quarter": q,
+            "channel": CHANNEL_GODADDY,
+            "txns": bt, "gross": round(bg, 2),
+        }
+        for (d, h, q), (bt, bg) in hourly.items()
+    ]
+
     row = ParsedRevenueRow(
         external_store_id=store_label,
         channel=CHANNEL_GODADDY,
@@ -240,6 +299,7 @@ def parse_godaddy_excel(
             "summary_net_from_workbook": summary_net,
             "refund_total": round(refund_total, 2) if refund_total else 0.0,
             "parsed_at": datetime.utcnow().isoformat(),
+            "hourly_rows": hourly_rows,
         },
     )
     return [row]

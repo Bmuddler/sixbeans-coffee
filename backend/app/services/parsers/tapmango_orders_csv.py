@@ -113,6 +113,24 @@ def parse_tapmango_orders_csv(
                  "discount": 0.0, "count": 0, "rejected": 0,
                  "location_name": ""}
     )
+    # (store_id, date, hour, quarter) -> [txns, gross] for the heatmap.
+    hourly_buckets: dict[tuple[str, date_cls, int, int], list] = defaultdict(lambda: [0, 0.0])
+
+    def _parse_order_datetime(val: str | None):
+        if not val:
+            return None
+        s = val.strip()
+        for fmt in (
+            "%m/%d/%Y %I:%M:%S %p",
+            "%m/%d/%Y %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d %H:%M:%S",
+        ):
+            try:
+                return datetime.strptime(s, fmt)
+            except ValueError:
+                continue
+        return None
 
     skipped_location = 0
     skipped_date = 0
@@ -171,10 +189,30 @@ def parse_tapmango_orders_csv(
         b["tip"] += tip
         b["discount"] += discount
 
+        # Per-row hourly bucket (only for counted orders)
+        ts = _parse_order_datetime(
+            _col(row, "Order Placed On Date/Time", "Order Date", "Date")
+        )
+        if ts is not None:
+            h_key = (store_id, order_date, ts.hour, ts.minute // 15)
+            hb = hourly_buckets[h_key]
+            hb[0] += 1
+            hb[1] += total_payment
+
     out: list[ParsedRevenueRow] = []
     for (store_id, order_date), b in buckets.items():
         if b["count"] == 0 and b["rejected"] == 0:
             continue
+        # Per-store hourly rows scoped to this (store, date).
+        hourly_rows = [
+            {
+                "date": d, "hour": h, "quarter": q,
+                "channel": CHANNEL_TAPMANGO,
+                "txns": bt, "gross": round(bg, 2),
+            }
+            for (sid, d, h, q), (bt, bg) in hourly_buckets.items()
+            if sid == store_id and d == order_date
+        ]
         out.append(ParsedRevenueRow(
             external_store_id=store_id,
             channel=CHANNEL_TAPMANGO,
@@ -196,6 +234,7 @@ def parse_tapmango_orders_csv(
                 "skipped_location": skipped_location,
                 "skipped_date": skipped_date,
                 "skipped_no_store_id": skipped_no_store_id,
+                "hourly_rows": hourly_rows,
             },
         ))
     if not out:
