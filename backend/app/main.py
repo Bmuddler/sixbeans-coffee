@@ -317,10 +317,7 @@ async def startup():
         # to detect-and-reassociate every row.
         #   v1: revenue + labor (initial dedupe)
         #   v2: revenue + labor + expenses (dedupe revealed expenses were also wrong)
-        #   v3: revenue + labor only (terminal IDs got sorted out; old ingests
-        #       are still attached to the location_ids they had pre-fix, so
-        #       purge + re-upload is cleanest)
-        RESET_TARGET = 3
+        RESET_TARGET = 2
         current_ver = (await session.execute(
             select(SystemSettings.analytics_reset_version).limit(1)
         )).scalar_one_or_none()
