@@ -274,6 +274,7 @@ async def startup():
                 loc.godaddy_store_id is not None
                 or loc.tapmango_location_id is not None
                 or loc.doordash_store_id is not None
+                or loc.godaddy_terminal_ids is not None
             )
         ]
         if non_sales:
@@ -289,10 +290,12 @@ async def startup():
                 loc.godaddy_store_id = None
                 loc.tapmango_location_id = None
                 loc.doordash_store_id = None
+                loc.godaddy_terminal_ids = None
             for loc in non_sales:
                 loc.godaddy_store_id = None
                 loc.tapmango_location_id = None
                 loc.doordash_store_id = None
+                loc.godaddy_terminal_ids = None
             await session.flush()
             for loc, short_name, gd_store_id, gd_label, tm_id, dd_id, gd_terms in targets:
                 loc.canonical_short_name = short_name
