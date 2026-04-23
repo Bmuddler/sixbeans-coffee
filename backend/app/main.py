@@ -137,6 +137,16 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS doordash_store_id INTEGER"
         ))
+        # The ingestion_runs.source CHECK constraint was initially written
+        # without 'homebase'. Drop & re-add so the current source enum is
+        # accepted. Idempotent across restarts.
+        await conn.execute(text(
+            "ALTER TABLE ingestion_runs DROP CONSTRAINT IF EXISTS ck_ingestion_runs_source"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE ingestion_runs ADD CONSTRAINT ck_ingestion_runs_source "
+            "CHECK (source in ('godaddy','tapmango_orders','tapmango_api','doordash','homebase'))"
+        ))
 
     async with async_session() as session:
         # Sync locations with SEED_LOCATIONS

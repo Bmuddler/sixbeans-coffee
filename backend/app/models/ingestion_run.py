@@ -49,7 +49,7 @@ class IngestionRun(Base):
     __tablename__ = "ingestion_runs"
     __table_args__ = (
         CheckConstraint(
-            "source in ('godaddy','tapmango_orders','tapmango_api','doordash')",
+            "source in ('godaddy','tapmango_orders','tapmango_api','doordash','homebase')",
             name="ck_ingestion_runs_source",
         ),
         CheckConstraint(
