@@ -28,6 +28,42 @@ from app.services.notification_service import notify_schedule_change, notify_shi
 from app.services.schedule_service import copy_week_schedule, get_unavailable_employees
 from app.utils.permissions import require_location_access
 
+
+async def _check_no_overlap(
+    db: AsyncSession,
+    employee_id: int | None,
+    shift_date,
+    start_time,
+    end_time,
+    exclude_shift_id: int | None = None,
+) -> None:
+    """Refuse to schedule the same employee into overlapping shifts.
+
+    Coffee shops run single-day shifts, so we treat end_time < start_time
+    as a data error rather than an overnight shift. Returns quietly if no
+    conflict exists; raises 400 with a message naming the conflicting
+    shift ids if it does.
+    """
+    if employee_id is None:
+        return  # unassigned shift — nothing to overlap with
+
+    # Classic interval overlap: (a_start < b_end) AND (a_end > b_start).
+    q = select(ScheduledShift).where(
+        ScheduledShift.employee_id == employee_id,
+        ScheduledShift.date == shift_date,
+        ScheduledShift.start_time < end_time,
+        ScheduledShift.end_time > start_time,
+    )
+    if exclude_shift_id is not None:
+        q = q.where(ScheduledShift.id != exclude_shift_id)
+    existing = (await db.execute(q)).scalars().all()
+    if existing:
+        ids = ", ".join(str(s.id) for s in existing)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Employee already has a shift that overlaps this one (shift {ids}).",
+        )
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
@@ -345,6 +381,9 @@ async def create_shift(
     db: AsyncSession = Depends(get_db),
 ):
     require_location_access(current_user, data.location_id)
+    await _check_no_overlap(
+        db, data.employee_id, data.date, data.start_time, data.end_time,
+    )
 
     shift = ScheduledShift(**data.model_dump())
     db.add(shift)
@@ -390,7 +429,15 @@ async def update_shift(
     require_location_access(current_user, shift.location_id)
 
     old_values = {"employee_id": shift.employee_id, "status": shift.status.value if shift.status else None}
-    for field, value in data.model_dump(exclude_unset=True).items():
+    updates = data.model_dump(exclude_unset=True)
+    new_employee_id = updates.get("employee_id", shift.employee_id)
+    new_start = updates.get("start_time", shift.start_time)
+    new_end = updates.get("end_time", shift.end_time)
+    new_date = updates.get("date", shift.date)
+    await _check_no_overlap(
+        db, new_employee_id, new_date, new_start, new_end, exclude_shift_id=shift.id,
+    )
+    for field, value in updates.items():
         setattr(shift, field, value)
     await db.flush()
 

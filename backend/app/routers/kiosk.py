@@ -126,9 +126,20 @@ async def kiosk_authenticate(
             )
         )
     )
-    user = result.scalars().first()
-    if not user:
+    users = result.scalars().all()
+    if not users:
         raise HTTPException(status_code=401, detail="Invalid PIN")
+    # Two employees sharing a PIN at the same location would silently
+    # authenticate as whichever row the DB returned first, sending
+    # someone else's hours to the wrong person. Refuse instead of
+    # guessing and surface the collision so an owner can re-issue one
+    # of the PINs.
+    if len(users) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="PIN collision at this location — ask a manager to re-issue a PIN.",
+        )
+    user = users[0]
 
     # Create a short-lived JWT for kiosk session
     session_token = create_access_token(

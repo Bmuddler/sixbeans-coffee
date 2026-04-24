@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
+from app.models.schedule import ScheduledShift
 from app.models.time_off import RequestStatus, TimeOffRequest, UnavailabilityRequest
 from app.models.user import User, UserRole, user_locations
 from app.schemas.time_off import (
@@ -149,11 +150,32 @@ async def review_time_off_request(
     req.reviewed_by = current_user.id
     req.reviewed_at = datetime.utcnow()
     req.notes = data.notes
+
+    # On approval, unassign any of this employee's shifts that fall inside
+    # the time-off window so the dashboard doesn't flag them as "scheduled
+    # not clocked in" and payroll doesn't double-count scheduled hours
+    # that the employee isn't going to work.
+    unassigned_shift_ids: list[int] = []
+    if data.status == RequestStatus.approved:
+        shift_rows = (await db.execute(
+            select(ScheduledShift).where(
+                ScheduledShift.employee_id == req.employee_id,
+                ScheduledShift.date >= req.start_date,
+                ScheduledShift.date <= req.end_date,
+            )
+        )).scalars().all()
+        for s in shift_rows:
+            s.employee_id = None
+            unassigned_shift_ids.append(s.id)
+
     await db.flush()
 
     await log_action(
         db, current_user.id, "review_time_off", "time_off_request", req.id,
-        new_values={"status": data.status.value},
+        new_values={
+            "status": data.status.value,
+            "unassigned_shift_ids": unassigned_shift_ids,
+        },
     )
 
     # Notify employee about decision via SMS

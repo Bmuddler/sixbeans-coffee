@@ -298,8 +298,13 @@ async def claim_coverage(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Row-lock the posting so two employees hitting "Claim" at the same
+    # instant can't both succeed — whoever gets the lock first wins, the
+    # second sees claiming_employee_id already set and is rejected.
     result = await db.execute(
-        select(ShiftCoverageRequest).where(ShiftCoverageRequest.id == coverage_id)
+        select(ShiftCoverageRequest)
+        .where(ShiftCoverageRequest.id == coverage_id)
+        .with_for_update()
     )
     coverage = result.scalar_one_or_none()
     if not coverage:
@@ -308,8 +313,30 @@ async def claim_coverage(
     if coverage.status != SwapStatus.pending:
         raise HTTPException(status_code=400, detail="Coverage request no longer available")
 
+    if coverage.claiming_employee_id is not None:
+        raise HTTPException(status_code=409, detail="Someone else already claimed this shift")
+
     if coverage.posting_employee_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot claim your own coverage request")
+
+    # Refuse claims that would put the claimer on two overlapping shifts.
+    cov_shift_row = (await db.execute(
+        select(ScheduledShift).where(ScheduledShift.id == coverage.shift_id)
+    )).scalar_one_or_none()
+    if cov_shift_row:
+        conflicts = (await db.execute(
+            select(ScheduledShift).where(
+                ScheduledShift.employee_id == current_user.id,
+                ScheduledShift.date == cov_shift_row.date,
+                ScheduledShift.start_time < cov_shift_row.end_time,
+                ScheduledShift.end_time > cov_shift_row.start_time,
+            )
+        )).scalars().all()
+        if conflicts:
+            raise HTTPException(
+                status_code=400,
+                detail="You already have a shift that overlaps this one.",
+            )
 
     coverage.claiming_employee_id = current_user.id
     await db.flush()

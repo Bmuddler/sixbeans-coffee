@@ -17,6 +17,7 @@ from sqlalchemy.orm import selectinload
 from app.models.schedule import ScheduledShift
 from app.models.system_settings import SystemSettings
 from app.models.time_clock import Break, BreakType, ClockStatus, TimeClock
+from app.models.user import user_locations
 from app.utils.california_labor import (
     MAX_EARLY_CLOCK_IN_MINUTES,
     calculate_break_deductions,
@@ -45,6 +46,20 @@ async def clock_in(
     existing = result.scalar_one_or_none()
     if existing:
         raise ValueError("Employee is already clocked in")
+
+    # Refuse clock-in at a location the employee isn't assigned to.
+    # Without this, a cashier at Apple Valley can accidentally clock in
+    # at Barstow and have their wages land on the wrong shop's P&L.
+    assigned = (await db.execute(
+        select(user_locations.c.location_id).where(
+            and_(
+                user_locations.c.user_id == employee_id,
+                user_locations.c.location_id == location_id,
+            )
+        )
+    )).first()
+    if not assigned:
+        raise ValueError("Employee is not assigned to this location")
 
     # Load system settings for early clock-in limit
     settings_result = await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
@@ -221,9 +236,17 @@ async def auto_clock_out_expired_shifts(db: AsyncSession) -> list[TimeClock]:
 
     clocked_out = []
     for entry in active_entries:
+        # If the employee is mid-break when auto-clockout fires, stamping
+        # clock_out here would prematurely end the break and under-report
+        # their unpaid-meal minutes. Push the auto-clockout timer forward
+        # 30 minutes so a later cycle picks them up after the break ends.
+        if entry.status == ClockStatus.on_break:
+            entry.auto_clockout_at = now + timedelta(minutes=30)
+            continue
         await clock_out(db, entry.employee_id, now=entry.auto_clockout_at, auto=True)
         clocked_out.append(entry)
 
+    await db.flush()
     return clocked_out
 
 
