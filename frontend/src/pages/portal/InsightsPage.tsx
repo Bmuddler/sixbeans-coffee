@@ -836,7 +836,8 @@ function EliteSection({ window }: { window: InsightsWindow }) {
         <div className="text-xs text-gray-500">
           Labor burden {data.settings.labor_burden_multiplier.toFixed(2)}× ·
           COGS {(data.settings.cogs_percent * 100).toFixed(0)}% ·
-          Target labor {(data.settings.target_labor_pct * 100).toFixed(0)}%
+          Target labor {(data.settings.target_labor_pct * 100).toFixed(0)}% ·
+          Overhead allocated by revenue share
         </div>
       </div>
 
@@ -913,6 +914,14 @@ function EliteSection({ window }: { window: InsightsWindow }) {
                 )}>
                   {pct(s.current.labor_pct)}
                 </div>
+                {s.current.shared_overhead_share > 0 && (
+                  <>
+                    <div className="text-gray-500">Shared overhead</div>
+                    <div className="text-right tabular-nums text-gray-600">
+                      {money2(s.current.shared_overhead_share)}
+                    </div>
+                  </>
+                )}
                 <div className="text-gray-500">Hours</div>
                 <div className="text-right tabular-nums">{s.current.hours}</div>
                 <div className="text-gray-500">$/labor hr</div>

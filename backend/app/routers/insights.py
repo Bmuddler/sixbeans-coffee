@@ -702,6 +702,18 @@ async def elite_scorecards(
         ).order_by(Location.canonical_short_name)
     )).scalars().all()
 
+    # Locate bakery + warehouse so we can fold their non-rent costs into
+    # the revenue-share overhead pool. Bakery contributes LABOR only
+    # (Adelia's shifts × burden) — its $1,000 rent is intentionally left
+    # out. Warehouse contributes its full monthly expense line.
+    all_support = (await db.execute(
+        select(Location).where(
+            Location.canonical_short_name.in_(("BAKERY", "WAREHOUSE"))
+        )
+    )).scalars().all()
+    bakery_id = next((l.id for l in all_support if l.canonical_short_name == "BAKERY"), None)
+    warehouse_id = next((l.id for l in all_support if l.canonical_short_name == "WAREHOUSE"), None)
+
     # One big revenue + labor fetch covering both windows
     rev_rows = (await db.execute(
         select(DailyRevenue).where(
@@ -739,11 +751,6 @@ async def elite_scorecards(
         fully_loaded = raw_labor * burden
         cogs = gross * cogs_pct
         prorated_exp = (monthly_expense / 30.44) * window_days
-        profit = gross - cogs - fully_loaded - prorated_exp
-        margin = (profit / gross * 100.0) if gross else None
-        labor_pct = (fully_loaded / gross * 100.0) if gross else None
-        splh = (gross / hours) if hours else None
-        opp = max(0.0, fully_loaded - gross * TARGET_LABOR_PCT)
         return {
             "gross": round(gross, 2),
             "transactions": txns,
@@ -752,23 +759,79 @@ async def elite_scorecards(
             "fully_loaded_labor": round(fully_loaded, 2),
             "cogs": round(cogs, 2),
             "prorated_expenses": round(prorated_exp, 2),
-            "profit": round(profit, 2),
-            "margin_pct": round(margin, 1) if margin is not None else None,
-            "labor_pct": round(labor_pct, 1) if labor_pct is not None else None,
-            "avg_splh": round(splh, 2) if splh is not None else None,
-            "labor_opportunity": round(opp, 2),
+            "_gross": gross,
+            "_fully_loaded": fully_loaded,
+            "_cogs": cogs,
+            "_prorated_exp": prorated_exp,
         }
 
-    scorecards = []
+    def _finalize(rollup: dict, shared_share: float):
+        gross = rollup.pop("_gross")
+        fully_loaded = rollup.pop("_fully_loaded")
+        cogs = rollup.pop("_cogs")
+        prorated_exp = rollup.pop("_prorated_exp")
+        profit = gross - cogs - fully_loaded - prorated_exp - shared_share
+        margin = (profit / gross * 100.0) if gross else None
+        labor_pct = (fully_loaded / gross * 100.0) if gross else None
+        splh = (gross / rollup["hours"]) if rollup["hours"] else None
+        opp = max(0.0, fully_loaded - gross * TARGET_LABOR_PCT)
+        rollup["shared_overhead_share"] = round(shared_share, 2)
+        rollup["profit"] = round(profit, 2)
+        rollup["margin_pct"] = round(margin, 1) if margin is not None else None
+        rollup["labor_pct"] = round(labor_pct, 1) if labor_pct is not None else None
+        rollup["avg_splh"] = round(splh, 2) if splh is not None else None
+        rollup["labor_opportunity"] = round(opp, 2)
+        return rollup
+
+    # Revenue-share overhead pool: company-level expenses (no location) +
+    # warehouse expenses + bakery labor (burden-loaded) for each window.
+    # Bakery's own rent is intentionally excluded — it's a dedicated cost
+    # center that already carries its own roof.
+    company_monthly = exp_monthly_by_loc.get(None, 0.0)
+    warehouse_monthly = exp_monthly_by_loc.get(warehouse_id, 0.0) if warehouse_id else 0.0
+    shared_monthly = company_monthly + warehouse_monthly
+
+    def _bakery_labor_for(start_, end_) -> float:
+        if not bakery_id:
+            return 0.0
+        rows = [
+            l for l in labor_by_loc.get(bakery_id, [])
+            if start_ <= l.date <= end_
+        ]
+        return sum((l.labor_cost or 0.0) for l in rows) * burden
+
+    bakery_labor_curr = _bakery_labor_for(curr_start, curr_end)
+    bakery_labor_prev = _bakery_labor_for(prev_start, prev_end)
+
+    total_shared_curr = (shared_monthly / 30.44) * span + bakery_labor_curr
+    total_shared_prev = (shared_monthly / 30.44) * span + bakery_labor_prev
+
+    # First pass: build raw rollups, capture per-shop window revenue.
+    pending = []
     for loc in locations:
         monthly_exp = exp_monthly_by_loc.get(loc.id, 0.0)
         rev_curr = _window_split(rev_by_loc.get(loc.id, []), curr_start, curr_end)
         rev_prev = [r for r in rev_by_loc.get(loc.id, []) if prev_start <= r.date <= prev_end]
         labor_curr = [l for l in labor_by_loc.get(loc.id, []) if curr_start <= l.date <= curr_end]
         labor_prev = [l for l in labor_by_loc.get(loc.id, []) if prev_start <= l.date <= prev_end]
+        pending.append({
+            "loc": loc,
+            "curr": _rollup(rev_curr, labor_curr, monthly_exp, span),
+            "prev": _rollup(rev_prev, labor_prev, monthly_exp, span),
+            "labor_prev": labor_prev,
+        })
 
-        curr = _rollup(rev_curr, labor_curr, monthly_exp, span)
-        prev = _rollup(rev_prev, labor_prev, monthly_exp, span)
+    total_rev_curr = sum(p["curr"]["_gross"] for p in pending)
+    total_rev_prev = sum(p["prev"]["_gross"] for p in pending)
+
+    scorecards = []
+    for p in pending:
+        loc = p["loc"]
+        share_curr = (p["curr"]["_gross"] / total_rev_curr * total_shared_curr) if total_rev_curr else 0.0
+        share_prev = (p["prev"]["_gross"] / total_rev_prev * total_shared_prev) if total_rev_prev else 0.0
+        curr = _finalize(p["curr"], share_curr)
+        prev = _finalize(p["prev"], share_prev)
+        labor_prev = p["labor_prev"]
 
         wow_rev = curr["gross"] - prev["gross"]
         wow_profit = curr["profit"] - prev["profit"]
@@ -835,6 +898,13 @@ async def elite_scorecards(
             "labor_burden_multiplier": burden,
             "cogs_percent": cogs_pct,
             "target_labor_pct": TARGET_LABOR_PCT,
+            "shared_overhead_allocation": "revenue_share",
+            "shared_overhead_includes": [
+                "company_expenses",
+                "warehouse_expenses",
+                "bakery_labor_burdened",
+            ],
+            "shared_overhead_excludes": ["bakery_rent"],
         },
         "company": {
             "gross": round(company_gross, 2),
@@ -842,6 +912,9 @@ async def elite_scorecards(
             "margin_pct": round(company_margin, 1) if company_margin is not None else None,
             "labor_opportunity": round(company_labor_opp, 2),
             "projected_profit_if_fixed": round(projected, 2),
+            "shared_overhead_pool": round(total_shared_curr, 2),
+            "shared_overhead_monthly": round(shared_monthly, 2),
+            "bakery_labor_window": round(bakery_labor_curr, 2),
         },
         "scorecards": scorecards,
         "priority_queue": priority_queue[:5],
