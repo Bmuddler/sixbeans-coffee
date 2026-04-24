@@ -648,12 +648,32 @@ function HeatmapSection({ scorecards }: { scorecards: any[] }) {
           the Analytics Ingestion page to populate hourly buckets.
         </p>
       ) : (
-        <HeatmapGrid
-          grid={data.grid}
-          maxValue={data.max_value}
-          granularity={data.granularity}
-          metric={data.metric}
-        />
+        <>
+          <div className="mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+            <span className="text-gray-700">
+              <span className="text-gray-500">Window total:</span>{' '}
+              <span className="font-semibold tabular-nums">
+                ${(data.window_total_gross ?? 0).toLocaleString('en-US', {
+                  minimumFractionDigits: 2, maximumFractionDigits: 2,
+                })}
+              </span>{' '}
+              <span className="text-gray-500">/ </span>
+              <span className="font-semibold tabular-nums">
+                {(data.window_total_txns ?? 0).toLocaleString('en-US')}
+              </span>{' '}
+              <span className="text-gray-500">txns</span>
+            </span>
+            <span className="text-gray-500">
+              Cells = avg per day-of-week across this window · GoDaddy + TapMango only (DoorDash has no hourly data)
+            </span>
+          </div>
+          <HeatmapGrid
+            grid={data.grid}
+            maxValue={data.max_value}
+            granularity={data.granularity}
+            metric={data.metric}
+          />
+        </>
       )}
     </Card>
   );

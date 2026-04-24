@@ -462,6 +462,8 @@ async def heatmap(
     slots = 24 if granularity == "hour" else 96
     grid: list[list[float]] = [[0.0] * slots for _ in range(7)]  # grid[dow][slot]
 
+    window_total_gross = 0.0
+    window_total_txns = 0
     for r in rows:
         dow = r.date.weekday()
         s = slot_of(r.hour, r.quarter)
@@ -469,6 +471,8 @@ async def heatmap(
             grid[dow][s] += r.txns
         else:
             grid[dow][s] += r.gross
+        window_total_gross += r.gross or 0.0
+        window_total_txns += r.txns or 0
 
     # Average across the number of matching days per weekday
     max_val = 0.0
@@ -489,6 +493,9 @@ async def heatmap(
         "dow_date_counts": dict(dow_date_counts),
         "max_value": max_val,
         "grid": grid,  # grid[dow][slot]
+        "window_total_gross": round(window_total_gross, 2),
+        "window_total_txns": window_total_txns,
+        "sources_included": ["godaddy", "tapmango"],
     }
 
 
