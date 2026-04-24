@@ -1224,13 +1224,18 @@ function ManagerOwnerDashboardPage({
   isManager: boolean;
   locationId: number;
 }) {
+  // The /dashboard/summary endpoint is owner-only on the backend. Skip
+  // it for managers — ManagerDashboard renders its own today-summary
+  // tiles via the /dashboard/manager endpoint below, so firing the
+  // owner query would only produce a 403 toast.
   const { data: summary, isLoading } = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: dashboard.getSummary,
     refetchInterval: 30000,
+    enabled: isOwner,
   });
 
-  if (isLoading) {
+  if (isOwner && isLoading) {
     return <LoadingSpinner className="py-20" label="Loading dashboard..." />;
   }
 
@@ -1274,7 +1279,8 @@ function ManagerOwnerDashboardPage({
         </div>
       </div>
 
-      {/* Summary Stats */}
+      {/* Summary Stats — owner only (stats come from an owner-only API) */}
+      {isOwner && (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
         {stats.map((stat) => (
           <Card key={stat.label}>
@@ -1288,6 +1294,7 @@ function ManagerOwnerDashboardPage({
           </Card>
         ))}
       </div>
+      )}
 
       {/* Owner-specific sections */}
       {isOwner && <OwnerDashboard />}

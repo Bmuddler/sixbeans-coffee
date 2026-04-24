@@ -302,13 +302,18 @@ export function EmployeesPage() {
       )}
       <Select
         label="Role"
-        options={[
-          { value: UserRole.EMPLOYEE, label: 'Employee' },
-          { value: UserRole.MANAGER, label: 'Manager' },
-          ...(isOwner ? [{ value: UserRole.OWNER, label: 'Owner' }] : []),
-        ]}
+        options={
+          isOwner
+            ? [
+                { value: UserRole.EMPLOYEE, label: 'Employee' },
+                { value: UserRole.MANAGER, label: 'Manager' },
+                { value: UserRole.OWNER, label: 'Owner' },
+              ]
+            : [{ value: UserRole.EMPLOYEE, label: 'Employee' }]
+        }
         value={form.role}
         onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
+        helperText={isOwner ? undefined : 'Managers can only create employee accounts.'}
       />
       <div>
         <p className="mb-2 text-sm font-medium text-gray-700">Locations</p>

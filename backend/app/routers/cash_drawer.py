@@ -29,9 +29,10 @@ router = APIRouter()
 @router.post("/", response_model=CashDrawerResponse, status_code=status.HTTP_201_CREATED)
 async def api_open_drawer(
     data: CashDrawerCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
+    require_location_access(current_user, data.location_id)
     drawer = await open_drawer(db, current_user.id, data.location_id, data.date, data.opening_amount)
 
     await log_action(
@@ -51,9 +52,16 @@ async def api_open_drawer(
 async def api_close_drawer(
     drawer_id: int,
     data: CashDrawerClose,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
+    existing = (await db.execute(
+        select(CashDrawer).where(CashDrawer.id == drawer_id)
+    )).scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawer not found")
+    require_location_access(current_user, existing.location_id)
+
     try:
         drawer = await close_drawer(db, drawer_id, data.actual_closing, data.notes)
     except ValueError as e:
@@ -84,7 +92,7 @@ async def api_close_drawer(
 async def api_edit_drawer(
     drawer_id: int,
     data: CashDrawerUpdate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -93,6 +101,7 @@ async def api_edit_drawer(
     drawer = result.scalar_one_or_none()
     if not drawer:
         raise HTTPException(status_code=404, detail="Drawer not found")
+    require_location_access(current_user, drawer.location_id)
 
     # Only allow edits on the same day (Pacific time)
     from datetime import datetime as dt
@@ -140,7 +149,7 @@ async def api_edit_drawer(
 async def api_set_expected(
     drawer_id: int,
     data: CashDrawerSetExpected,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -149,6 +158,7 @@ async def api_set_expected(
     drawer = result.scalar_one_or_none()
     if not drawer:
         raise HTTPException(status_code=404, detail="Drawer not found")
+    require_location_access(current_user, drawer.location_id)
 
     drawer.expected_closing = data.expected_closing
     await db.flush()
@@ -174,9 +184,16 @@ async def api_set_expected(
 async def api_add_expense(
     drawer_id: int,
     data: UnexpectedExpenseCreate,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_roles(UserRole.owner, UserRole.manager)),
     db: AsyncSession = Depends(get_db),
 ):
+    existing = (await db.execute(
+        select(CashDrawer).where(CashDrawer.id == drawer_id)
+    )).scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Drawer not found")
+    require_location_access(current_user, existing.location_id)
+
     expense = await add_unexpected_expense(db, drawer_id, data.amount, data.category, data.notes)
 
     await log_action(
