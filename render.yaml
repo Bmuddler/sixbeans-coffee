@@ -64,6 +64,36 @@ services:
       - key: ANALYTICS_ALERT_RECIPIENT
         value: logcastles@gmail.com
 
+  # Weekly database backup — pg_dumps the Postgres DB and emails the
+  # file (Gmail attachment, custom format) to the owner. Uses the same
+  # Gmail OAuth token the analytics alerter already uses, so no new
+  # secrets. Restore with pg_restore from the attached .dump file.
+  - type: cron
+    name: sixbeans-db-backup
+    runtime: docker
+    region: oregon
+    plan: starter
+    rootDir: backend
+    dockerfilePath: ./Dockerfile.backup
+    # 17:00 UTC Sunday = 10:00 AM PDT / 9:00 AM PST — lowest shop traffic.
+    schedule: "0 17 * * 0"
+    dockerCommand: python -m scripts.backup_db
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sixbeans-db
+          property: connectionString
+      - key: SCRAPER_SESSION_ENCRYPTION_KEY
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_ID
+        sync: false
+      - key: GMAIL_OAUTH_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_OAUTH_REDIRECT_URI
+        sync: false
+      - key: BACKUP_RECIPIENT
+        value: logcastles@gmail.com
+
   - type: web
     name: sixbeans
     runtime: static

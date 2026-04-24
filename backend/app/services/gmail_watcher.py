@@ -274,3 +274,56 @@ async def send_email(
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
     service.users().messages().send(userId="me", body={"raw": raw}).execute()
     logger.info("Sent alert email to %s (subject=%r)", to, subject)
+
+
+async def send_email_with_attachment(
+    db: AsyncSession,
+    *,
+    to: str,
+    subject: str,
+    body: str,
+    attachment_path: str,
+    attachment_name: str | None = None,
+) -> None:
+    """Send an email with a single binary attachment.
+
+    Used by the weekly database-backup cron to deliver the pg_dump file
+    to the owner's inbox. Gmail's hard limit on outbound attachments is
+    25 MB; we raise if the file is larger so the cron fails loudly
+    rather than silently dropping the backup.
+    """
+    import base64
+    import os
+    from email import encoders
+    from email.mime.base import MIMEBase
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    size = os.path.getsize(attachment_path)
+    if size > 24 * 1024 * 1024:
+        raise RuntimeError(
+            f"Attachment is {size / 1024 / 1024:.1f} MB — Gmail rejects >25 MB. "
+            "Switch the backup cron to S3 / Drive upload instead of email."
+        )
+
+    service = await _get_gmail_service(db)
+
+    msg = MIMEMultipart()
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    with open(attachment_path, "rb") as f:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(f.read())
+    encoders.encode_base64(part)
+    filename = attachment_name or os.path.basename(attachment_path)
+    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+    msg.attach(part)
+
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+    logger.info(
+        "Sent email with attachment to %s (subject=%r, size=%.1f MB)",
+        to, subject, size / 1024 / 1024,
+    )
