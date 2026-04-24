@@ -704,17 +704,23 @@ function HeatmapGrid({
     : HEATMAP_CLOSE_HOUR * 4;
   const visibleCount = slotEnd - slotStart;
 
-  const cellWidth = granularity === 'hour' ? 56 : 15;
-  const cellHeight = granularity === 'hour' ? 40 : 32;
+  const cellWidth = granularity === 'hour' ? 56 : 26;
+  const cellHeight = granularity === 'hour' ? 40 : 34;
 
   const fmt = (v: number) => metric === 'gross'
     ? `$${Math.round(v).toLocaleString('en-US')}`
     : v.toFixed(1);
 
-  // Compact inline label that fits even in 15min cells when non-zero.
+  // Compact inline label. In 15-min mode the cells are tight, so drop
+  // the $ sign to keep the number readable — the header already says
+  // this is revenue dollars.
   const fmtCell = (v: number) => {
     if (v <= 0) return '';
     if (metric === 'gross') {
+      if (granularity === 'quarter') {
+        if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+        return `${Math.round(v)}`;
+      }
       if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`;
       return `$${Math.round(v)}`;
     }
