@@ -33,6 +33,21 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/expenses", tags=["expenses"])
 
+# Only this owner account may mutate expenses or P&L settings. All other
+# users — including the Jess owner account — get read-only access. The
+# expense table feeds directly into the Elite scorecard profit math, so
+# an accidental edit can silently corrupt every shop's margin.
+EXPENSES_WRITE_EMAIL = "logcastles@gmail.com"
+
+
+def _require_expense_writer(current_user: User = Depends(require_roles(UserRole.owner))) -> User:
+    if (current_user.email or "").strip().lower() != EXPENSES_WRITE_EMAIL:
+        raise HTTPException(
+            status_code=403,
+            detail="Expenses are locked — only the primary owner can edit them.",
+        )
+    return current_user
+
 # Categories that come from the P&L but should NEVER be stored as Expense
 # rows — they are derived from other ingestion sources instead.
 SKIP_CATEGORIES = {
@@ -97,6 +112,7 @@ async def list_expenses(
         .order_by(Location.canonical_short_name)
     )).scalars().all()
 
+    can_edit = (current_user.email or "").strip().lower() == EXPENSES_WRITE_EMAIL
     return {
         "expenses": [_serialize_expense(e) for e in rows],
         "locations": [
@@ -107,13 +123,14 @@ async def list_expenses(
             }
             for loc in locations
         ],
+        "can_edit": can_edit,
     }
 
 
 @router.post("")
 async def create_expense(
     body: ExpenseIn,
-    current_user: User = Depends(require_roles(UserRole.owner)),
+    current_user: User = Depends(_require_expense_writer),
     db: AsyncSession = Depends(get_db),
 ):
     if body.category.strip().lower() in SKIP_CATEGORIES:
@@ -153,7 +170,7 @@ async def get_settings(
 @router.patch("/settings")
 async def update_settings(
     body: SettingsPatch,
-    current_user: User = Depends(require_roles(UserRole.owner)),
+    current_user: User = Depends(_require_expense_writer),
     db: AsyncSession = Depends(get_db),
 ):
     row = await _settings_row(db)
@@ -179,7 +196,7 @@ async def update_settings(
 async def update_expense(
     expense_id: int,
     body: ExpensePatch,
-    current_user: User = Depends(require_roles(UserRole.owner)),
+    current_user: User = Depends(_require_expense_writer),
     db: AsyncSession = Depends(get_db),
 ):
     e = (await db.execute(
@@ -204,7 +221,7 @@ async def update_expense(
 @router.delete("/{expense_id}")
 async def delete_expense(
     expense_id: int,
-    current_user: User = Depends(require_roles(UserRole.owner)),
+    current_user: User = Depends(_require_expense_writer),
     db: AsyncSession = Depends(get_db),
 ):
     e = (await db.execute(
@@ -255,7 +272,7 @@ def _as_float(val) -> float | None:
 async def seed_from_pnl(
     file: UploadFile = File(...),
     replace_existing: bool = False,
-    current_user: User = Depends(require_roles(UserRole.owner)),
+    current_user: User = Depends(_require_expense_writer),
     db: AsyncSession = Depends(get_db),
 ):
     """Seed the `expenses` table from the owner's Store P&L Excel file.

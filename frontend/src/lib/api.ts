@@ -692,7 +692,7 @@ export type ExpenseLocation = {
 
 export const expensesApi = {
   list: () =>
-    api.get<{ expenses: ExpenseRow[]; locations: ExpenseLocation[] }>('/expenses')
+    api.get<{ expenses: ExpenseRow[]; locations: ExpenseLocation[]; can_edit: boolean }>('/expenses')
       .then((r) => r.data),
   create: (body: { location_id: number | null; category: string; amount: number; notes?: string | null }) =>
     api.post<ExpenseRow>('/expenses', body).then((r) => r.data),

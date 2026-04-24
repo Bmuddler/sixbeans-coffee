@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { Plus, Trash2, Upload, DollarSign, Check, X } from 'lucide-react';
+import { Plus, Trash2, Upload, DollarSign, Check, X, Lock } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
@@ -110,6 +110,7 @@ export function ExpensesAdminPage() {
   }
 
   const totalAll = data!.expenses.reduce((s, e) => s + e.amount, 0);
+  const canEdit = !!data?.can_edit;
 
   return (
     <div className="max-w-6xl mx-auto p-6 space-y-6">
@@ -134,6 +135,16 @@ export function ExpensesAdminPage() {
         </div>
       </div>
 
+      {!canEdit && (
+        <div className="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <Lock className="h-4 w-4 shrink-0" />
+          <span>
+            Expenses are locked. Viewing only — the primary owner is the only
+            account that can edit these figures, the labor burden, or the COGS %.
+          </span>
+        </div>
+      )}
+
       {/* Settings row */}
       <Card>
         <div className="flex flex-wrap items-end gap-6">
@@ -144,6 +155,7 @@ export function ExpensesAdminPage() {
             step={0.01}
             min={1}
             max={2}
+            readOnly={!canEdit}
             onCommit={(v) => settingsMutation.mutate({ labor_burden_multiplier: v })}
             format={(v) => `${v.toFixed(2)}x`}
           />
@@ -154,6 +166,7 @@ export function ExpensesAdminPage() {
             step={0.005}
             min={0}
             max={1}
+            readOnly={!canEdit}
             onCommit={(v) => settingsMutation.mutate({ cogs_percent: v })}
             format={(v) => `${(v * 100).toFixed(1)}%`}
           />
@@ -164,6 +177,7 @@ export function ExpensesAdminPage() {
               icon={<Upload className="h-4 w-4" />}
               onClick={() => seedInputRef.current?.click()}
               loading={seedMutation.isPending}
+              disabled={!canEdit}
             >
               Import from P&L Excel
             </Button>
@@ -198,6 +212,7 @@ export function ExpensesAdminPage() {
               key={id ?? 'company'}
               location={loc}
               rows={rows}
+              canEdit={canEdit}
               onCreate={(body) => createMutation.mutate({ ...body, location_id: id })}
               onUpdate={(eid, body) => updateMutation.mutate({ id: eid, body })}
               onDelete={(eid) => deleteMutation.mutate(eid)}
@@ -216,12 +231,14 @@ export function ExpensesAdminPage() {
 function ExpenseCard({
   location,
   rows,
+  canEdit,
   onCreate,
   onUpdate,
   onDelete,
 }: {
   location: ExpenseLocation | null;
   rows: ExpenseRow[];
+  canEdit: boolean;
   onCreate: (body: { category: string; amount: number }) => void;
   onUpdate: (id: number, body: Partial<{ category: string; amount: number }>) => void;
   onDelete: (id: number) => void;
@@ -278,6 +295,7 @@ function ExpenseCard({
           <ExpenseRowEditor
             key={r.id}
             row={r}
+            canEdit={canEdit}
             onUpdate={(body) => onUpdate(r.id, body)}
             onDelete={() => onDelete(r.id)}
           />
@@ -324,14 +342,14 @@ function ExpenseCard({
             <X className="h-4 w-4" />
           </button>
         </div>
-      ) : (
+      ) : canEdit ? (
         <button
           onClick={() => setAdding(true)}
           className="mt-2 flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
         >
           <Plus className="h-3.5 w-3.5" /> Add expense
         </button>
-      )}
+      ) : null}
     </Card>
   );
 }
@@ -342,10 +360,12 @@ function ExpenseCard({
 
 function ExpenseRowEditor({
   row,
+  canEdit,
   onUpdate,
   onDelete,
 }: {
   row: ExpenseRow;
+  canEdit: boolean;
   onUpdate: (body: Partial<{ category: string; amount: number }>) => void;
   onDelete: () => void;
 }) {
@@ -391,6 +411,17 @@ function ExpenseRowEditor({
     );
   }
 
+  if (!canEdit) {
+    return (
+      <div className="px-2 py-1.5 flex items-center gap-2">
+        <span className="flex-1 min-w-0 text-sm text-gray-700 truncate">{row.category}</span>
+        <span className="text-sm text-gray-600 tabular-nums">
+          ${row.amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="px-2 py-1.5 flex items-center gap-2 group">
       <button
@@ -423,7 +454,7 @@ function ExpenseRowEditor({
 // ------------------------------------------------------------
 
 function SettingsField({
-  label, help, value, step, min, max, onCommit, format,
+  label, help, value, step, min, max, onCommit, format, readOnly,
 }: {
   label: string;
   help: string;
@@ -433,6 +464,7 @@ function SettingsField({
   max: number;
   onCommit: (v: number) => void;
   format: (v: number) => string;
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState(value.toString());
   const [focused, setFocused] = useState(false);
@@ -453,14 +485,16 @@ function SettingsField({
         step={step}
         min={min}
         max={max}
-        onFocus={() => { setFocused(true); setDraft(value.toString()); }}
+        readOnly={readOnly}
+        disabled={readOnly}
+        onFocus={() => { if (!readOnly) { setFocused(true); setDraft(value.toString()); } }}
         onBlur={() => {
           setFocused(false);
           const v = parseFloat(draft);
           if (isFinite(v) && v !== value) onCommit(v);
         }}
         onChange={(e) => setDraft(e.target.value)}
-        className="w-28 border border-gray-300 rounded-md px-2 py-1 text-sm"
+        className={`w-28 border border-gray-300 rounded-md px-2 py-1 text-sm ${readOnly ? 'bg-gray-50 text-gray-500 cursor-not-allowed' : ''}`}
       />
       <span className="text-[10px] text-gray-400 mt-0.5">{help}</span>
     </label>

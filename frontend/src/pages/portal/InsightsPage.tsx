@@ -659,6 +659,13 @@ function HeatmapSection({ scorecards }: { scorecards: any[] }) {
   );
 }
 
+// Operating hours only — hide overnight dead zone. Shops are closed
+// 8pm–5am so showing those slots was wasted real estate; suppressing
+// them lets the remaining cells stretch wide enough to show the value
+// inline without hover.
+const HEATMAP_OPEN_HOUR = 5;   // inclusive, 5am
+const HEATMAP_CLOSE_HOUR = 20; // exclusive, 8pm
+
 function HeatmapGrid({
   grid, maxValue, granularity, metric,
 }: {
@@ -667,13 +674,32 @@ function HeatmapGrid({
   granularity: 'hour' | 'quarter';
   metric: 'txns' | 'gross';
 }) {
-  const slots = granularity === 'hour' ? 24 : 96;
-  const cellWidth = granularity === 'hour' ? 28 : 9;
-  const cellHeight = 22;
+  // Slot windows inside the visible band. Hours: 5..19 inclusive (15
+  // slots). Quarter: 20..79 inclusive (60 slots).
+  const slotStart = granularity === 'hour'
+    ? HEATMAP_OPEN_HOUR
+    : HEATMAP_OPEN_HOUR * 4;
+  const slotEnd = granularity === 'hour'
+    ? HEATMAP_CLOSE_HOUR
+    : HEATMAP_CLOSE_HOUR * 4;
+  const visibleCount = slotEnd - slotStart;
+
+  const cellWidth = granularity === 'hour' ? 56 : 15;
+  const cellHeight = granularity === 'hour' ? 40 : 32;
 
   const fmt = (v: number) => metric === 'gross'
-    ? `$${v.toLocaleString('en-US', { maximumFractionDigits: 0 })}`
+    ? `$${Math.round(v).toLocaleString('en-US')}`
     : v.toFixed(1);
+
+  // Compact inline label that fits even in 15min cells when non-zero.
+  const fmtCell = (v: number) => {
+    if (v <= 0) return '';
+    if (metric === 'gross') {
+      if (v >= 1000) return `$${(v / 1000).toFixed(1)}k`;
+      return `$${Math.round(v)}`;
+    }
+    return v >= 10 ? v.toFixed(0) : v.toFixed(1);
+  };
 
   const slotLabel = (s: number) => {
     if (granularity === 'hour') {
@@ -685,7 +711,7 @@ function HeatmapGrid({
     } else {
       const h = Math.floor(s / 4);
       const q = (s % 4) * 15;
-      if (q !== 0) return '';  // only label on the hour tick
+      if (q !== 0) return '';
       return h === 0 ? '12a' : h < 12 ? `${h}a` : h === 12 ? '12p' : `${h - 12}p`;
     }
   };
@@ -695,15 +721,18 @@ function HeatmapGrid({
       <div className="inline-block">
         {/* Hour labels */}
         <div className="flex pl-10">
-          {Array.from({ length: slots }).map((_, s) => (
-            <div
-              key={s}
-              className="text-[10px] text-gray-500 text-center"
-              style={{ width: cellWidth }}
-            >
-              {slotLabel(s)}
-            </div>
-          ))}
+          {Array.from({ length: visibleCount }).map((_, i) => {
+            const s = slotStart + i;
+            return (
+              <div
+                key={s}
+                className="text-[10px] text-gray-500 text-center"
+                style={{ width: cellWidth }}
+              >
+                {slotLabel(s)}
+              </div>
+            );
+          })}
         </div>
         {/* DOW rows */}
         {grid.map((row, dow) => (
@@ -711,8 +740,12 @@ function HeatmapGrid({
             <div className="w-10 text-xs text-gray-600 pr-2 text-right">
               {DOW_LABELS[dow]}
             </div>
-            {row.map((v, s) => {
+            {Array.from({ length: visibleCount }).map((_, i) => {
+              const s = slotStart + i;
+              const v = row[s] ?? 0;
               const intensity = maxValue > 0 ? v / maxValue : 0;
+              const label = fmtCell(v);
+              const textColor = intensity > 0.55 ? 'white' : '#374151';
               return (
                 <div
                   key={s}
@@ -721,14 +754,21 @@ function HeatmapGrid({
                     width: cellWidth,
                     height: cellHeight,
                     backgroundColor: heatColor(intensity),
+                    color: textColor,
                   }}
-                  className="border border-white"
-                />
+                  className="border border-white flex items-center justify-center text-[10px] font-medium tabular-nums"
+                >
+                  {label}
+                </div>
               );
             })}
           </div>
         ))}
       </div>
+      <p className="text-[10px] text-gray-400 mt-2">
+        Showing {HEATMAP_OPEN_HOUR}am–{HEATMAP_CLOSE_HOUR - 12}pm. Overnight
+        hours are hidden.
+      </p>
     </div>
   );
 }
