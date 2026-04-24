@@ -81,6 +81,8 @@ export function AnalyticsAdminPage() {
         }}
       />
 
+      <GmailConnectCard />
+
       {/* Unknown stores (mapping) */}
       {unmapped.length > 0 && (
         <Card>
@@ -331,6 +333,59 @@ function UnifiedUploadCard({ onUploaded }: { onUploaded: () => void }) {
           )}
         </div>
       )}
+    </Card>
+  );
+}
+
+// -------------------------------------------------------------
+// Gmail OAuth re-consent card
+// -------------------------------------------------------------
+
+function GmailConnectCard() {
+  const [connecting, setConnecting] = useState(false);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    try {
+      const { url } = await analyticsAdmin.gmailOauthStart();
+      window.location.href = url;
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? 'Failed to start Gmail consent');
+      setConnecting(false);
+    }
+  };
+
+  // Pick up redirect params so the user sees the result of a prior consent.
+  const params = new URLSearchParams(window.location.search);
+  const justConnected = params.get('gmail_connected') === '1';
+  const gmailError = params.get('gmail_error');
+
+  return (
+    <Card>
+      <div className="flex items-start gap-3">
+        <Mail className="h-5 w-5 text-gray-700 mt-0.5 flex-shrink-0" />
+        <div className="flex-1">
+          <h2 className="text-lg font-semibold mb-1">Gmail connection</h2>
+          <p className="text-sm text-gray-500 mb-3">
+            Grants the app permission to read DoorDash financial emails and to
+            send the weekly DB backup + analytics alerts. Re-connect any time
+            the required scopes change.
+          </p>
+          {justConnected && (
+            <p className="text-sm text-green-700 bg-green-50 border border-green-100 rounded px-2 py-1 mb-3">
+              Connected. New scope is active — trigger the backup cron to verify.
+            </p>
+          )}
+          {gmailError && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-100 rounded px-2 py-1 mb-3">
+              Google rejected the consent: {gmailError}
+            </p>
+          )}
+          <Button onClick={handleConnect} loading={connecting} variant="secondary">
+            Connect / reconnect Gmail
+          </Button>
+        </div>
+      </div>
     </Card>
   );
 }
