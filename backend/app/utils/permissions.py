@@ -46,3 +46,27 @@ def require_location_access(user: User, location_id: int) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have access to this location",
         )
+
+
+def can_manage_employee(user: User, employee: User) -> bool:
+    """True if `user` can review/mutate records owned by `employee`.
+
+    Owners always can. Managers can only manage employees whose assigned
+    locations overlap their own.
+    """
+    if is_owner(user):
+        return True
+    if user.role != UserRole.manager:
+        return False
+    manager_loc_ids = {loc.id for loc in user.locations}
+    employee_loc_ids = {loc.id for loc in (employee.locations or [])}
+    return bool(manager_loc_ids & employee_loc_ids)
+
+
+def require_employee_access(user: User, employee: User) -> None:
+    """Raise 403 if `user` cannot act on records owned by `employee`."""
+    if not can_manage_employee(user, employee):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You do not have access to this employee",
+        )

@@ -83,38 +83,30 @@ async def login(
     result = await db.execute(select(User).where(User.email == form_data.username))
     user = result.scalar_one_or_none()
 
+    # Uniform error for both unknown-email and wrong-password paths so
+    # the response can't be used to enumerate valid accounts. Lockout
+    # state is still enforced server-side, but we don't leak per-account
+    # attempt counts in the response.
+    generic_unauthorized = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Incorrect email or password",
+    )
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-        )
+        raise generic_unauthorized
 
     # Check lockout
     locked_until = getattr(user, 'locked_until', None)
     if locked_until and locked_until > datetime.utcnow():
-        remaining = int((locked_until - datetime.utcnow()).total_seconds() / 60) + 1
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Account locked. Try again in {remaining} minutes.",
-        )
+        raise generic_unauthorized
 
     if not verify_password(form_data.password, user.hashed_password):
-        # Increment failed attempts
         attempts = getattr(user, 'failed_login_attempts', 0) or 0
         user.failed_login_attempts = attempts + 1
         if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
             user.locked_until = datetime.utcnow() + timedelta(minutes=LOCKOUT_MINUTES)
-            await db.flush()
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"Too many failed attempts. Account locked for {LOCKOUT_MINUTES} minutes.",
-            )
         await db.flush()
-        remaining = MAX_FAILED_ATTEMPTS - user.failed_login_attempts
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Incorrect email or password. {remaining} attempts remaining.",
-        )
+        raise generic_unauthorized
 
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is deactivated")

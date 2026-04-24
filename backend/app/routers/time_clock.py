@@ -19,6 +19,7 @@ from app.schemas.time_clock import (
     TimeClockResponse,
 )
 from app.services.audit_service import log_action
+from app.utils.permissions import require_location_access
 from app.services.time_clock_service import (
     auto_clock_out_expired_shifts,
     clock_in,
@@ -253,6 +254,8 @@ async def adjust_time(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Time clock entry not found")
+    if entry.location_id is not None:
+        require_location_access(current_user, entry.location_id)
 
     old_values = {"clock_in": entry.clock_in.isoformat(), "clock_out": entry.clock_out.isoformat() if entry.clock_out else None}
 
@@ -292,5 +295,7 @@ async def check_compliance(
     entry = result.scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Time clock entry not found")
+    if entry.location_id is not None:
+        require_location_access(current_user, entry.location_id)
 
     return get_break_compliance(entry)

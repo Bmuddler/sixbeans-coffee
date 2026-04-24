@@ -22,6 +22,7 @@ from app.schemas.shift_swap import (
     ShiftSwapReviewRequest,
 )
 from app.services.audit_service import log_action
+from app.utils.permissions import can_manage_location, require_location_access
 from app.services.notification_service import (
     notify_shift_swap_request,
     notify_shift_swap_decision,
@@ -151,6 +152,16 @@ async def review_swap_request(
 
     if swap.status != SwapStatus.pending:
         raise HTTPException(status_code=400, detail="Request already reviewed")
+
+    # Scope manager access to shifts they actually manage — either the
+    # requesting or the target shift must live at one of their locations.
+    shift_locs = (await db.execute(
+        select(ScheduledShift.location_id).where(
+            ScheduledShift.id.in_([swap.requesting_shift_id, swap.target_shift_id])
+        )
+    )).scalars().all()
+    if shift_locs and not any(can_manage_location(current_user, lid) for lid in shift_locs):
+        raise HTTPException(status_code=403, detail="You do not have access to this shift")
 
     swap.status = data.status
     swap.reviewed_by = current_user.id
@@ -350,6 +361,13 @@ async def review_coverage(
     coverage = result.scalar_one_or_none()
     if not coverage:
         raise HTTPException(status_code=404, detail="Coverage request not found")
+
+    # Scope manager access to the shift's location.
+    cov_shift_loc = (await db.execute(
+        select(ScheduledShift.location_id).where(ScheduledShift.id == coverage.shift_id)
+    )).scalar_one_or_none()
+    if cov_shift_loc is not None:
+        require_location_access(current_user, cov_shift_loc)
 
     coverage.status = data.status
     coverage.reviewed_by = current_user.id

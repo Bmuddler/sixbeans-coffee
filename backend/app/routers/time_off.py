@@ -21,6 +21,7 @@ from app.schemas.time_off import (
 )
 from app.services.audit_service import log_action
 from app.services.notification_service import notify_time_off_decision, notify_time_off_submitted, send_sms
+from app.utils.permissions import require_employee_access
 
 logger = logging.getLogger(__name__)
 
@@ -131,12 +132,15 @@ async def review_time_off_request(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(TimeOffRequest).options(selectinload(TimeOffRequest.employee))
-        .where(TimeOffRequest.id == request_id)
+        select(TimeOffRequest).options(
+            selectinload(TimeOffRequest.employee).selectinload(User.locations)
+        ).where(TimeOffRequest.id == request_id)
     )
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    if req.employee:
+        require_employee_access(current_user, req.employee)
 
     if req.status != RequestStatus.pending:
         raise HTTPException(status_code=400, detail="Request has already been reviewed")
@@ -270,12 +274,15 @@ async def review_unavailability(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(UnavailabilityRequest).options(selectinload(UnavailabilityRequest.employee))
-        .where(UnavailabilityRequest.id == request_id)
+        select(UnavailabilityRequest).options(
+            selectinload(UnavailabilityRequest.employee).selectinload(User.locations)
+        ).where(UnavailabilityRequest.id == request_id)
     )
     req = result.scalar_one_or_none()
     if not req:
         raise HTTPException(status_code=404, detail="Request not found")
+    if req.employee:
+        require_employee_access(current_user, req.employee)
 
     req.status = data.status
     req.reviewed_by = current_user.id
