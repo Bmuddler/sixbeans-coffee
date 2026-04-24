@@ -53,6 +53,11 @@ services:
         fromDatabase:
           name: sixbeans-db
           property: connectionString
+      # Not used by the alerter itself, but app/config.py refuses to
+      # import with the placeholder value — paste the same secret the
+      # main web service uses.
+      - key: JWT_SECRET_KEY
+        sync: false
       - key: SCRAPER_SESSION_ENCRYPTION_KEY
         sync: false
       - key: GMAIL_OAUTH_CLIENT_ID
@@ -83,6 +88,11 @@ services:
         fromDatabase:
           name: sixbeans-db
           property: connectionString
+      # Not used by the backup script itself, but app/config.py refuses
+      # to import with the placeholder value — paste the same secret
+      # the main web service uses.
+      - key: JWT_SECRET_KEY
+        sync: false
       - key: SCRAPER_SESSION_ENCRYPTION_KEY
         sync: false
       - key: GMAIL_OAUTH_CLIENT_ID
