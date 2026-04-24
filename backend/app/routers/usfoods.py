@@ -256,6 +256,37 @@ async def add_run_item(
     }
 
 
+@router.post("/runs/{run_id}/clear")
+async def clear_run_quantities(
+    run_id: int,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Zero every line item's quantity on a run without deleting the run.
+
+    Used on Fridays to start the new week's order with a clean slate —
+    keeps all product rows (so SKU / shop-mapping state is preserved)
+    but resets quantities so the owner can type the new week's counts
+    without deleting and re-adding items by hand.
+    """
+    run = (await db.execute(
+        select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
+    )).scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    items = (await db.execute(
+        select(USFoodsRunItem).where(USFoodsRunItem.run_id == run_id)
+    )).scalars().all()
+    cleared = 0
+    for item in items:
+        if item.quantity != 0:
+            item.quantity = 0
+            cleared += 1
+    await db.commit()
+    return {"ok": True, "items_cleared": cleared, "total_items": len(items)}
+
+
 @router.delete("/runs/{run_id}/items/{item_id}")
 async def remove_run_item(
     run_id: int,

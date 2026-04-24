@@ -233,6 +233,15 @@ export function USFoodsPage() {
     onError: () => toast.error('Failed to generate run'),
   });
 
+  const clearMutation = useMutation({
+    mutationFn: () => usfoods.clearRun(effectiveRunId!),
+    onSuccess: (data) => {
+      toast.success(`Zeroed ${data.items_cleared} of ${data.total_items} items`);
+      queryClient.invalidateQueries({ queryKey: ['usfoods-run', effectiveRunId] });
+    },
+    onError: () => toast.error('Failed to clear order'),
+  });
+
   const updateItemMutation = useMutation({
     mutationFn: ({ itemId, data }: { itemId: number; data: { quantity?: number; unit?: string; is_flagged?: boolean; flag_reason?: string | null } }) =>
       usfoods.updateItem(effectiveRunId!, itemId, data),
@@ -419,6 +428,19 @@ export function USFoodsPage() {
               icon={<RefreshCw className="h-4 w-4" />}
             >
               Generate New Run
+            </Button>
+
+            <Button
+              variant="secondary"
+              disabled={!effectiveRunId}
+              loading={clearMutation.isPending}
+              onClick={() => {
+                if (!effectiveRunId) return;
+                if (!confirm('Zero every quantity on this run? The line items stay — only the counts reset.')) return;
+                clearMutation.mutate();
+              }}
+            >
+              Clear Order
             </Button>
 
             <Button
