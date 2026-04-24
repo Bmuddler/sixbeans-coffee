@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import bcrypt
 from jose import jwt
 
-from app.config import settings
+from app.config import assert_jwt_secret_set, settings
 
 
 def hash_password(password: str) -> str:
@@ -17,6 +17,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    assert_jwt_secret_set()
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))
     to_encode.update({"exp": expire, "type": "access"})
@@ -24,6 +25,7 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
 
 
 def create_refresh_token(data: dict) -> str:
+    assert_jwt_secret_set()
     to_encode = data.copy()
     expire = datetime.utcnow() + timedelta(days=settings.refresh_token_expire_days)
     to_encode.update({"exp": expire, "type": "refresh"})
@@ -31,4 +33,5 @@ def create_refresh_token(data: dict) -> str:
 
 
 def decode_token(token: str) -> dict:
+    assert_jwt_secret_set()
     return jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])

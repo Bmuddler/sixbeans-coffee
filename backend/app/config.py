@@ -85,11 +85,16 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-# H1 guard: refuse to boot with the insecure placeholder JWT secret.
-# The sole exception is debug mode (local dev w/ the default DB) where
-# we noisily warn instead of crashing so the dev experience isn't broken
-# on fresh clones. In any prod-ish deploy DEBUG is False.
-if settings.jwt_secret_key == _JWT_INSECURE_DEFAULT:
+# H1 guard: refuse to mint/verify tokens with the insecure placeholder
+# JWT secret. Enforced lazily at the JWT use site (auth_service.py, the
+# X-Cron-Key comparison) rather than at module import, so cron-only
+# containers that never touch auth can still boot with the default. In
+# any prod-ish deploy the web service has a real value and will trip
+# the guard the first time it tries to sign a token — which is before
+# the first login request completes, well before any auth happens.
+def assert_jwt_secret_set() -> None:
+    if settings.jwt_secret_key != _JWT_INSECURE_DEFAULT:
+        return
     msg = (
         "FATAL: JWT_SECRET_KEY is unset or matches the insecure default "
         "('change-me-in-production'). Set a real value in your environment "

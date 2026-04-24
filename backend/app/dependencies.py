@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings
+from app.config import assert_jwt_secret_set, settings
 from app.database import get_db
 from app.models.user import User, UserRole
 
@@ -22,6 +22,7 @@ async def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
+        assert_jwt_secret_set()
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
         user_id: int | None = payload.get("sub")
         if user_id is None:
