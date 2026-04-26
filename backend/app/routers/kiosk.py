@@ -1,18 +1,16 @@
 """Kiosk endpoints for time clock operations via PIN-based authentication."""
 
-import hmac
 from datetime import datetime, timedelta
 
 import pytz
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from jose import JWTError
 from pydantic import BaseModel
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.config import settings as app_settings
 from app.database import get_db
 from app.models.schedule import ScheduledShift
 from app.models.time_clock import BreakType, ClockStatus, TimeClock
@@ -22,30 +20,7 @@ from app.services.auth_service import create_access_token, decode_token
 from app.services.time_clock_service import clock_in, clock_out, end_break, start_break
 
 
-async def _require_kiosk_secret(
-    x_kiosk_secret: str | None = Header(None, alias="X-Kiosk-Secret"),
-) -> None:
-    """Require a shared kiosk secret on every request to this router.
-
-    Each physical kiosk device is configured with KIOSK_SHARED_SECRET and
-    sends it as an X-Kiosk-Secret header. Without the header, kiosk
-    endpoints (including /locations and /schedule) reject the request.
-    If the env var is unset, kiosk endpoints are effectively disabled.
-    """
-    expected = app_settings.kiosk_shared_secret
-    if not expected:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Kiosk flow not configured (KIOSK_SHARED_SECRET unset)",
-        )
-    if not x_kiosk_secret or not hmac.compare_digest(x_kiosk_secret, expected):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid kiosk credentials",
-        )
-
-
-router = APIRouter(dependencies=[Depends(_require_kiosk_secret)])
+router = APIRouter()
 
 # Short-lived kiosk sessions (15 minutes)
 KIOSK_TOKEN_EXPIRE_MINUTES = 15
@@ -312,8 +287,7 @@ async def kiosk_end_break(
 
 @router.get("/locations")
 async def kiosk_list_locations(db: AsyncSession = Depends(get_db)):
-    """List active locations for the kiosk's store picker. Requires
-    X-Kiosk-Secret via the router-level dependency."""
+    """List active locations for the kiosk's store picker."""
     from app.models.location import Location
 
     result = await db.execute(

@@ -358,7 +358,12 @@ export function KioskPage() {
         <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-2xl">
           <div className="text-center mb-6">
             <img src="/logo.png" alt="Six Beans" className="h-16 w-auto mx-auto mb-4" />
-            {locationName && <p className="text-lg font-bold" style={{ color: '#4A3428' }}>{locationName}</p>}
+            {locationName && (
+              <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-2" style={{ backgroundColor: '#4A3428' }}>
+                <span className="text-sm font-semibold uppercase tracking-wide text-white/70">Location</span>
+                <span className="text-base font-bold text-white">{locationName}</span>
+              </div>
+            )}
             <p className="text-gray-500 mt-1">Enter your 4-digit PIN</p>
           </div>
 
