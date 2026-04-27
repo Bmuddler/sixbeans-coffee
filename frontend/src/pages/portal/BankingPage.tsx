@@ -12,6 +12,9 @@ import {
   ArrowRight,
   Trash2,
   Sparkles,
+  Pencil,
+  Check,
+  X as XIcon,
   Paperclip,
   RefreshCw,
 } from 'lucide-react';
@@ -316,21 +319,19 @@ function DashboardTab() {
                 <th className="py-2 text-left">Account</th>
                 <th className="py-2 text-left">Type</th>
                 <th className="py-2 text-right">Starting balance</th>
+                <th className="py-2 text-left">As of</th>
                 <th className="py-2 text-right">Current balance</th>
+                <th className="py-2 text-right"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {(accounts ?? []).map((a) => (
-                <tr key={a.id}>
-                  <td className="py-2">{a.name}</td>
-                  <td className="py-2 text-gray-500">{a.account_type}</td>
-                  <td className="py-2 text-right tabular-nums text-gray-500">{money(a.starting_balance)}</td>
-                  <td className="py-2 text-right tabular-nums font-medium">{money(a.current_balance)}</td>
-                </tr>
-              ))}
+              {(accounts ?? []).map((a) => <AccountBalanceRow key={a.id} account={a} />)}
             </tbody>
           </table>
         </div>
+        <p className="text-xs text-gray-400 mt-2">
+          If a current balance looks wrong: either edit the starting balance (click the pencil), or check that the imported file covers everything from the starting date to today.
+        </p>
       </Card>
 
       <Card title="Top vendors this month (operational view)">
@@ -366,6 +367,99 @@ function DashboardTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+function AccountBalanceRow({ account }: { account: Account }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [draftBalance, setDraftBalance] = useState(String(account.starting_balance));
+  const [draftDate, setDraftDate] = useState(account.starting_balance_date);
+
+  const save = useMutation({
+    mutationFn: () =>
+      finance.updateAccount(account.id, {
+        starting_balance: Number(draftBalance),
+        starting_balance_date: draftDate,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-bs'] });
+      toast.success('Starting balance updated');
+      setEditing(false);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Save failed')),
+  });
+
+  return (
+    <tr>
+      <td className="py-2">{account.name}</td>
+      <td className="py-2 text-gray-500">{account.account_type}</td>
+      <td className="py-2 text-right tabular-nums">
+        {editing ? (
+          <input
+            type="number"
+            step="0.01"
+            value={draftBalance}
+            onChange={(e) => setDraftBalance(e.target.value)}
+            className="w-28 border border-gray-200 rounded px-2 py-1 text-right text-sm"
+          />
+        ) : (
+          <span className="text-gray-500">{money(account.starting_balance)}</span>
+        )}
+      </td>
+      <td className="py-2 text-gray-500 text-xs">
+        {editing ? (
+          <input
+            type="date"
+            value={draftDate}
+            onChange={(e) => setDraftDate(e.target.value)}
+            className="border border-gray-200 rounded px-2 py-1 text-xs"
+          />
+        ) : (
+          account.starting_balance_date
+        )}
+      </td>
+      <td className={clsx(
+        'py-2 text-right tabular-nums font-medium',
+        account.current_balance < 0 && account.account_type !== 'credit_card' && 'text-red-600',
+      )}>
+        {money(account.current_balance)}
+      </td>
+      <td className="py-2 text-right">
+        {editing ? (
+          <div className="flex justify-end gap-1">
+            <button
+              onClick={() => save.mutate()}
+              disabled={save.isPending}
+              className="rounded p-1 text-green-600 hover:bg-green-50"
+              title="Save"
+            >
+              <Check className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => {
+                setEditing(false);
+                setDraftBalance(String(account.starting_balance));
+                setDraftDate(account.starting_balance_date);
+              }}
+              className="rounded p-1 text-gray-500 hover:bg-gray-100"
+              title="Cancel"
+            >
+              <XIcon className="h-4 w-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setEditing(true)}
+            className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-primary"
+            title="Edit starting balance"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }
 
