@@ -192,7 +192,7 @@ function DashboardTab() {
     queryKey: ['finance-pl', 'tax', start, end],
     queryFn: () => finance.pl({ start_date: start, end_date: end, mode: 'tax' }),
   });
-  const { data: avg } = useQuery({
+  const { data: avg, isLoading: avgLoading, error: avgError } = useQuery({
     queryKey: ['finance-daily-averages', start, end],
     queryFn: () => finance.dailyAverages({ start_date: start, end_date: end }),
   });
@@ -255,7 +255,11 @@ function DashboardTab() {
             <Input label="End" type="date" value={customEnd} min={customStart} onChange={(e) => setCustomEnd(e.target.value)} />
           </div>
         )}
-        {!avg ? (
+        {avgError ? (
+          <div className="rounded-lg bg-red-50 p-4 text-sm text-red-800">
+            <strong>Couldn't load daily averages:</strong> {extractError(avgError, 'unknown error')}
+          </div>
+        ) : avgLoading || !avg ? (
           <LoadingSpinner size="sm" />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
