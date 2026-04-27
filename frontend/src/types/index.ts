@@ -62,7 +62,6 @@ export interface Location {
   name: string;
   address: string;
   phone?: string;
-  timezone: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;

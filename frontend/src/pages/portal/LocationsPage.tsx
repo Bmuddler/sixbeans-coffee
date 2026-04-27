@@ -19,7 +19,6 @@ interface LocationForm {
   name: string;
   address: string;
   phone: string;
-  timezone: string;
   is_active: boolean;
 }
 
@@ -27,17 +26,8 @@ const defaultForm: LocationForm = {
   name: '',
   address: '',
   phone: '',
-  timezone: 'America/New_York',
   is_active: true,
 };
-
-const TIMEZONE_OPTIONS = [
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Phoenix',
-];
 
 export function LocationsPage() {
   const queryClient = useQueryClient();
@@ -107,7 +97,6 @@ export function LocationsPage() {
       name: form.name,
       address: form.address,
       phone: form.phone || undefined,
-      timezone: form.timezone,
       is_active: form.is_active,
     });
   };
@@ -120,7 +109,6 @@ export function LocationsPage() {
         name: form.name,
         address: form.address,
         phone: form.phone || undefined,
-        timezone: form.timezone,
         is_active: form.is_active,
       },
     });
@@ -132,7 +120,6 @@ export function LocationsPage() {
       name: loc.name,
       address: loc.address,
       phone: loc.phone ?? '',
-      timezone: loc.timezone,
       is_active: loc.is_active,
     });
     setEditModal(true);
@@ -152,29 +139,14 @@ export function LocationsPage() {
         onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
         placeholder="123 Main St, City, State ZIP"
       />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Input
-          label="Phone"
-          type="tel"
-          value={form.phone}
-          onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
-          placeholder="(555) 123-4567"
-        />
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-gray-700">Timezone</label>
-          <select
-            className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary-300"
-            value={form.timezone}
-            onChange={(e) => setForm((f) => ({ ...f, timezone: e.target.value }))}
-          >
-            {TIMEZONE_OPTIONS.map((tz) => (
-              <option key={tz} value={tz}>
-                {tz.replace('America/', '').replace('_', ' ')}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <Input
+        label="Phone"
+        type="tel"
+        value={form.phone}
+        onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+        placeholder="(555) 123-4567"
+      />
+      <p className="text-xs text-gray-400">All locations operate on Pacific Time (PST/PDT).</p>
       <div className="flex items-center gap-2">
         <input
           type="checkbox"
