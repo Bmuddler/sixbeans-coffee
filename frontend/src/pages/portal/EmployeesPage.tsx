@@ -80,6 +80,18 @@ export function EmployeesPage() {
     queryFn: () => usersApi.list({ per_page: 100 }),
   });
 
+  const extractError = (err: any, fallback: string): string => {
+    const detail = err?.response?.data?.detail;
+    if (typeof detail === 'string') return detail;
+    if (Array.isArray(detail) && detail.length > 0) {
+      const first = detail[0];
+      const loc = Array.isArray(first?.loc) ? first.loc.join('.') : '';
+      const msg = first?.msg ?? 'invalid input';
+      return loc ? `${loc}: ${msg}` : msg;
+    }
+    return err?.message ?? fallback;
+  };
+
   const createMutation = useMutation({
     mutationFn: (data: any) => usersApi.create(data),
     onSuccess: () => {
@@ -88,7 +100,7 @@ export function EmployeesPage() {
       setForm(defaultForm);
       toast.success('Employee created');
     },
-    onError: () => toast.error('Failed to create employee'),
+    onError: (err: any) => toast.error(extractError(err, 'Failed to create employee')),
   });
 
   const updateMutation = useMutation({
@@ -99,7 +111,7 @@ export function EmployeesPage() {
       setSelectedEmployee(null);
       toast.success('Employee updated');
     },
-    onError: () => toast.error('Failed to update employee'),
+    onError: (err: any) => toast.error(extractError(err, 'Failed to update employee')),
   });
 
   const allEmployees = useMemo(() => {
