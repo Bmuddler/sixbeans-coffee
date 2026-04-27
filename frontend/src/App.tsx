@@ -167,7 +167,7 @@ export function App() {
         <Route
           path="/portal/settings"
           element={
-            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+            <ProtectedRoute>
               <SettingsPage />
             </ProtectedRoute>
           }
