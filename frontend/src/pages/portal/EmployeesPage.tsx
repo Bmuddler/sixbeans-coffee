@@ -63,6 +63,7 @@ export function EmployeesPage() {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [collapsedLocations, setCollapsedLocations] = useState<Set<number>>(new Set());
   const [addModal, setAddModal] = useState(false);
@@ -116,6 +117,7 @@ export function EmployeesPage() {
 
   const allEmployees = useMemo(() => {
     let list = employeesData?.items ?? [];
+    if (!showInactive) list = list.filter((e) => e.is_active);
     if (roleFilter) list = list.filter((e) => e.role === roleFilter);
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
@@ -127,7 +129,12 @@ export function EmployeesPage() {
       );
     }
     return list;
-  }, [employeesData, roleFilter, searchTerm]);
+  }, [employeesData, roleFilter, searchTerm, showInactive]);
+
+  const inactiveCount = useMemo(
+    () => (employeesData?.items ?? []).filter((e) => !e.is_active).length,
+    [employeesData],
+  );
 
   // Group employees by location
   const employeesByLocation = useMemo(() => {
@@ -384,6 +391,14 @@ export function EmployeesPage() {
             <Input placeholder="Search employees..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} icon={<Search className="h-4 w-4" />} />
           </div>
           <Select options={ROLE_OPTIONS} value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className="w-36" />
+          <Button
+            variant={showInactive ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setShowInactive((v) => !v)}
+            title={showInactive ? 'Hide deactivated employees' : 'Show deactivated employees'}
+          >
+            {showInactive ? 'Hide inactive' : `Show inactive${inactiveCount > 0 ? ` (${inactiveCount})` : ''}`}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
