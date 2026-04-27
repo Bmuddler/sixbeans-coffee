@@ -100,6 +100,12 @@ const navItems: NavItem[] = [
     roles: [UserRole.OWNER],
   },
   {
+    to: '/portal/banking',
+    label: 'Banking',
+    icon: <Banknote className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
+  },
+  {
     to: '/portal/locations',
     label: 'Locations',
     icon: <MapPin className="h-5 w-5" />,

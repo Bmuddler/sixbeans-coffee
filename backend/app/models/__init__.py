@@ -34,3 +34,11 @@ from app.models.expense import Expense  # noqa: E402, F401
 from app.models.hourly_revenue import HourlyRevenue  # noqa: E402, F401
 from app.models.ingestion_run import IngestionRun  # noqa: E402, F401
 from app.models.scraper_session import ScraperSession  # noqa: E402, F401
+from app.models.finance import (  # noqa: E402, F401
+    BankAccount,
+    FinanceCategory,
+    FinanceRule,
+    BankTransaction,
+    ManualLedgerEntry,
+    MonthlyClose,
+)

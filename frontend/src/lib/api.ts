@@ -791,3 +791,74 @@ export const insights = {
 };
 
 export default api;
+
+// ============================================================
+// Finance / Banking Center
+// ============================================================
+
+export const finance = {
+  accounts: () => api.get('/finance/accounts').then((r) => r.data),
+  updateAccount: (id: number, data: any) =>
+    api.patch(`/finance/accounts/${id}`, data).then((r) => r.data),
+
+  categories: (includeArchived = false) =>
+    api.get('/finance/categories', { params: { include_archived: includeArchived } }).then((r) => r.data),
+  createCategory: (data: any) => api.post('/finance/categories', data).then((r) => r.data),
+  updateCategory: (id: number, data: any) =>
+    api.patch(`/finance/categories/${id}`, data).then((r) => r.data),
+  deleteCategory: (id: number) => api.delete(`/finance/categories/${id}`).then((r) => r.data),
+
+  rules: () => api.get('/finance/rules').then((r) => r.data),
+  createRule: (data: any) => api.post('/finance/rules', data).then((r) => r.data),
+  updateRule: (id: number, data: any) =>
+    api.patch(`/finance/rules/${id}`, data).then((r) => r.data),
+  deleteRule: (id: number) => api.delete(`/finance/rules/${id}`).then((r) => r.data),
+
+  ingest: (accountId: number, file: File) => {
+    const fd = new FormData();
+    fd.append('account_id', String(accountId));
+    fd.append('file', file);
+    return api.post('/finance/ingest', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+
+  transactions: (params: any) =>
+    api.get('/finance/transactions', { params }).then((r) => r.data),
+  updateTransaction: (id: number, data: any) =>
+    api.patch(`/finance/transactions/${id}`, data).then((r) => r.data),
+  deleteTransaction: (id: number) =>
+    api.delete(`/finance/transactions/${id}`).then((r) => r.data),
+  uploadReceipt: (id: number, file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post(`/finance/transactions/${id}/receipt`, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+  removeReceipt: (id: number) =>
+    api.delete(`/finance/transactions/${id}/receipt`).then((r) => r.data),
+
+  ledger: () => api.get('/finance/ledger').then((r) => r.data),
+  createLedgerEntry: (data: any) => api.post('/finance/ledger', data).then((r) => r.data),
+  updateLedgerEntry: (id: number, data: any) =>
+    api.patch(`/finance/ledger/${id}`, data).then((r) => r.data),
+  deleteLedgerEntry: (id: number) =>
+    api.delete(`/finance/ledger/${id}`).then((r) => r.data),
+
+  pl: (params: { start_date: string; end_date: string; mode?: 'tax' | 'operational' }) =>
+    api.get('/finance/reports/pl', { params }).then((r) => r.data),
+  balanceSheet: (asOf?: string) =>
+    api.get('/finance/reports/balance-sheet', { params: asOf ? { as_of: asOf } : {} }).then((r) => r.data),
+  topVendors: (params: { start_date: string; end_date: string; limit?: number }) =>
+    api.get('/finance/reports/top-vendors', { params }).then((r) => r.data),
+
+  closes: () => api.get('/finance/closes').then((r) => r.data),
+  closeMonth: (data: { year: number; month: number; notes?: string }) =>
+    api.post('/finance/closes', data).then((r) => r.data),
+  reopenMonth: (year: number, month: number) =>
+    api.delete(`/finance/closes/${year}/${month}`).then((r) => r.data),
+
+  recategorizeUncategorized: () =>
+    api.post('/finance/recategorize-uncategorized').then((r) => r.data),
+};

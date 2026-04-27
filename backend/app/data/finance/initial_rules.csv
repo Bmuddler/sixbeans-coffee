@@ -1,0 +1,179 @@
+rule_name,match_type,match_text,vendor,category
+WENDY'S,contains,WENDY'S,WENDY'S,Meals
+APPLE COM BILL,contains,APPLE.COM,APPLE,Subscriptions
+CSC SERVICEWORKS,contains,SERVICEWORKS,CSC SERVICEWORKS,Subscriptions
+HARTFORD FIRE,contains,HARTFORD FIRE,HARTFORD,Insurance Settlement
+STRIPE TRANSFER,contains,STRIPE TRANSFER,Stripe,Food Sales Online Fo...
+RECURRING TRANSFER TO INNOVATIVE CONCEPT DEVELOPMENT,contains,RECURRING TRANSFER TO INNOVATIVE CONCEPT DEVELOPMENT,Innovative Concept Development,Rent Expense
+CAPITAL ONE PAYMENT,contains,CAPITAL ONE ONLINE PYMT,Capital One,Internal Transfer
+CAPITAL ONE ACH,contains,BUSINESS TO BUSINESS ACH CAPITAL ONE,Capital One,Internal Transfer
+CAPITAL ONE PAYMENT GENERIC,contains,CAPITAL ONE PAYMENT,Capital One,Internal Transfer
+TRANSFER FEE,contains,TRANSFER FEE,Transfer Fee,Bank Service Charges
+WIRE TRANSFER FEE,contains,WIRE TRANSFER FEE,Wire Transfer Fee,Bank Service Charges
+INTERNAL TRANSFER,contains,TRANSFER,Internal Transfer,Internal Transfer
+PPMETAPLATFORM,contains,METAPLATFORM,Metaplatform,Advertising and Prom...
+1ST BANKCARD,contains,1ST BANKCARD,1ST BANKCARD,Cost of Goods Sold
+7 Eleven,contains,7-ELEVEN,7 Eleven,Fuel
+7 eleven,contains,7 eleven,7 Eleven,Fuel
+AAA Insurance,contains,AAA,AAA Insurance,Insurance Expense
+adp payroll dep,contains,adp payroll,ADP,Payroll Expenses
+adp taxes,contains,adp tax,ADP,Payroll Expenses Pay...
+adp wage,contains,adp wage pay,ADP,Payroll Expenses
+AIRGAS,contains,AIRGAS,AirGas,Restaurant Supplies
+ALDI,contains,ALDI,ALDI,Food Purchases
+Alive Print,contains,Alive Print,Alive Inside Productions,Advertising and Prom...
+ALLY,contains,ALLY,Ally,Notes Payable/Ram C...
+ALTERNA,contains,ALTERNA,ALTERNA LAB,Repairs and Maintenance
+AMAZON,contains,AMAZON,Amazon,Restaurant Supplies
+amex,contains,american express,American Express,Restaurant Supplies
+AMRETTI,contains,AMRETTI,Amretti,Food Purchases
+AMZN,contains,AMZN,Amazon,Restaurant Supplies
+APPLES,contains,APPLES,Apples,Meals
+ARCO,contains,ARCO,Arco,Fuel
+AUTOZONE,contains,AUTOZONE,Autozone,Automobile Expense...
+BAKERS,contains,BAKERS,BAKERS,Meals
+BARCLAYCARD,contains,BARCLAYCARD,Barclay Credit Card,Cost of Goods Sold
+BEARS,contains,BEARS,Bear Glass,Repairs and Maintenance
+burger king,contains,burger king,Burger King,Meals
+BUSK SUPPLEMENTS,contains,BUSK SUPPLEMENTS,Bulk Supplements,Food Purchases
+CA DEPT TAX FEE,contains,CA DEPT TAX FEE,FRANCHISE TAX BOARD,Business Licenses an...
+CA SECRETARY OF ST,contains,CA SECRETARY OF ST,CA SECRETARY OF ST,Business Licenses an...
+CASH DEPOSIT PROCESSING FEE,contains,CASH DEPOSIT PROCESSING FEE,Wells Fargo,Bank Service Charges
+CASHED CHECK,contains,CASHED CHECK,Employee Paycheck,Payroll Expenses
+Chargepoint,contains,Chargepoint,Chargepoint,EV CHARGING
+CHASE CREDIT,contains,CHASE CREDIT,Chase,Restaurant Supplies
+CHEVRON,contains,CHEVRON,CHEVRON,Fuel
+CHICK-FIL-A,contains,CHICK-FIL-A,CHICK-FIL-A,Meals
+Chilis,contains,Chilis,Chilis,Meals
+CHIPOTLE,contains,CHIPOTLE,CHIPOTLE,Meals
+CINEMARK,contains,CINEMARK,CINEMARK,GIFTS
+circ,contains,CIR,Cir,Fuel
+CIRCLE K,contains,CIRCLE K,Circle K,Fuel
+CITY OF VICTOR,contains,CITY OF VICTOR,City of Victorville,Business Licenses an...
+CITY OF VICTORVILLE,contains,CITY OF VICTORVILLE,City of Victorville,Utilities
+COIN CAP,contains,COIN CAP,Comenity Bank,Food Purchases
+COIN ORDERED FEE,contains,COIN ORDERED FEE,Wells Fargo,Bank Service Charges
+COMENITY PAY,contains,COMENITY PAY,Comenity Bank,Food Purchases
+CONCEPT DEVELOPMENT,contains,CONCEPT DEVELOPMENT,Innovative Concept Development,Rent Expense
+COSTCO,contains,COSTCO,Costco,Food Purchases
+CRISP IMAGING,contains,CRISP IMAGING,CRISP IMAGING,Advertising and Prom...
+DEL TACO,contains,DEL TACO,Del Taco,Meals
+DEPOSIT MADE IN A BRANCH,contains,DEPOSIT MADE IN A BRANCH...,eDeposit in Branch,Food Sales
+DEPOSITED OR CASHED CHECK,contains,DEPOSITED OR CASHED C...,Employee Paycheck,Payroll Expenses
+DMPGO DADDY.COM,contains,DMPGO DADDY.COM,Go Daddy,Advertising and Prom...
+dollar tree,contains,dollar tree,Dollar Tree,Advertising and Prom...
+DOLLAR TREE,contains,DOLLAR TREE,DOLLAR TREE,Advertising and Prom...
+DPHSB,contains,DPHSB,San Bernardino Public Health,Business Licenses an...
+eBay,contains,eBay,eBay,Restaurant Supplies
+eDeposit in Branch 2,contains,eDeposit in Branch 2,eDeposit in Branch,Food Sales
+eDepost in Branch,contains,eDeposit in Branch 12/08/23,eDeposit in Branch,Food Sales
+expresso parts,contains,expresso parts,Expresso Parts,Repairs and Maintenance
+Facebook,contains,Facebook,Facebook,Advertising and Prom...
+FRANCHISE TAX,contains,FRANCHISE TAX,FRANCHISE TAX BOARD,Business Licenses an...
+FRONTIER,contains,FRONTIER,FRONTIER,Utilities
+G.A.OSBORNE,contains,G.A.OSBORNE,G.A.OSBORNE,Repairs and Maintenance
+GoDaddy Payments dep,contains,GoDaddy,GoDaddy,Food Sales
+GoldenStateMale,contains,GoldenStateMale,Golden State Water,Utilities
+Goodman Mooney,contains,Goodman Mooney,Goodman Mooney,Professional Fees
+google,contains,Google,Google,Advertising and Prom...
+Grubhub,contains,Grubhub,Grubhub,Food Sales Online Fo...
+HANOVER,contains,HANOVER,Hanover Insurance,Insurance Expense
+Hart Cleaning,contains,Hart,Hart Cleaning,Repairs and Maintenance
+HARTFORD,contains,HARTFORD,THE HARTFORD,Insurance Expense
+Heinz,contains,Heinz,Heinz,Rent Expense
+HESPERIA GAS,contains,HESPERIA GAS,HESPERIA GAS,Fuel
+HI DESERT FIRE,contains,HI DESERT FIRE,High Desert Fire,Repairs and Maintenance
+HOME DEPOT,contains,HOME DEPOT,Home Depot,Repairs and Maintenance
+HOMEBASE,contains,HOMEBASE,Home Base,Subscriptions
+Hostgator.com,contains,Hostgator.com,Host Gator,Computer and Internet
+INNOVATIVE,contains,INNOVATIVE,Innovative Concept Development,Rent Expense
+INNOVATIVE CONCEPT,contains,INNOVATIVE CONCEPT,Innovative Concept Development,Rent Expense
+INSTACART,contains,INSTACART,INSTACART,Food Purchases
+JOHNNY LIPA,contains,JOHNNY LIPA,Link’s Commercial Refrigeration,Repairs and Maintenance
+JUICY WIMP,contains,JUICY WIMP,Juicy Wimp,Food Purchases
+KARAT,contains,KARAT,KARAT,Cost of Goods Sold
+KFC,contains,KFC,KFC,Meals
+KLATCH,contains,KLATCH,Klatch Roasting,Food Purchases
+Kunal,contains,KUNAL,K&K Business Eng,Cost of Goods Sold
+LEGAL ORDER,contains,LEGAL ORDER,FRANCHISE TAX BOARD,Business Licenses an...
+LIPAS,contains,LIPAS,Link’s Commercial Refrigeration,Repairs and Maintenance
+LOLLICUPSTORE,contains,LOLLICUPSTORE,Lollcup USA,Restaurant Supplies
+LORANN OILS INC,contains,LORANN OILS INC,LORANN OILS,Food Purchases
+LOWES,contains,LOWES,Lowes,Repairs and Maintenance
+MATTHEW YOUNESSI,contains,MATTHEW YOUNESSI,YOUNESCO PROPERTIES,Rent Expense
+Mcdonald,contains,McDonald,McDonald,Meals
+MOBILE DEPOSIT,contains,MOBILE DEPOSIT,MOBILE DEPOSIT,Food Sales
+MY SPICE SAGE,contains,MY SPICE SAGE,MY SPICE SAGE,Food Purchases
+OGGYS,contains,OGGYS,OGGYS,Meals
+OLD TOWN BAKING,contains,OLD TOWN BAKING,Old Town Baking Co,Food Purchases
+OpenAI,contains,OpenAI,OpenAI,Computer and Internet
+OREILLY,contains,OREILLY,Oreilly Auto Parts,Repairs and Maintenance
+OVERDRAFT FEE,contains,OVERDRAFT FEE,Wells Fargo,Bank Service Charges
+PARTS TOWN,contains,PARTS TOWN,PARTS Town,Repairs and Maintenance
+PRAYAL UBER,contains,UBER,Uber,Travel Expense
+Private Internet,contains,Private Internet,Private Internet,Computer and Internet
+RAILWAY,contains,RAILWAY,RAILWAY,Computer and Internet
+ramen,contains,ramen,Ramen,Meals
+Runner,contains,Runner,Runner Dairy,Food Purchases
+SAN BERN CNTY,contains,SAN BERN CNTY,San Bernardino Public Health,Business Licenses an...
+SAN BERN EHS,contains,SAN BERN EHS,San Bernardino Public Health,Business Licenses an...
+SAN BERNARDINO D,contains,SAN BERNARDINO D,San Bernardino Public Health,Business Licenses an...
+SAN BERNARDINO TAX,contains,SAN BERNARDINO TAX CO...,San Bernardino Tax Collector,Business Licenses an...
+SHELL SERVICE STATION,contains,SHELL,SHELL,Fuel
+SIW,contains,SHERWIN,SHERWIN-WILLIAMS,Repairs and Maintenance
+SMART AND FINAL,contains,SMART AND FINAL,Smart N Final,Food Purchases
+SO CAL EDISON,contains,SO CAL EDISON,Edison,Utilities
+SOUTHWEST GAS,contains,SOUTHWEST GAS,SOUTHWEST GAS,Utilities
+SPECTRUM,contains,SPECTRUM,SPECTRUM,Utilities
+ST OF CA DMV,contains,ST OF CA DMV,DMV,Automobile Expense...
+staples,contains,staples,Staples,Office Supplies
+STATEFARM,contains,STATEFARM,State Brothers,Food Purchases
+stripe in,contains,stripe,Stripe,Food Sales
+SUPERIOR GROCERS,contains,SUPERIOR GROCERS,SUPERIOR GROCERS,Food Purchases
+taco bell,contains,Taco Bell,Taco Bell,Meals
+TAPMANGO,contains,TAPMANGO,Tapmango,Advertising and Promotion
+target,contains,Target,Target,Advertising and Promotion
+Telio,contains,Telio,Telio,Advertising and Promotion
+TEMU,contains,TEMU,TEMU,Restaurant Supplies
+THE DEPOT,contains,THE DEPOT,Home Depot,Repairs and Maintenance
+THE UPS,contains,THE UPS,UPS,Shipping Expense
+to payroll,contains,pay-to-pay,ADP,Payroll Expenses W...
+TOLL ROADS,contains,TOLL ROADS,The Toll Roads,Subscriptions
+Town of Apple,contains,Town of Apple,Town of Apple Valley,Utilities
+trans fee,contains,transactions fee,Wells Fargo,Bank Service Charges
+ULINE,contains,ULInE,Uline,Office Supplies
+US FOODSERVICE,contains,US FOODSERVICE,US Food Service,Food Purchases
+USPS,contains,USPS,USPS,Shipping Expense
+VARGAS EFREN,contains,VARGAS EFREN,VARGAS EFREN,Repairs and Maintenance
+VERIZON,contains,VERIZON,Verizon,Utilities
+Victorville Speedwash,contains,Victorville Speedwash,VICTORVILLE SPEEDWASH,Rent Expense
+WAL-MART,contains,WAL-MART,Wal-MART,Food Purchases
+WALGREENS,contains,WALGREENS,Walgreens,Office Supplies
+Walmart,contains,Walmart,Wal-MART,Food Purchases
+WAREHOUSE RENT,contains,WAREHOUSE RENT,"YOUNESCO PROPERTIES,LLC",Rent Expense
+Webstaurant,contains,Webstaurant,Webstraunt,Food Purchases
+WINCO,contains,WINCO,Winco Foods,Food Purchases
+WINCO FOODS,contains,WINCO FOODS,Winco Foods,Food Purchases
+WING STOP,contains,WINGSTOP,WING STOP,Meals
+WK PEST SOLUTIONS,contains,WK PEST,WK PEST,Repairs and Maintenance
+doordash,contains,doordash,doordash,Food Sales Online Fo...
+STEAK N SHAKE,contains,STEAK N SHAKE,Steak N Shake,Meals
+FARMER BOYS,contains,FARMER BOYS,Farmer Boys,Meals
+CARLS JR,contains,CARLS JR,Carls Jr,Meals
+TWILIO,contains,TWILIO,Twilio,Software
+ADVANCE DISPOSAL,contains,ADVANCE DISPOSAL,Advance Disposal,Utilities
+BEARS VALLEY GLASS,contains,BEAR,Bear's Valley Glass,Repairs and Maintenance
+ALTO COLD BREW,contains,ALTO COLD BREW,Alto Cold Brew,Cost of Goods Sold
+HELM LLC,contains,HELM,Helm LLC,Rent Expense
+MOHAN REAL ESTATE,contains,MOHAN,Mohan Real Estate,Rent Expense
+RENNER DAIRY,contains,RENNER DAIRY,Renner Dairy,Cost of Goods Sold
+H AND B REFRIDGERATION,contains,REFRIDGERATION,H&B Refrigeration,Repairs and Maintenance
+CITY OF VICTORVILLE,contains,VICTORVILLE,City of Victorville,Utilities
+GOLDEN STATE WATER,contains,GOLDENSTATE,Golden State Water,Utilities
+CAPONE INTEREST,contains,INTEREST CHARGE,Capital One Interest,Interest Expense
+ADP PAY BY PAY,contains,ADP PAY,ADP,Payroll Expenses
+EDEPOSIT,contains,EDEPOSIT,Deposits,Food Sales
+GDP RANCHERO,contains,RANCHERO,Six Beans Ranchero,Advertising and Promotion
+JUICY WHIP,contains,JUICY WHIP,Juicy Whip,Food Purchases
+CHECK PAYROLL,contains,CHECK #,Payroll Checks,Payroll Expenses
+CITI AUTOPAY,contains,CITI AUTOPAY,Citi,Cost of Goods Sold

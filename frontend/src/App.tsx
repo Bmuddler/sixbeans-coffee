@@ -36,6 +36,7 @@ import { AnalyticsAdminPage } from '@/pages/portal/admin/AnalyticsAdminPage';
 import { ExpensesAdminPage } from '@/pages/portal/admin/ExpensesAdminPage';
 import { InsightsPage } from '@/pages/portal/InsightsPage';
 import { ApplicationsPage } from '@/pages/portal/ApplicationsPage';
+import { BankingPage } from '@/pages/portal/BankingPage';
 
 export function App() {
   return (
@@ -144,6 +145,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
               <ApplicationsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/banking"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+              <BankingPage />
             </ProtectedRoute>
           }
         />

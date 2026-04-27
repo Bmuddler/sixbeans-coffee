@@ -24,6 +24,7 @@ from app.routers import (
     cash_drawer,
     dashboard,
     documents,
+    finance,
     forms,
     kiosk,
     locations,
@@ -75,6 +76,7 @@ app.include_router(usfoods.router, prefix="/api/usfoods", tags=["US Foods"])
 app.include_router(analytics_admin.router, prefix="/api", tags=["Analytics Admin"])
 app.include_router(insights.router, prefix="/api", tags=["Insights"])
 app.include_router(expenses.router, prefix="/api", tags=["Expenses"])
+app.include_router(finance.router, prefix="/api/finance", tags=["Finance"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},
@@ -544,6 +546,11 @@ async def startup():
             await seed_employees(session)
             await seed_supply_catalog(session)
             await seed_usfoods(session)
+
+        # Banking center: idempotent (skips if any bank account exists), so
+        # safe to call on every boot — but only fires once on a fresh DB.
+        from app.data.finance_seed import seed_finance
+        await seed_finance(session)
 
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(
