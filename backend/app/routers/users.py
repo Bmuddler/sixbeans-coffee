@@ -333,12 +333,14 @@ async def _build_reconcile_plan(db: AsyncSession) -> dict:
         if not existing.is_active:
             diffs["is_active"] = (False, True)
 
-        if diffs:
-            to_update.append({
-                "id": existing.id,
-                "email": existing.email,
-                "diffs": diffs,
-            })
+        # Always include canonical-roster users in to_update so the password
+        # reset (phone-based) and lockout clear apply to everyone, even rows
+        # whose other fields already match.
+        to_update.append({
+            "id": existing.id,
+            "email": existing.email,
+            "diffs": diffs,
+        })
 
     to_deactivate: list[dict] = []
     for u in users:
@@ -443,6 +445,15 @@ async def reconcile_employees(
         if "location_ids" in diffs:
             new_ids = diffs["location_ids"][1]
             user.locations = [loc_by_id[i] for i in new_ids if i in loc_by_id]
+        # Reset password to phone (with must_change_password=true so they're
+        # prompted on first login). Applied unconditionally to every update
+        # so existing users who never finished onboarding land on the same
+        # initial-password contract as freshly-created ones.
+        reset_password = user.phone or "Sixb3ans12!"
+        user.hashed_password = hash_password(reset_password)
+        user.must_change_password = True
+        user.failed_login_attempts = 0
+        user.locked_until = None
 
     for u in plan["to_deactivate"]:
         user = (await db.execute(
