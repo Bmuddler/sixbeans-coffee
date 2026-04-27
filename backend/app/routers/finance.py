@@ -979,6 +979,76 @@ async def balance_sheet(
     }
 
 
+@router.get("/reports/daily-averages")
+async def daily_averages(
+    start_date: date,
+    end_date: date,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Average per-day income, actual spend, and budgeted spend for a window.
+
+    Actual numbers come from the operational P&L (so Cap One purchases are
+    counted at vendor level, not double-counted via the lump payment).
+
+    Budgeted spend reads the same monthly_expense rows the Insights page uses
+    — sum of all rows / 30.44 (mean days-per-month) — so the same baseline
+    appears in both places.
+    """
+    if end_date < start_date:
+        raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
+
+    days = (end_date - start_date).days + 1
+
+    # Operational P&L for the window — real spend by vendor.
+    pl = await _compute_pl(db, start_date, end_date, "operational")
+    total_income = pl["totals"]["income"]
+    total_cogs = pl["totals"]["cogs"]
+    total_expense = pl["totals"]["expense"]
+    total_spend = round(total_cogs + total_expense, 2)
+
+    # Estimated spend: sum of every monthly_expense row prorated to /day.
+    from app.models.expense import Expense
+    monthly_total = (await db.execute(
+        select(func.coalesce(func.sum(Expense.amount), 0.0))
+    )).scalar() or 0.0
+    estimated_per_day = round(float(monthly_total) / 30.44, 2)
+    estimated_window_total = round(estimated_per_day * days, 2)
+    actual_per_day = round(total_spend / days, 2) if days else 0.0
+    income_per_day = round(total_income / days, 2) if days else 0.0
+    net_per_day = round(income_per_day - actual_per_day, 2)
+    variance_dollars = round(total_spend - estimated_window_total, 2)
+    variance_pct = (
+        round((total_spend - estimated_window_total) / estimated_window_total * 100.0, 1)
+        if estimated_window_total
+        else None
+    )
+
+    return {
+        "window": {
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+            "days": days,
+        },
+        "actual": {
+            "income_total": total_income,
+            "spend_total": total_spend,
+            "income_per_day": income_per_day,
+            "spend_per_day": actual_per_day,
+            "net_per_day": net_per_day,
+        },
+        "budget": {
+            "monthly_total": round(float(monthly_total), 2),
+            "per_day": estimated_per_day,
+            "window_total": estimated_window_total,
+        },
+        "variance": {
+            "dollars": variance_dollars,
+            "pct": variance_pct,
+        },
+    }
+
+
 @router.get("/reports/top-vendors")
 async def top_vendors(
     start_date: date,

@@ -869,6 +869,8 @@ export const finance = {
     api.get('/finance/reports/balance-sheet', { params: asOf ? { as_of: asOf } : {} }).then((r) => r.data),
   topVendors: (params: { start_date: string; end_date: string; limit?: number }) =>
     api.get('/finance/reports/top-vendors', { params }).then((r) => r.data),
+  dailyAverages: (params: { start_date: string; end_date: string }) =>
+    api.get('/finance/reports/daily-averages', { params }).then((r) => r.data),
 
   closes: () => api.get('/finance/closes').then((r) => r.data),
   closeMonth: (data: { year: number; month: number; notes?: string }) =>

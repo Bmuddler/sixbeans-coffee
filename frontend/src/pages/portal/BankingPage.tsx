@@ -155,17 +155,43 @@ export function BankingPage() {
 // Dashboard
 // ---------------------------------------------------------------------------
 
+type Preset = 'mtd' | 'last30' | 'last90' | 'ytd' | 'custom';
+
+function rangeForPreset(p: Preset, customStart: string, customEnd: string): { start: string; end: string } {
+  const today = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  if (p === 'mtd') return { start: startOfMonthISO(), end: todayISO() };
+  if (p === 'last30') {
+    const d = new Date(today); d.setDate(d.getDate() - 29);
+    return { start: iso(d), end: todayISO() };
+  }
+  if (p === 'last90') {
+    const d = new Date(today); d.setDate(d.getDate() - 89);
+    return { start: iso(d), end: todayISO() };
+  }
+  if (p === 'ytd') return { start: startOfYearISO(), end: todayISO() };
+  return { start: customStart, end: customEnd };
+}
+
 function DashboardTab() {
   const { data: accounts } = useQuery<Account[]>({ queryKey: ['finance-accounts'], queryFn: finance.accounts });
   const { data: uncatPage } = useQuery({
     queryKey: ['finance-uncat-count'],
     queryFn: () => finance.transactions({ only_uncategorized: true, per_page: 1 }),
   });
-  const start = startOfMonthISO();
-  const end = todayISO();
+
+  const [preset, setPreset] = useState<Preset>('mtd');
+  const [customStart, setCustomStart] = useState(startOfMonthISO());
+  const [customEnd, setCustomEnd] = useState(todayISO());
+  const { start, end } = rangeForPreset(preset, customStart, customEnd);
+
   const { data: pl } = useQuery({
     queryKey: ['finance-pl', 'tax', start, end],
     queryFn: () => finance.pl({ start_date: start, end_date: end, mode: 'tax' }),
+  });
+  const { data: avg } = useQuery({
+    queryKey: ['finance-daily-averages', start, end],
+    queryFn: () => finance.dailyAverages({ start_date: start, end_date: end }),
   });
   const { data: vendors } = useQuery({
     queryKey: ['finance-top-vendors', start, end],
@@ -182,7 +208,7 @@ function DashboardTab() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Cash on hand" value={money(totalCash)} hint={`${accountList.length} bank accounts`} />
         <StatCard label="Credit card owed" value={money(totalOwed)} hint={`${ccs.length} cards`} tone={totalOwed > 0 ? 'orange' : undefined} />
-        <StatCard label="Net Income (MTD, tax view)" value={money(pl?.totals?.net_income)} hint={`${start} → ${end}`} />
+        <StatCard label="Net Income (MTD, tax view)" value={money(pl?.totals?.net_income)} hint={`${startOfMonthISO()} → ${todayISO()}`} />
         <StatCard
           label="Uncategorized"
           value={String(uncatPage?.total ?? 0)}
@@ -190,6 +216,97 @@ function DashboardTab() {
           tone={(uncatPage?.total ?? 0) > 0 ? 'orange' : undefined}
         />
       </div>
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="font-semibold">Daily averages</h3>
+            <p className="text-sm text-gray-500">
+              Income vs. actual spend vs. budgeted spend (from your Monthly Expenses page).
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-1 bg-gray-100 rounded p-1">
+            {([
+              { key: 'mtd', label: 'Month-to-date' },
+              { key: 'last30', label: 'Last 30 days' },
+              { key: 'last90', label: 'Last 90 days' },
+              { key: 'ytd', label: 'Year-to-date' },
+              { key: 'custom', label: 'Custom' },
+            ] as const).map((p) => (
+              <button
+                key={p.key}
+                onClick={() => setPreset(p.key as Preset)}
+                className={clsx(
+                  'px-3 py-1.5 rounded text-sm transition-colors',
+                  preset === p.key ? 'bg-white shadow-sm' : 'text-gray-600',
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {preset === 'custom' && (
+          <div className="flex gap-2 mb-4">
+            <Input label="Start" type="date" value={customStart} max={customEnd} onChange={(e) => setCustomStart(e.target.value)} />
+            <Input label="End" type="date" value={customEnd} min={customStart} onChange={(e) => setCustomEnd(e.target.value)} />
+          </div>
+        )}
+        {!avg ? (
+          <LoadingSpinner size="sm" />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <p className="text-xs uppercase text-green-700">Income / day</p>
+              <p className="text-2xl font-bold tabular-nums text-green-700">{money(avg.actual.income_per_day)}</p>
+              <p className="text-xs text-gray-600 mt-1">
+                {money(avg.actual.income_total)} over {avg.window.days} {avg.window.days === 1 ? 'day' : 'days'}
+              </p>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-white p-4">
+              <p className="text-xs uppercase text-gray-700">Actual spend / day</p>
+              <p className="text-2xl font-bold tabular-nums text-gray-900">{money(avg.actual.spend_per_day)}</p>
+              <p className="text-xs text-gray-600 mt-1">
+                {money(avg.actual.spend_total)} actual over the window
+              </p>
+            </div>
+            <div className={clsx(
+              'rounded-lg border p-4',
+              avg.variance.dollars > 0 ? 'border-orange-200 bg-orange-50' : 'border-blue-200 bg-blue-50',
+            )}>
+              <p className={clsx('text-xs uppercase', avg.variance.dollars > 0 ? 'text-orange-700' : 'text-blue-700')}>
+                Budgeted spend / day
+              </p>
+              <p className={clsx(
+                'text-2xl font-bold tabular-nums',
+                avg.variance.dollars > 0 ? 'text-orange-700' : 'text-blue-700',
+              )}>
+                {money(avg.budget.per_day)}
+              </p>
+              <p className="text-xs text-gray-600 mt-1">
+                {money(avg.budget.monthly_total)} / month from Monthly Expenses
+              </p>
+            </div>
+          </div>
+        )}
+        {avg && (
+          <div className="mt-4 pt-4 border-t flex flex-wrap items-center justify-between gap-2 text-sm">
+            <div>
+              <span className="text-gray-500">Net per day: </span>
+              <strong className={clsx('tabular-nums', avg.actual.net_per_day < 0 && 'text-red-600')}>
+                {money(avg.actual.net_per_day)}
+              </strong>
+            </div>
+            <div>
+              <span className="text-gray-500">Window total variance vs. budget: </span>
+              <strong className={clsx('tabular-nums', avg.variance.dollars > 0 ? 'text-orange-600' : 'text-green-600')}>
+                {money(avg.variance.dollars)}
+                {avg.variance.pct != null && ` (${avg.variance.pct > 0 ? '+' : ''}${avg.variance.pct}%)`}
+              </strong>
+            </div>
+          </div>
+        )}
+      </Card>
 
       <Card title="Account balances">
         <div className="overflow-x-auto">
