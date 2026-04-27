@@ -513,14 +513,16 @@ async def startup():
             await session.commit()
             logger.info("Seed complete — 6 locations, 2 owner accounts.")
 
-        # Bulk-import employees from Homebase CSV data
-        await seed_employees(session)
-
-        # Seed supply catalog from Square export
-        await seed_supply_catalog(session)
-
-        # Seed US Foods shop mappings and product catalog
-        await seed_usfoods(session)
+            # First-install only. These were previously called on every boot
+            # below this if-block, which meant any time the CSV-backed seed
+            # data drifted out of sync with reality (deletes, location moves,
+            # role changes), the seed would either silently no-op via email
+            # checks or — worse — re-run partial inserts that mutated
+            # operational data on every restart. They belong inside the
+            # empty-DB branch alongside the location and owner seed.
+            await seed_employees(session)
+            await seed_supply_catalog(session)
+            await seed_usfoods(session)
 
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(
