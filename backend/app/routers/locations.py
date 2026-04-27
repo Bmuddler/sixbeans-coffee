@@ -6,10 +6,24 @@ from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.location import Location
 from app.models.user import User, UserRole
-from app.schemas.location import LocationCreate, LocationResponse, LocationUpdate
+from app.schemas.location import LocationCreate, LocationPublic, LocationResponse, LocationUpdate
 from app.services.audit_service import log_action
 
 router = APIRouter()
+
+
+@router.get("/homepage", response_model=list[LocationPublic])
+async def list_homepage_locations(db: AsyncSession = Depends(get_db)):
+    """Public, unauthenticated. Powers the marketing site's location cards.
+    Only returns active locations flagged show_on_homepage with a display_name set."""
+    result = await db.execute(
+        select(Location).where(
+            Location.is_active.is_(True),
+            Location.show_on_homepage.is_(True),
+            Location.display_name.is_not(None),
+        ).order_by(Location.display_name)
+    )
+    return [LocationPublic.model_validate(loc) for loc in result.scalars().all()]
 
 
 @router.get("/", response_model=list[LocationResponse])

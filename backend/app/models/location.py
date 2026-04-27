@@ -18,6 +18,13 @@ class Location(Base):
     zip_code = Column(String(10), nullable=False)
     phone = Column(String(20), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # Public marketing fields. `display_name` is the short label shown on
+    # homepage cards (e.g. "Apple Valley") so the admin `name`
+    # ("Six Beans - Apple Valley") can stay verbose. `hours` is free-form
+    # text. `show_on_homepage` hides warehouse/bakery from /api/locations/homepage.
+    display_name = Column(String(100), nullable=True)
+    hours = Column(String(200), nullable=True)
+    show_on_homepage = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

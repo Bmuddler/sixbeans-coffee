@@ -139,6 +139,36 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE locations ADD COLUMN IF NOT EXISTS doordash_store_id INTEGER"
         ))
+        # Public marketing fields
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS display_name VARCHAR(100)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS hours VARCHAR(200)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE locations ADD COLUMN IF NOT EXISTS show_on_homepage BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        # One-time backfill: seed display_name and homepage flag for the 6
+        # public shops. Skips rows where display_name is already set so
+        # owners can override via the admin form afterward.
+        homepage_seed = [
+            ("Six Beans - Apple Valley", "Apple Valley", "Mon-Sat 5:30am-7pm · Sun 6am-7pm"),
+            ("Six Beans - Hesperia", "Hesperia", "Mon-Sat 5:30am-7pm · Sun 6am-7pm"),
+            ("Six Beans - Barstow", "Barstow", "Mon-Sat 5:30am-7pm · Sun 6am-7pm"),
+            ("Six Beans - Victorville", "Victorville", "Mon-Sat 5:30am-7pm · Sun 6am-7pm"),
+            ("Six Beans - Apple Valley (Yucca Loma)", "Yucca Loma", "Mon-Sat 5:30am-7pm · Sun 6am-7pm"),
+            ("Six Beans - Victorville (7th St)", "7th Street", "Mon-Sun 6am-6pm"),
+        ]
+        for full_name, display, hrs in homepage_seed:
+            await conn.execute(
+                text(
+                    "UPDATE locations SET display_name = :display, hours = :hrs, "
+                    "show_on_homepage = TRUE "
+                    "WHERE name = :full_name AND display_name IS NULL"
+                ),
+                {"display": display, "hrs": hrs, "full_name": full_name},
+            )
         # The ingestion_runs.source CHECK constraint was initially written
         # without 'homebase'. Drop & re-add so the current source enum is
         # accepted. Idempotent across restarts.

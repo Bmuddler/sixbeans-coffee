@@ -19,6 +19,9 @@ interface LocationForm {
   name: string;
   address: string;
   phone: string;
+  display_name: string;
+  hours: string;
+  show_on_homepage: boolean;
   is_active: boolean;
 }
 
@@ -26,6 +29,9 @@ const defaultForm: LocationForm = {
   name: '',
   address: '',
   phone: '',
+  display_name: '',
+  hours: '',
+  show_on_homepage: false,
   is_active: true,
 };
 
@@ -97,8 +103,11 @@ export function LocationsPage() {
       name: form.name,
       address: form.address,
       phone: form.phone || undefined,
+      display_name: form.display_name || undefined,
+      hours: form.hours || undefined,
+      show_on_homepage: form.show_on_homepage,
       is_active: form.is_active,
-    });
+    } as Partial<Location>);
   };
 
   const handleEdit = () => {
@@ -109,8 +118,11 @@ export function LocationsPage() {
         name: form.name,
         address: form.address,
         phone: form.phone || undefined,
+        display_name: form.display_name || undefined,
+        hours: form.hours || undefined,
+        show_on_homepage: form.show_on_homepage,
         is_active: form.is_active,
-      },
+      } as Partial<Location>,
     });
   };
 
@@ -120,6 +132,9 @@ export function LocationsPage() {
       name: loc.name,
       address: loc.address,
       phone: loc.phone ?? '',
+      display_name: loc.display_name ?? '',
+      hours: loc.hours ?? '',
+      show_on_homepage: loc.show_on_homepage ?? false,
       is_active: loc.is_active,
     });
     setEditModal(true);
@@ -147,6 +162,34 @@ export function LocationsPage() {
         placeholder="(555) 123-4567"
       />
       <p className="text-xs text-gray-400">All locations operate on Pacific Time (PST/PDT).</p>
+
+      <div className="border-t border-gray-200 pt-4 space-y-4">
+        <p className="text-sm font-semibold text-gray-700">Public homepage</p>
+        <Input
+          label="Display name"
+          value={form.display_name}
+          onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))}
+          placeholder="e.g. Apple Valley"
+        />
+        <Input
+          label="Hours"
+          value={form.hours}
+          onChange={(e) => setForm((f) => ({ ...f, hours: e.target.value }))}
+          placeholder="Mon-Sat 5:30am-7pm · Sun 6am-7pm"
+        />
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="show_on_homepage"
+            checked={form.show_on_homepage}
+            onChange={(e) => setForm((f) => ({ ...f, show_on_homepage: e.target.checked }))}
+            className="h-4 w-4 rounded border-gray-300"
+          />
+          <label htmlFor="show_on_homepage" className="text-sm text-gray-700">
+            Show on public homepage
+          </label>
+        </div>
+      </div>
       <div className="flex items-center gap-2">
         <input
           type="checkbox"

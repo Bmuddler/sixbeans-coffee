@@ -61,10 +61,27 @@ export interface Location {
   id: number;
   name: string;
   address: string;
+  city: string;
+  state: string;
+  zip_code: string;
   phone?: string;
+  display_name?: string | null;
+  hours?: string | null;
+  show_on_homepage: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface LocationPublic {
+  id: number;
+  display_name: string;
+  address: string;
+  city: string;
+  state: string;
+  zip_code: string;
+  phone?: string | null;
+  hours?: string | null;
 }
 
 export interface ShiftTemplate {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   MapPin,
   Clock,
@@ -13,17 +13,9 @@ import {
   X,
   Smartphone,
 } from 'lucide-react';
-import { applications } from '@/lib/api';
+import { applications, api } from '@/lib/api';
 import toast from 'react-hot-toast';
-
-const LOCATIONS = [
-  { name: 'Apple Valley', address: '21788 Bear Valley Rd', city: 'Apple Valley, CA 92308', phone: '(760) 946-9008', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '21788+Bear+Valley+Rd+Apple+Valley+CA' },
-  { name: 'Hesperia', address: '15760 Ranchero Rd', city: 'Hesperia, CA 92345', phone: '(760) 948-0164', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '15760+Ranchero+Rd+Hesperia+CA' },
-  { name: 'Barstow', address: '921 Barstow Rd Unit B', city: 'Barstow, CA 92311', phone: '(760) 252-5396', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '921+Barstow+Rd+Unit+B+Barstow+CA' },
-  { name: 'Victorville', address: '12875 Bear Valley Rd', city: 'Victorville, CA 92392', phone: '(760) 983-5028', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '12875+Bear+Valley+Rd+Victorville+CA' },
-  { name: 'Yucca Loma', address: '13730 Apple Valley Rd', city: 'Apple Valley, CA 92307', phone: '(442) 292-2185', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '13730+Apple+Valley+Rd+Apple+Valley+CA' },
-  { name: '7th Street', address: '14213 7th St', city: 'Victorville, CA 92395', phone: '(442) 229-2222', hours: 'Mon-Sun 6am-6pm', mapQuery: '14213+7th+St+Victorville+CA' },
-];
+import type { LocationPublic } from '@/types';
 
 const POSITIONS = [
   { title: 'Barista', desc: 'Craft amazing drinks, connect with customers, and be part of the Six Beans family.' },
@@ -36,6 +28,11 @@ export function LandingPage() {
   const [mobileNav, setMobileNav] = useState(false);
   const [appForm, setAppForm] = useState({ name: '', email: '', phone: '', position: 'Barista', location: 'Apple Valley', message: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [locations, setLocations] = useState<LocationPublic[]>([]);
+
+  useEffect(() => {
+    api.get('/locations/homepage').then((r) => setLocations(r.data as LocationPublic[])).catch(() => {});
+  }, []);
 
   return (
     <div className="min-h-screen bg-white">
@@ -269,22 +266,26 @@ export function LandingPage() {
             <p className="mt-4 text-lg text-gray-500">6 shops across the High Desert — there's one near you</p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {LOCATIONS.map((loc) => (
-              <div key={loc.name} className="rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all group">
-                <div className="h-3" style={{ backgroundColor: '#5CB832' }} />
-                <div className="p-6">
-                  <h3 className="text-xl font-bold text-gray-900 mb-3">{loc.name}</h3>
-                  <div className="space-y-2.5 text-sm text-gray-600">
-                    <div className="flex items-start gap-2.5"><MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#5CB832' }} /><div><p>{loc.address}</p><p>{loc.city}</p></div></div>
-                    <div className="flex items-center gap-2.5"><Phone className="h-4 w-4 flex-shrink-0" style={{ color: '#5CB832' }} /><a href={`tel:${loc.phone.replace(/[^0-9]/g, '')}`} className="hover:underline">{loc.phone}</a></div>
-                    <div className="flex items-center gap-2.5"><Clock className="h-4 w-4 flex-shrink-0" style={{ color: '#5CB832' }} /><span>{loc.hours}</span></div>
+            {locations.map((loc) => {
+              const cityLine = `${loc.city}, ${loc.state} ${loc.zip_code}`;
+              const mapQuery = encodeURIComponent(`${loc.address} ${cityLine}`);
+              return (
+                <div key={loc.id} className="rounded-2xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all group">
+                  <div className="h-3" style={{ backgroundColor: '#5CB832' }} />
+                  <div className="p-6">
+                    <h3 className="text-xl font-bold text-gray-900 mb-3">{loc.display_name}</h3>
+                    <div className="space-y-2.5 text-sm text-gray-600">
+                      <div className="flex items-start gap-2.5"><MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: '#5CB832' }} /><div><p>{loc.address}</p><p>{cityLine}</p></div></div>
+                      {loc.phone && <div className="flex items-center gap-2.5"><Phone className="h-4 w-4 flex-shrink-0" style={{ color: '#5CB832' }} /><a href={`tel:${loc.phone.replace(/[^0-9]/g, '')}`} className="hover:underline">{loc.phone}</a></div>}
+                      {loc.hours && <div className="flex items-center gap-2.5"><Clock className="h-4 w-4 flex-shrink-0" style={{ color: '#5CB832' }} /><span>{loc.hours}</span></div>}
+                    </div>
+                    <a href={`https://maps.google.com/?q=${mapQuery}`} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors" style={{ color: '#5CB832' }}>
+                      Get Directions <ArrowRight className="h-4 w-4" />
+                    </a>
                   </div>
-                  <a href={`https://maps.google.com/?q=${loc.mapQuery}`} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold transition-colors" style={{ color: '#5CB832' }}>
-                    Get Directions <ArrowRight className="h-4 w-4" />
-                  </a>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
@@ -323,7 +324,7 @@ export function LandingPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Position</label><select value={appForm.position} onChange={(e) => setAppForm({ ...appForm, position: e.target.value })} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm"><option>Barista</option><option>Baker</option><option>Shift Lead</option><option>Delivery Driver</option></select></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Location</label><select value={appForm.location} onChange={(e) => setAppForm({ ...appForm, location: e.target.value })} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm">{LOCATIONS.map((l) => <option key={l.name}>{l.name}</option>)}</select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Location</label><select value={appForm.location} onChange={(e) => setAppForm({ ...appForm, location: e.target.value })} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm">{locations.map((l) => <option key={l.id}>{l.display_name}</option>)}</select></div>
                 </div>
                 <div><label className="block text-sm font-medium text-gray-700 mb-1">Tell us about yourself</label><textarea value={appForm.message} onChange={(e) => setAppForm({ ...appForm, message: e.target.value })} rows={3} className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:ring-2 focus:outline-none focus:ring-green-500 focus:border-green-500" placeholder="Experience, availability, anything you'd like us to know..." /></div>
                 <button
