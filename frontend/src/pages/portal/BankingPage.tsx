@@ -290,9 +290,20 @@ function DashboardTab() {
               )}>
                 {money(avg.budget.per_day)}
               </p>
-              <p className="text-xs text-gray-600 mt-1">
-                {money(avg.budget.monthly_total)} / month from Monthly Expenses
-              </p>
+              <div className="text-xs text-gray-600 mt-2 space-y-0.5">
+                <div className="flex justify-between">
+                  <span>COGS @ {Math.round((avg.budget.cogs_pct ?? 0.22) * 100)}%</span>
+                  <span className="tabular-nums">{money(avg.budget.components_per_day?.cogs)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Labor × {(avg.budget.burden_multiplier ?? 1.18).toFixed(2)}</span>
+                  <span className="tabular-nums">{money(avg.budget.components_per_day?.labor)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Fixed (monthly)</span>
+                  <span className="tabular-nums">{money(avg.budget.components_per_day?.fixed)}</span>
+                </div>
+              </div>
             </div>
           </div>
         )}

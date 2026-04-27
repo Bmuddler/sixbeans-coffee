@@ -988,36 +988,65 @@ async def daily_averages(
 ):
     """Average per-day income, actual spend, and budgeted spend for a window.
 
-    Actual numbers come from the operational P&L (so Cap One purchases are
-    counted at vendor level, not double-counted via the lump payment).
+    Budgeted spend is the sum of three components — same formula the Insights
+    page uses for true profit:
 
-    Budgeted spend reads the same monthly_expense rows the Insights page uses
-    — sum of all rows / 30.44 (mean days-per-month) — so the same baseline
-    appears in both places.
+      1. COGS = revenue × cogs_pct (default 22%)
+      2. Labor = daily_labor × burden_multiplier (default 1.18)
+      3. Fixed = monthly_expense rows / 30.44 × days
     """
     if end_date < start_date:
         raise HTTPException(status_code=400, detail="end_date must be on or after start_date")
 
     days = (end_date - start_date).days + 1
 
-    # Operational P&L for the window — real spend by vendor.
     pl = await _compute_pl(db, start_date, end_date, "operational")
     total_income = pl["totals"]["income"]
     total_cogs = pl["totals"]["cogs"]
     total_expense = pl["totals"]["expense"]
     total_spend = round(total_cogs + total_expense, 2)
 
-    # Estimated spend: sum of every monthly_expense row prorated to /day.
     from app.models.expense import Expense
+    from app.models.daily_revenue import DailyRevenue
+    from app.models.daily_labor import DailyLabor
+    from app.models.system_settings import SystemSettings
+
+    settings_row = (await db.execute(select(SystemSettings).limit(1))).scalar_one_or_none()
+    cogs_pct = float(getattr(settings_row, "cogs_percent", None) or 0.22)
+    burden = float(getattr(settings_row, "labor_burden_multiplier", None) or 1.18)
+
     monthly_total = (await db.execute(
         select(func.coalesce(func.sum(Expense.amount), 0.0))
     )).scalar() or 0.0
-    estimated_per_day = round(float(monthly_total) / 30.44, 2)
-    estimated_window_total = round(estimated_per_day * days, 2)
-    actual_per_day = round(total_spend / days, 2) if days else 0.0
-    income_per_day = round(total_income / days, 2) if days else 0.0
-    net_per_day = round(income_per_day - actual_per_day, 2)
-    variance_dollars = round(total_spend - estimated_window_total, 2)
+    fixed_per_day = float(monthly_total) / 30.44
+    fixed_window = fixed_per_day * days
+
+    # Revenue + labor for the window come from the analytics tables (same
+    # source the Insights page uses) so the numbers are consistent across
+    # both pages.
+    revenue_window = (await db.execute(
+        select(func.coalesce(func.sum(DailyRevenue.gross_revenue), 0.0))
+        .where(DailyRevenue.date >= start_date)
+        .where(DailyRevenue.date <= end_date)
+    )).scalar() or 0.0
+    raw_labor_window = (await db.execute(
+        select(func.coalesce(func.sum(DailyLabor.labor_cost), 0.0))
+        .where(DailyLabor.date >= start_date)
+        .where(DailyLabor.date <= end_date)
+    )).scalar() or 0.0
+    revenue_window = float(revenue_window)
+    raw_labor_window = float(raw_labor_window)
+
+    cogs_window = revenue_window * cogs_pct
+    labor_window_loaded = raw_labor_window * burden
+
+    estimated_window_total = cogs_window + labor_window_loaded + fixed_window
+    estimated_per_day = (estimated_window_total / days) if days else 0.0
+
+    actual_per_day = (total_spend / days) if days else 0.0
+    income_per_day = (total_income / days) if days else 0.0
+    net_per_day = income_per_day - actual_per_day
+    variance_dollars = total_spend - estimated_window_total
     variance_pct = (
         round((total_spend - estimated_window_total) / estimated_window_total * 100.0, 1)
         if estimated_window_total
@@ -1031,19 +1060,33 @@ async def daily_averages(
             "days": days,
         },
         "actual": {
-            "income_total": total_income,
-            "spend_total": total_spend,
-            "income_per_day": income_per_day,
-            "spend_per_day": actual_per_day,
-            "net_per_day": net_per_day,
+            "income_total": round(total_income, 2),
+            "spend_total": round(total_spend, 2),
+            "income_per_day": round(income_per_day, 2),
+            "spend_per_day": round(actual_per_day, 2),
+            "net_per_day": round(net_per_day, 2),
         },
         "budget": {
-            "monthly_total": round(float(monthly_total), 2),
-            "per_day": estimated_per_day,
-            "window_total": estimated_window_total,
+            "monthly_expense_total": round(float(monthly_total), 2),
+            "cogs_pct": cogs_pct,
+            "burden_multiplier": burden,
+            "revenue_window": round(revenue_window, 2),
+            "raw_labor_window": round(raw_labor_window, 2),
+            "components_window": {
+                "cogs": round(cogs_window, 2),
+                "labor": round(labor_window_loaded, 2),
+                "fixed": round(fixed_window, 2),
+            },
+            "components_per_day": {
+                "cogs": round(cogs_window / days, 2) if days else 0.0,
+                "labor": round(labor_window_loaded / days, 2) if days else 0.0,
+                "fixed": round(fixed_per_day, 2),
+            },
+            "per_day": round(estimated_per_day, 2),
+            "window_total": round(estimated_window_total, 2),
         },
         "variance": {
-            "dollars": variance_dollars,
+            "dollars": round(variance_dollars, 2),
             "pct": variance_pct,
         },
     }
