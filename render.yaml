@@ -17,7 +17,7 @@ services:
       - key: JWT_SECRET_KEY
         generateValue: true
       - key: CORS_ORIGINS
-        value: https://sixbeans.onrender.com
+        value: https://sixbeanscoffee.com,https://www.sixbeanscoffee.com,https://sixbeans.onrender.com
       - key: SQUARE_ACCESS_TOKEN
         sync: false
       - key: TWILIO_ACCOUNT_SID
