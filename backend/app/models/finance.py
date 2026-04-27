@@ -80,12 +80,17 @@ class FinanceRule(Base):
     match_text = Column(String(255), nullable=False)
     vendor = Column(String(200), nullable=True)
     category_id = Column(Integer, ForeignKey("finance_categories.id"), nullable=False)
+    # Optional account scope: if set, the rule only matches transactions on
+    # that account. Used for things like "every CHECK on Payroll Checking
+    # is a payroll expense" where the description alone is ambiguous.
+    account_id = Column(Integer, ForeignKey("bank_accounts.id"), nullable=True)
     priority = Column(Integer, nullable=False, default=100)  # lower = checked first
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     category = relationship("FinanceCategory")
+    account = relationship("BankAccount")
 
 
 class BankTransaction(Base):

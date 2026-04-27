@@ -214,6 +214,10 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP"
         ))
+        await conn.execute(text(
+            "ALTER TABLE finance_rules ADD COLUMN IF NOT EXISTS "
+            "account_id INTEGER REFERENCES bank_accounts(id)"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints
@@ -549,8 +553,9 @@ async def startup():
 
         # Banking center: idempotent (skips if any bank account exists), so
         # safe to call on every boot — but only fires once on a fresh DB.
-        from app.data.finance_seed import seed_finance
+        from app.data.finance_seed import seed_finance, ensure_account_scoped_rules
         await seed_finance(session)
+        await ensure_account_scoped_rules(session)
 
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(

@@ -242,7 +242,11 @@ def detect_cc_payment(account_short_code: str, normalized_desc: str) -> bool:
     return any(p in normalized_desc for p in CC_PAYMENT_PATTERNS)
 
 
-def _rule_matches(rule: FinanceRule, normalized_desc: str) -> bool:
+def _rule_matches(rule: FinanceRule, normalized_desc: str, account_id: int | None) -> bool:
+    # Account-scoped rule: only fires for transactions on the matching account.
+    rule_account_id = getattr(rule, "account_id", None)
+    if rule_account_id is not None and rule_account_id != account_id:
+        return False
     needle = (rule.match_text or "").upper().strip()
     if not needle:
         return False
@@ -262,12 +266,27 @@ def _rule_matches(rule: FinanceRule, normalized_desc: str) -> bool:
 def categorize(
     rules: list[FinanceRule],
     normalized_desc: str,
+    account_id: int | None = None,
 ) -> tuple[int | None, str | None, int | None]:
-    """Returns (category_id, vendor, matched_rule_id) or (None, None, None)."""
-    for rule in rules:
-        if not rule.is_active:
-            continue
-        if _rule_matches(rule, normalized_desc):
+    """Returns (category_id, vendor, matched_rule_id) or (None, None, None).
+
+    Account-scoped rules with a matching account_id are checked alongside
+    global rules; unscoped rules ignore the account_id parameter.
+    """
+    # Sort: account-scoped rules of the same priority should beat unscoped
+    # ones (they're more specific). We achieve that by sorting on
+    # (priority, account_id is None) so that within a priority bucket,
+    # account-scoped rules sort first.
+    sorted_rules = sorted(
+        (r for r in rules if r.is_active),
+        key=lambda r: (
+            r.priority,
+            getattr(r, "account_id", None) is None,
+            r.id,
+        ),
+    )
+    for rule in sorted_rules:
+        if _rule_matches(rule, normalized_desc, account_id):
             return (rule.category_id, rule.vendor, rule.id)
     return (None, None, None)
 
@@ -334,7 +353,7 @@ async def ingest_csv(
             continue
         existing_keys.add(key)
 
-        cat_id, vendor, rule_id = categorize(rules, ndesc)
+        cat_id, vendor, rule_id = categorize(rules, ndesc, account_id=account.id)
         flow_type = "normal"
 
         if account.short_code == "cap_one":

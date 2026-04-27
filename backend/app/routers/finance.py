@@ -89,6 +89,7 @@ class RuleResponse(BaseModel):
     match_text: str
     vendor: str | None = None
     category_id: int
+    account_id: int | None = None
     priority: int
     is_active: bool
 
@@ -102,6 +103,7 @@ class RuleCreate(BaseModel):
     match_text: str
     vendor: str | None = None
     category_id: int
+    account_id: int | None = None
     priority: int = 100
     is_active: bool = True
 
@@ -112,6 +114,7 @@ class RuleUpdate(BaseModel):
     match_text: str | None = None
     vendor: str | None = None
     category_id: int | None = None
+    account_id: int | None = None
     priority: int | None = None
     is_active: bool | None = None
 
@@ -397,6 +400,7 @@ async def create_rule(
         match_text=payload.match_text.strip(),
         vendor=(payload.vendor or "").strip()[:200] or None,
         category_id=payload.category_id,
+        account_id=payload.account_id,
         priority=payload.priority,
         is_active=payload.is_active,
     )
@@ -1314,7 +1318,9 @@ async def recategorize_uncategorized(
 
     updated = 0
     for t in txns:
-        cat_id, vendor, rule_id = run_categorizer(rules, t.description_normalized)
+        cat_id, vendor, rule_id = run_categorizer(
+            rules, t.description_normalized, account_id=t.account_id,
+        )
         if cat_id is not None:
             t.category_id = cat_id
             t.vendor = vendor

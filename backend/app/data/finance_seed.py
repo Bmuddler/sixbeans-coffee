@@ -196,3 +196,41 @@ async def seed_finance(session: AsyncSession) -> None:
     logger.info("Banking center seed: %d rules inserted, %d skipped.", inserted, len(skipped))
     for s in skipped[:10]:
         logger.warning("Rule skipped: %s", s)
+
+
+async def ensure_account_scoped_rules(session: AsyncSession) -> None:
+    """Idempotent: re-applies on every boot. Specific rules that depend on
+    transaction account context, not just description. Today there's just
+    one (CHECK on Payroll Checking → Payroll Expenses); add more here as
+    they come up."""
+    payroll_acct = (await session.execute(
+        select(BankAccount).where(BankAccount.short_code == "wf_payroll")
+    )).scalar_one_or_none()
+    payroll_cat = (await session.execute(
+        select(FinanceCategory).where(FinanceCategory.name == "Payroll Expenses")
+    )).scalar_one_or_none()
+    if not payroll_acct or not payroll_cat:
+        return
+
+    existing = (await session.execute(
+        select(FinanceRule).where(
+            FinanceRule.account_id == payroll_acct.id,
+            FinanceRule.match_text == "CHECK",
+            FinanceRule.match_type == "equals",
+        )
+    )).scalar_one_or_none()
+    if existing is not None:
+        return
+
+    session.add(FinanceRule(
+        rule_name="CHECK on Payroll Checking",
+        match_type="equals",
+        match_text="CHECK",
+        vendor="Employee Paycheck",
+        category_id=payroll_cat.id,
+        account_id=payroll_acct.id,
+        priority=50,  # higher priority than the generic Uncategorized fallback
+        is_active=True,
+    ))
+    await session.commit()
+    logger.info("Banking: seeded account-scoped rule CHECK@Payroll → Payroll Expenses.")

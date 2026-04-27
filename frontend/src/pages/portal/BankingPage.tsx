@@ -51,6 +51,7 @@ interface Rule {
   match_text: string;
   vendor: string | null;
   category_id: number;
+  account_id: number | null;
   priority: number;
   is_active: boolean;
 }
@@ -703,6 +704,7 @@ function RulesTab() {
   const queryClient = useQueryClient();
   const { data: rules } = useQuery<Rule[]>({ queryKey: ['finance-rules'], queryFn: finance.rules });
   const { data: categories } = useQuery<Category[]>({ queryKey: ['finance-categories'], queryFn: () => finance.categories(false) });
+  const { data: accounts } = useQuery<Account[]>({ queryKey: ['finance-accounts'], queryFn: finance.accounts });
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Rule | null>(null);
@@ -752,6 +754,7 @@ function RulesTab() {
                 <th className="px-3 py-2 text-left">Match</th>
                 <th className="px-3 py-2 text-left">Vendor</th>
                 <th className="px-3 py-2 text-left">Category</th>
+                <th className="px-3 py-2 text-left">Account scope</th>
                 <th className="px-3 py-2 text-right">Pri</th>
                 <th className="px-3 py-2 text-right">Actions</th>
               </tr>
@@ -759,12 +762,14 @@ function RulesTab() {
             <tbody className="divide-y divide-gray-100 bg-white">
               {filtered.map((r) => {
                 const cat = (categories ?? []).find((c) => c.id === r.category_id);
+                const acct = r.account_id == null ? null : (accounts ?? []).find((a) => a.id === r.account_id);
                 return (
                   <tr key={r.id}>
                     <td className="px-3 py-2 max-w-xs truncate">{r.rule_name}</td>
                     <td className="px-3 py-2 font-mono text-xs"><span className="text-gray-500">{r.match_type}</span> {r.match_text}</td>
                     <td className="px-3 py-2 text-gray-500">{r.vendor || '—'}</td>
                     <td className="px-3 py-2">{cat?.name ?? `#${r.category_id}`}</td>
+                    <td className="px-3 py-2 text-xs text-gray-500">{acct ? acct.name : 'all'}</td>
                     <td className="px-3 py-2 text-right text-gray-500">{r.priority}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
@@ -798,12 +803,14 @@ function RulesTab() {
 
 function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: Rule | null; categories: Category[]; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { data: accounts } = useQuery<Account[]>({ queryKey: ['finance-accounts'], queryFn: finance.accounts });
   const [form, setForm] = useState({
     rule_name: '',
     match_type: 'contains' as const,
     match_text: '',
     vendor: '',
     category_id: '',
+    account_id: '' as string,  // empty = unscoped (all accounts)
     priority: 100,
     is_active: true,
   });
@@ -816,11 +823,12 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
         match_text: rule.match_text,
         vendor: rule.vendor ?? '',
         category_id: String(rule.category_id),
+        account_id: rule.account_id == null ? '' : String(rule.account_id),
         priority: rule.priority,
         is_active: rule.is_active,
       });
     } else if (open) {
-      setForm({ rule_name: '', match_type: 'contains', match_text: '', vendor: '', category_id: '', priority: 100, is_active: true });
+      setForm({ rule_name: '', match_type: 'contains', match_text: '', vendor: '', category_id: '', account_id: '', priority: 100, is_active: true });
     }
   }, [rule, open]);
 
@@ -832,6 +840,7 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
         match_text: form.match_text.trim(),
         vendor: form.vendor.trim() || null,
         category_id: Number(form.category_id),
+        account_id: form.account_id ? Number(form.account_id) : null,
         priority: form.priority,
         is_active: form.is_active,
       };
@@ -874,6 +883,15 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
           options={[{ value: '', label: 'Pick…' }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
           value={form.category_id}
           onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+        />
+        <Select
+          label="Account scope (optional)"
+          options={[
+            { value: '', label: 'All accounts (unscoped)' },
+            ...((accounts ?? []).map((a) => ({ value: String(a.id), label: a.name }))),
+          ]}
+          value={form.account_id}
+          onChange={(e) => setForm({ ...form, account_id: e.target.value })}
         />
         <Input
           label="Priority (lower = checked first)"
