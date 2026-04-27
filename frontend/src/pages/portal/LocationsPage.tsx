@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { MapPin, Plus, Edit2, Users, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
+import { MapPin, Plus, Edit2, Users, Clock, CalendarDays, AlertTriangle, Copy, ExternalLink, Monitor } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -256,6 +256,38 @@ export function LocationsPage() {
 
                 <p className="text-sm text-gray-500 mb-1">{loc.address}</p>
                 {loc.phone && <p className="text-sm text-gray-500 mb-4">{loc.phone}</p>}
+
+                {/* Kiosk URL */}
+                {(() => {
+                  const kioskUrl = `${window.location.origin}/kiosk?location=${loc.id}`;
+                  return (
+                    <div className="flex items-center gap-2 rounded-lg bg-gray-50 px-3 py-2 text-xs">
+                      <Monitor className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                      <code className="flex-1 truncate font-mono text-gray-600" title={kioskUrl}>
+                        /kiosk?location={loc.id}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(kioskUrl);
+                          toast.success('Kiosk URL copied');
+                        }}
+                        className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                        title="Copy URL"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                      <a
+                        href={kioskUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="rounded p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-600"
+                        title="Open kiosk"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </a>
+                    </div>
+                  );
+                })()}
 
                 {/* Dashboard stats */}
                 <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-gray-100">
