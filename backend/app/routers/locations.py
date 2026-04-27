@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
+from app.models.cash_drawer import CashDrawer
 from app.models.location import Location
+from app.models.schedule import ScheduledShift
+from app.models.time_clock import TimeClock
 from app.models.user import User, UserRole
 from app.schemas.location import LocationCreate, LocationPublic, LocationResponse, LocationUpdate
 from app.services.audit_service import log_action
@@ -96,3 +99,38 @@ async def update_location(
     )
 
     return LocationResponse.model_validate(location)
+
+
+@router.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_location(
+    location_id: int,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Hard-delete a location. Refuses if any time clocks, shifts, or drawers
+    reference it — those rows would orphan otherwise."""
+    result = await db.execute(select(Location).where(Location.id == location_id))
+    location = result.scalar_one_or_none()
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+
+    for model, label in (
+        (TimeClock, "time clock entries"),
+        (ScheduledShift, "scheduled shifts"),
+        (CashDrawer, "cash drawer entries"),
+    ):
+        count = await db.scalar(
+            select(func.count()).select_from(model).where(model.location_id == location_id)
+        )
+        if count:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot delete: location has {count} {label}. Mark inactive instead.",
+            )
+
+    await log_action(
+        db, current_user.id, "delete_location", "location", location.id,
+        old_values={"name": location.name},
+    )
+    await db.delete(location)
+    await db.flush()

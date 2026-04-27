@@ -94,6 +94,25 @@ export function LocationsPage() {
     onError: () => toast.error('Failed to update location'),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => locationsApi.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['locations'] });
+      setEditModal(false);
+      setSelectedLocation(null);
+      toast.success('Location deleted');
+    },
+    onError: (err: any) => {
+      toast.error(err?.response?.data?.detail ?? 'Failed to delete location');
+    },
+  });
+
+  const handleDelete = () => {
+    if (!selectedLocation) return;
+    if (!window.confirm(`Permanently delete "${selectedLocation.name}"? This cannot be undone.`)) return;
+    deleteMutation.mutate(selectedLocation.id);
+  };
+
   const handleCreate = () => {
     if (!form.name || !form.address) {
       toast.error('Name and address are required');
@@ -202,22 +221,33 @@ export function LocationsPage() {
           Location is active
         </label>
       </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <Button
-          variant="ghost"
-          onClick={() => {
-            isEdit ? setEditModal(false) : setAddModal(false);
-            setForm(defaultForm);
-          }}
-        >
-          Cancel
-        </Button>
-        <Button
-          onClick={isEdit ? handleEdit : handleCreate}
-          loading={isEdit ? updateMutation.isPending : createMutation.isPending}
-        >
-          {isEdit ? 'Save Changes' : 'Add Location'}
-        </Button>
+      <div className="flex justify-between items-center gap-2 pt-2">
+        {isEdit ? (
+          <Button
+            variant="danger"
+            onClick={handleDelete}
+            loading={deleteMutation.isPending}
+          >
+            Delete
+          </Button>
+        ) : <div />}
+        <div className="flex gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              isEdit ? setEditModal(false) : setAddModal(false);
+              setForm(defaultForm);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={isEdit ? handleEdit : handleCreate}
+            loading={isEdit ? updateMutation.isPending : createMutation.isPending}
+          >
+            {isEdit ? 'Save Changes' : 'Add Location'}
+          </Button>
+        </div>
       </div>
     </div>
   );

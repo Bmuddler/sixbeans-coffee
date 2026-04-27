@@ -134,6 +134,9 @@ export const locations = {
 
   update: (id: number, data: Partial<Location>) =>
     api.patch<Location>(`/locations/${id}`, data).then((r) => r.data),
+
+  delete: (id: number) =>
+    api.delete(`/locations/${id}`).then((r) => r.data),
 };
 
 // ============================================================
