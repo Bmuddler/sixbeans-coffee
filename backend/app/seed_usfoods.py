@@ -14,7 +14,7 @@ SHOP_MAPPINGS = [
     {"us_foods_account_name": "Six Bean Coffee Apple Valley", "customer_number": "64240757", "match_keywords": "apple valley", "is_routing_alias": False},
     {"us_foods_account_name": "Six Bean Coffee Barstow", "customer_number": "54330857", "match_keywords": "barstow", "is_routing_alias": False},
     {"us_foods_account_name": "Six Bean Coffee Hesperia", "customer_number": "74284720", "match_keywords": "ranchero,hesperia", "is_routing_alias": False},
-    {"us_foods_account_name": "Six Bean Coffee Victorvil", "customer_number": "84371863", "match_keywords": "topaz,victorville", "is_routing_alias": False},
+    {"us_foods_account_name": "Six Bean Coffee Victorvil", "customer_number": "84371863", "match_keywords": "topaz,victorville,victorvillle", "is_routing_alias": False},
     {"us_foods_account_name": "Six Bean Coffee Yucca Lom", "customer_number": "24417636", "match_keywords": "yucca loma,yucca", "is_routing_alias": False},
     {"us_foods_account_name": "Six Bean Coffee 7th St", "customer_number": "14495147", "match_keywords": "7th,zamantha", "is_routing_alias": False},
 ]

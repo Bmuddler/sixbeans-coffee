@@ -557,6 +557,24 @@ async def startup():
         await seed_finance(session)
         await ensure_account_scoped_rules(session)
 
+        # USFoods: ensure the Victorville mapping picks up the typo'd shop
+        # name "Six beans victorvillle" (three L's) we see on Square orders.
+        # Idempotent: only updates if the keyword isn't already there.
+        from app.models.usfoods import USFoodsShopMapping
+        vict_mapping = (await session.execute(
+            select(USFoodsShopMapping).where(
+                USFoodsShopMapping.us_foods_account_name == "Six Bean Coffee Victorvil"
+            )
+        )).scalar_one_or_none()
+        if vict_mapping is not None:
+            kws = (vict_mapping.match_keywords or "")
+            if "victorvillle" not in kws.lower():
+                vict_mapping.match_keywords = (kws.rstrip(",") + ",victorvillle").lstrip(",")
+                await session.commit()
+                logger.info(
+                    "USFoods: added 'victorvillle' typo variant to Victorville keywords."
+                )
+
         # Seed ADP employee codes (one-time)
         adp_check = await session.execute(
             select(User).where(User.adp_employee_code.isnot(None)).limit(1)
