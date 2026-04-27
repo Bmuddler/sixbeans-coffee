@@ -878,4 +878,9 @@ export const finance = {
 
   recategorizeUncategorized: () =>
     api.post('/finance/recategorize-uncategorized').then((r) => r.data),
+
+  suggestRules: (useLlm = true) =>
+    api.post(`/finance/suggest-rules?use_llm=${useLlm}`).then((r) => r.data),
+  acceptRules: (proposals: Array<{ merchant: string; category_id: number; vendor?: string | null; create_rule?: boolean }>) =>
+    api.post('/finance/accept-rules', { proposals }).then((r) => r.data),
 };

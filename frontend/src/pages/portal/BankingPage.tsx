@@ -11,6 +11,7 @@ import {
   AlertCircle,
   ArrowRight,
   Trash2,
+  Sparkles,
   Paperclip,
   RefreshCw,
 } from 'lucide-react';
@@ -475,6 +476,7 @@ function RegisterTab() {
   const [onlyUncat, setOnlyUncat] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [suggestOpen, setSuggestOpen] = useState(false);
 
   const params = useMemo(() => {
     const p: any = { page, per_page: 100 };
@@ -550,8 +552,17 @@ function RegisterTab() {
           >
             Apply rules to uncategorized
           </Button>
+          <Button
+            size="sm"
+            icon={<Sparkles className="h-4 w-4" />}
+            onClick={() => setSuggestOpen(true)}
+          >
+            Suggest rules
+          </Button>
         </div>
       </Card>
+
+      <SuggestRulesModal open={suggestOpen} onClose={() => setSuggestOpen(false)} categories={categories ?? []} />
 
       <Card title={`Transactions${data?.total != null ? ` · ${data.total}` : ''}`} className="!p-0 overflow-hidden">
         {isLoading ? (
@@ -1384,5 +1395,184 @@ function ClosesTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Suggest Rules modal
+// ---------------------------------------------------------------------------
+
+interface Proposal {
+  merchant: string;
+  category_name: string;
+  category_id: number | null;
+  vendor: string | null;
+  sample_descriptions: string[];
+  match_count: number;
+  source: 'heuristic' | 'llm' | 'fallback';
+  confidence: number;
+  approved: boolean;
+  override_category_id?: number | null;
+}
+
+function SuggestRulesModal({
+  open,
+  onClose,
+  categories,
+}: {
+  open: boolean;
+  onClose: () => void;
+  categories: Category[];
+}) {
+  const queryClient = useQueryClient();
+  const [proposals, setProposals] = useState<Proposal[]>([]);
+  const [stats, setStats] = useState<{ total_uncategorized: number; unique_merchants: number } | null>(null);
+
+  const suggest = useMutation({
+    mutationFn: () => finance.suggestRules(true),
+    onSuccess: (data) => {
+      setStats({ total_uncategorized: data.total_uncategorized, unique_merchants: data.unique_merchants });
+      const items: Proposal[] = (data.proposals ?? []).map((p: any) => ({
+        ...p,
+        approved: p.source !== 'fallback' && p.confidence >= 0.6,
+        override_category_id: p.category_id,
+      }));
+      setProposals(items);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Suggest failed')),
+  });
+
+  const apply = useMutation({
+    mutationFn: () => {
+      const accepted = proposals
+        .filter((p) => p.approved && p.override_category_id != null)
+        .map((p) => ({
+          merchant: p.merchant,
+          category_id: p.override_category_id!,
+          vendor: p.vendor,
+          create_rule: true,
+        }));
+      return finance.acceptRules(accepted);
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-uncat-count'] });
+      toast.success(`Created ${data.rules_created} rules and recategorized ${data.transactions_updated} transactions.`);
+      onClose();
+      setProposals([]);
+      setStats(null);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Apply failed')),
+  });
+
+  useEffect(() => {
+    if (open && proposals.length === 0 && !suggest.isPending) {
+      suggest.mutate();
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const approvedCount = proposals.filter((p) => p.approved && p.override_category_id != null).length;
+
+  return (
+    <Modal open={open} onClose={onClose} title="Suggested rules">
+      <div className="space-y-3">
+        {suggest.isPending ? (
+          <div className="py-12 text-center">
+            <Sparkles className="h-8 w-8 text-primary mx-auto mb-2 animate-pulse" />
+            <p className="text-sm text-gray-600">Analyzing uncategorized transactions…</p>
+            <p className="text-xs text-gray-500 mt-1">Calls Claude for any unfamiliar merchants.</p>
+          </div>
+        ) : proposals.length === 0 ? (
+          <p className="text-sm text-gray-500 py-6 text-center">No uncategorized transactions to suggest rules for.</p>
+        ) : (
+          <>
+            {stats && (
+              <p className="text-sm text-gray-600">
+                {stats.unique_merchants} unique merchants across {stats.total_uncategorized} uncategorized transactions.
+                Tick the rows you trust and click Apply — each creates a rule and recategorizes every matching row.
+              </p>
+            )}
+
+            <div className="max-h-[480px] overflow-y-auto -mx-6 px-6">
+              <table className="min-w-full text-sm">
+                <thead className="sticky top-0 bg-white text-xs uppercase text-gray-500 border-b">
+                  <tr>
+                    <th className="py-2 pr-2 text-left w-6"></th>
+                    <th className="py-2 pr-2 text-left">Match (merchant)</th>
+                    <th className="py-2 pr-2 text-left">Category</th>
+                    <th className="py-2 pr-2 text-right"># txns</th>
+                    <th className="py-2 pr-2 text-left">Source</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {proposals.map((p, i) => (
+                    <tr key={p.merchant} className={clsx(p.source === 'fallback' && 'bg-gray-50')}>
+                      <td className="py-2 pr-2">
+                        <input
+                          type="checkbox"
+                          checked={p.approved}
+                          disabled={p.override_category_id == null}
+                          onChange={(e) =>
+                            setProposals((prev) =>
+                              prev.map((x, idx) => (idx === i ? { ...x, approved: e.target.checked } : x)),
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="py-2 pr-2 align-top">
+                        <div className="font-mono text-xs">{p.merchant}</div>
+                        {p.sample_descriptions.length > 0 && (
+                          <div className="text-[11px] text-gray-400 mt-0.5 truncate max-w-md" title={p.sample_descriptions.join(' · ')}>
+                            e.g. {p.sample_descriptions[0].slice(0, 60)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-2 pr-2">
+                        <select
+                          className="border border-gray-200 rounded px-2 py-1 text-xs"
+                          value={p.override_category_id ?? ''}
+                          onChange={(e) => {
+                            const v = e.target.value ? Number(e.target.value) : null;
+                            setProposals((prev) =>
+                              prev.map((x, idx) =>
+                                idx === i ? { ...x, override_category_id: v, approved: v != null && x.approved } : x,
+                              ),
+                            );
+                          }}
+                        >
+                          <option value="">— pick —</option>
+                          {categories.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-2 text-right tabular-nums">{p.match_count}</td>
+                      <td className="py-2 pr-2 text-xs">
+                        {p.source === 'heuristic' && <Badge variant="approved">vendor map</Badge>}
+                        {p.source === 'llm' && (
+                          <Badge variant="pending">Claude · {Math.round(p.confidence * 100)}%</Badge>
+                        )}
+                        {p.source === 'fallback' && <Badge variant="denied">unknown</Badge>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t">
+              <p className="text-sm text-gray-600">{approvedCount} of {proposals.length} ready to apply</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={onClose}>Cancel</Button>
+                <Button onClick={() => apply.mutate()} loading={apply.isPending} disabled={approvedCount === 0}>
+                  Apply {approvedCount}
+                </Button>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }

@@ -1163,6 +1163,130 @@ async def reopen_month(
 # ---------------------------------------------------------------------------
 
 
+class AcceptedProposal(BaseModel):
+    merchant: str
+    category_id: int
+    vendor: str | None = None
+    create_rule: bool = True
+
+
+class AcceptProposalsRequest(BaseModel):
+    proposals: list[AcceptedProposal]
+
+
+@router.post("/suggest-rules")
+async def suggest_rules(
+    use_llm: bool = True,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Look at all uncategorized transactions, group them by merchant, and
+    propose a category for each. Heuristic vendor map first; LLM fallback for
+    the rest. Nothing is mutated — caller reviews + posts to /accept-rules."""
+    from app.services.finance_rule_suggester import build_proposals
+
+    uncat = (await db.execute(
+        select(FinanceCategory).where(FinanceCategory.name == "Uncategorized")
+    )).scalar_one_or_none()
+    cats = (await db.execute(
+        select(FinanceCategory).where(FinanceCategory.is_archived.is_(False))
+    )).scalars().all()
+    allowed = [c.name for c in cats]
+    cat_by_name = {c.name: c for c in cats}
+
+    txn_rows = (await db.execute(
+        select(BankTransaction.id, BankTransaction.description, BankAccount.short_code)
+        .join(BankAccount, BankTransaction.account_id == BankAccount.id)
+        .where(or_(
+            BankTransaction.category_id.is_(None),
+            BankTransaction.category_id == (uncat.id if uncat else -1),
+        ))
+        .where(BankTransaction.is_locked.is_(False))
+    )).all()
+
+    proposals = await build_proposals(
+        [(tid, desc, code) for (tid, desc, code) in txn_rows],
+        allowed_categories=allowed,
+        use_llm=use_llm,
+    )
+
+    return {
+        "total_uncategorized": len(txn_rows),
+        "unique_merchants": len(proposals),
+        "proposals": [
+            {
+                "merchant": p.merchant,
+                "category_name": p.category_name,
+                "category_id": cat_by_name[p.category_name].id if p.category_name in cat_by_name else None,
+                "vendor": p.vendor,
+                "sample_descriptions": p.sample_descriptions,
+                "match_count": len(p.transaction_ids),
+                "source": p.source,
+                "confidence": round(p.confidence, 2),
+            }
+            for p in proposals
+        ],
+    }
+
+
+@router.post("/accept-rules")
+async def accept_rules(
+    payload: AcceptProposalsRequest,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Take accepted proposals: create a rule per merchant pattern + apply
+    it immediately to any matching uncategorized transactions."""
+    from app.services.finance_ingestion import normalize_description
+
+    cats = (await db.execute(select(FinanceCategory))).scalars().all()
+    cat_by_id = {c.id: c for c in cats}
+    uncat = next((c for c in cats if c.name == "Uncategorized"), None)
+
+    rules_created = 0
+    txns_updated = 0
+
+    for proposal in payload.proposals:
+        cat = cat_by_id.get(proposal.category_id)
+        if cat is None:
+            continue
+
+        if proposal.create_rule:
+            rule_name = (proposal.vendor or proposal.merchant)[:200]
+            rule = FinanceRule(
+                rule_name=rule_name,
+                match_type="contains",
+                match_text=proposal.merchant.strip()[:255],
+                vendor=(proposal.vendor or "").strip()[:200] or None,
+                category_id=proposal.category_id,
+                priority=120,  # below seed (100) so manual rules can override later
+                is_active=True,
+            )
+            db.add(rule)
+            await db.flush()
+            rules_created += 1
+
+        # Find matching uncategorized transactions and assign the category.
+        needle = f"%{proposal.merchant.upper()}%"
+        matching = (await db.execute(
+            select(BankTransaction).where(
+                or_(
+                    BankTransaction.category_id.is_(None),
+                    BankTransaction.category_id == (uncat.id if uncat else -1),
+                )
+            ).where(BankTransaction.is_locked.is_(False))
+            .where(BankTransaction.description_normalized.like(needle))
+        )).scalars().all()
+        for t in matching:
+            t.category_id = proposal.category_id
+            if proposal.vendor:
+                t.vendor = proposal.vendor
+            txns_updated += 1
+
+    await db.commit()
+    return {"rules_created": rules_created, "transactions_updated": txns_updated}
+
+
 @router.post("/recategorize-uncategorized")
 async def recategorize_uncategorized(
     _u: User = Depends(_owner_only()),
