@@ -262,12 +262,12 @@ async def clear_run_quantities(
     current_user: User = Depends(require_roles(UserRole.owner)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Zero every line item's quantity on a run without deleting the run.
+    """Delete every line item on a run, leaving an empty run.
 
-    Used on Fridays to start the new week's order with a clean slate —
-    keeps all product rows (so SKU / shop-mapping state is preserved)
-    but resets quantities so the owner can type the new week's counts
-    without deleting and re-adding items by hand.
+    Removes all items (which also clears the per-shop columns, since the
+    spreadsheet only shows shops that have at least one mapped item).
+    The run row itself is preserved so the user can keep building on the
+    same dated run.
     """
     run = (await db.execute(
         select(USFoodsWeeklyRun).where(USFoodsWeeklyRun.id == run_id)
@@ -278,13 +278,12 @@ async def clear_run_quantities(
     items = (await db.execute(
         select(USFoodsRunItem).where(USFoodsRunItem.run_id == run_id)
     )).scalars().all()
-    cleared = 0
+    total = len(items)
     for item in items:
-        if item.quantity != 0:
-            item.quantity = 0
-            cleared += 1
+        await db.delete(item)
+    run.total_line_items = 0
     await db.commit()
-    return {"ok": True, "items_cleared": cleared, "total_items": len(items)}
+    return {"ok": True, "items_cleared": total, "total_items": total}
 
 
 @router.delete("/runs/{run_id}/items/{item_id}")

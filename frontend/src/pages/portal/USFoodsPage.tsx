@@ -236,7 +236,7 @@ export function USFoodsPage() {
   const clearMutation = useMutation({
     mutationFn: () => usfoods.clearRun(effectiveRunId!),
     onSuccess: (data) => {
-      toast.success(`Zeroed ${data.items_cleared} of ${data.total_items} items`);
+      toast.success(`Cleared ${data.items_cleared} item${data.items_cleared === 1 ? '' : 's'}`);
       queryClient.invalidateQueries({ queryKey: ['usfoods-run', effectiveRunId] });
     },
     onError: () => toast.error('Failed to clear order'),
@@ -436,7 +436,7 @@ export function USFoodsPage() {
               loading={clearMutation.isPending}
               onClick={() => {
                 if (!effectiveRunId) return;
-                if (!confirm('Zero every quantity on this run? The line items stay — only the counts reset.')) return;
+                if (!confirm('Are you sure you want to clear this order? This will remove ALL items and shop columns from the run. This cannot be undone.')) return;
                 clearMutation.mutate();
               }}
             >
