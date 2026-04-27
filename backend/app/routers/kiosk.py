@@ -25,6 +25,47 @@ router = APIRouter()
 # Short-lived kiosk sessions (15 minutes)
 KIOSK_TOKEN_EXPIRE_MINUTES = 15
 
+# PIN brute-force protection. Without this the kiosk URL is
+# publicly reachable and someone could enumerate 4-digit PINs.
+PIN_RATE_LIMIT_MAX_ATTEMPTS = 5
+PIN_RATE_LIMIT_WINDOW_SECONDS = 5 * 60
+_pin_attempts: dict[tuple[int, str], list[float]] = {}
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _check_pin_rate_limit(location_id: int, ip: str) -> None:
+    import time
+
+    key = (location_id, ip)
+    now = time.monotonic()
+    cutoff = now - PIN_RATE_LIMIT_WINDOW_SECONDS
+    attempts = [t for t in _pin_attempts.get(key, []) if t > cutoff]
+    if len(attempts) >= PIN_RATE_LIMIT_MAX_ATTEMPTS:
+        retry_after = int(attempts[0] + PIN_RATE_LIMIT_WINDOW_SECONDS - now) + 1
+        raise HTTPException(
+            status_code=429,
+            detail="Too many PIN attempts. Try again in a few minutes.",
+            headers={"Retry-After": str(max(retry_after, 1))},
+        )
+    _pin_attempts[key] = attempts
+
+
+def _record_pin_failure(location_id: int, ip: str) -> None:
+    import time
+
+    key = (location_id, ip)
+    _pin_attempts.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_pin_attempts(location_id: int, ip: str) -> None:
+    _pin_attempts.pop((location_id, ip), None)
+
 
 # ---------- Request / Response models ----------
 
@@ -83,9 +124,13 @@ async def _get_user_from_token(session_token: str, db: AsyncSession) -> User:
 @router.post("/authenticate")
 async def kiosk_authenticate(
     data: KioskAuthRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate by PIN code. Matches the last 4 digits against pin_last_four."""
+    ip = _client_ip(request)
+    _check_pin_rate_limit(data.location_id, ip)
+
     pin_last_four = data.pin_code[-4:] if len(data.pin_code) >= 4 else data.pin_code
 
     from app.models.user import user_locations
@@ -103,6 +148,7 @@ async def kiosk_authenticate(
     )
     users = result.scalars().all()
     if not users:
+        _record_pin_failure(data.location_id, ip)
         raise HTTPException(status_code=401, detail="Invalid PIN")
     # Two employees sharing a PIN at the same location would silently
     # authenticate as whichever row the DB returned first, sending
@@ -115,6 +161,7 @@ async def kiosk_authenticate(
             detail="PIN collision at this location — ask a manager to re-issue a PIN.",
         )
     user = users[0]
+    _clear_pin_attempts(data.location_id, ip)
 
     # Create a short-lived JWT for kiosk session
     session_token = create_access_token(

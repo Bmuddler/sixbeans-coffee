@@ -189,8 +189,12 @@ export function KioskPage() {
       setSession(sess);
       toast.success(`Welcome, ${sess.first_name}!`);
       setPin('');
-    } catch {
-      toast.error('Invalid PIN');
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const detail = err?.response?.data?.detail;
+      if (status === 429) toast.error(detail ?? 'Too many attempts — try again later.');
+      else if (status === 409) toast.error(detail ?? 'PIN collision — ask a manager.');
+      else toast.error('Invalid PIN');
       setPin('');
     } finally { setLoading(false); }
   };
