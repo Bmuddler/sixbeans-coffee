@@ -94,6 +94,19 @@ export function KioskPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Live clock (Pacific) for the keypad screen
+  const [now, setNow] = useState<Date>(new Date());
+  useEffect(() => {
+    const tick = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(tick);
+  }, []);
+  const clockTime = now.toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+  });
+  const clockDate = now.toLocaleDateString('en-US', {
+    timeZone: 'America/Los_Angeles', weekday: 'long', month: 'long', day: 'numeric',
+  });
+
   // Load locations (public endpoint, no auth needed)
   useEffect(() => {
     api.get('/kiosk/locations').then((r) => r.data as Location[]).then((locs) => {
@@ -359,12 +372,14 @@ export function KioskPage() {
           <div className="text-center mb-6">
             <img src="/logo.png" alt="Six Beans" className="h-16 w-auto mx-auto mb-4" />
             {locationName && (
-              <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-2" style={{ backgroundColor: '#4A3428' }}>
+              <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-3" style={{ backgroundColor: '#4A3428' }}>
                 <span className="text-sm font-semibold uppercase tracking-wide text-white/70">Location</span>
                 <span className="text-base font-bold text-white">{locationName}</span>
               </div>
             )}
-            <p className="text-gray-500 mt-1">Enter your 4-digit PIN</p>
+            <p className="text-3xl font-bold tabular-nums tracking-tight" style={{ color: '#4A3428' }}>{clockTime}</p>
+            <p className="text-sm text-gray-500">{clockDate}</p>
+            <p className="text-gray-500 mt-3">Enter your 4-digit PIN</p>
           </div>
 
           {!lockedToLocation && locationsLoaded && locations.length > 1 && (
