@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.data.canonical_employees import LOCATION_MAP, normalized_roster
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models.location import Location
@@ -272,3 +273,188 @@ async def update_user(
         location_ids=[loc.id for loc in user.locations],
         created_at=user.created_at, updated_at=user.updated_at,
     )
+
+
+async def _build_reconcile_plan(db: AsyncSession) -> dict:
+    """Compute the diff between the canonical roster and current users."""
+    locs = (await db.execute(select(Location))).scalars().all()
+    loc_by_name = {loc.name: loc for loc in locs}
+
+    users = (await db.execute(
+        select(User).options(selectinload(User.locations))
+    )).scalars().all()
+    user_by_email = {u.email.lower(): u for u in users}
+
+    canonical = normalized_roster()
+    canonical_emails = {c["email"] for c in canonical}
+
+    to_create: list[dict] = []
+    to_update: list[dict] = []
+    unknown_locations: set[str] = set()
+
+    for c in canonical:
+        target_loc_name = LOCATION_MAP.get(c["location_key"])
+        target_loc = loc_by_name.get(target_loc_name) if target_loc_name else None
+        if target_loc is None:
+            unknown_locations.add(c["location_key"])
+            continue
+
+        existing = user_by_email.get(c["email"])
+        if existing is not None and existing.role == UserRole.owner:
+            continue
+        if existing is None:
+            to_create.append({
+                "email": c["email"],
+                "first_name": c["first_name"],
+                "last_name": c["last_name"],
+                "phone": c["phone"],
+                "role": c["role"],
+                "pin_last_four": c["pin_last_four"],
+                "location_id": target_loc.id,
+                "location_name": target_loc.name,
+            })
+            continue
+
+        current_loc_ids = sorted(loc.id for loc in existing.locations)
+        desired_loc_ids = [target_loc.id]
+        diffs = {}
+        if existing.first_name != c["first_name"]:
+            diffs["first_name"] = (existing.first_name, c["first_name"])
+        if existing.last_name != c["last_name"]:
+            diffs["last_name"] = (existing.last_name, c["last_name"])
+        if (existing.phone or None) != c["phone"]:
+            diffs["phone"] = (existing.phone, c["phone"])
+        if existing.role.value != c["role"]:
+            diffs["role"] = (existing.role.value, c["role"])
+        if (existing.pin_last_four or "") != c["pin_last_four"]:
+            diffs["pin_last_four"] = (existing.pin_last_four, c["pin_last_four"])
+        if current_loc_ids != desired_loc_ids:
+            diffs["location_ids"] = (current_loc_ids, desired_loc_ids)
+        if not existing.is_active:
+            diffs["is_active"] = (False, True)
+
+        if diffs:
+            to_update.append({
+                "id": existing.id,
+                "email": existing.email,
+                "diffs": diffs,
+            })
+
+    to_deactivate: list[dict] = []
+    for u in users:
+        if u.role == UserRole.owner:
+            continue
+        if u.email.lower() in canonical_emails:
+            continue
+        if not u.is_active:
+            continue
+        to_deactivate.append({
+            "id": u.id,
+            "email": u.email,
+            "name": f"{u.first_name} {u.last_name}".strip(),
+        })
+
+    return {
+        "to_create": to_create,
+        "to_update": to_update,
+        "to_deactivate": to_deactivate,
+        "unknown_locations": sorted(unknown_locations),
+        "summary": {
+            "create": len(to_create),
+            "update": len(to_update),
+            "deactivate": len(to_deactivate),
+            "total_canonical": len(canonical),
+            "total_existing_users": len(users),
+        },
+    }
+
+
+@router.get("/reconcile/preview")
+async def reconcile_preview(
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Dry-run: report what /reconcile would create, update, deactivate."""
+    return await _build_reconcile_plan(db)
+
+
+@router.post("/reconcile")
+async def reconcile_employees(
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply the canonical roster: upsert listed users, deactivate the rest.
+
+    Owners are never deactivated. Existing users keep all their FK history
+    (time clocks, shifts, drawers, form submissions) — only their core
+    fields and location assignments are overwritten.
+    """
+    plan = await _build_reconcile_plan(db)
+    if plan["unknown_locations"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown location keys: {plan['unknown_locations']}. "
+                   "Update LOCATION_MAP before reconciling.",
+        )
+
+    locs = (await db.execute(select(Location))).scalars().all()
+    loc_by_id = {loc.id: loc for loc in locs}
+
+    default_password_hash = hash_password("Sixb3ans12!")
+
+    for c in plan["to_create"]:
+        new_user = User(
+            email=c["email"],
+            first_name=c["first_name"],
+            last_name=c["last_name"],
+            phone=c["phone"],
+            role=UserRole(c["role"]),
+            hashed_password=default_password_hash,
+            pin_last_four=c["pin_last_four"],
+            is_active=True,
+            must_change_password=True,
+        )
+        db.add(new_user)
+        await db.flush()
+        await db.execute(
+            user_locations.insert().values(
+                user_id=new_user.id, location_id=c["location_id"]
+            )
+        )
+
+    for u in plan["to_update"]:
+        user = (await db.execute(
+            select(User).options(selectinload(User.locations)).where(User.id == u["id"])
+        )).scalar_one()
+        diffs = u["diffs"]
+        if "first_name" in diffs:
+            user.first_name = diffs["first_name"][1]
+        if "last_name" in diffs:
+            user.last_name = diffs["last_name"][1]
+        if "phone" in diffs:
+            user.phone = diffs["phone"][1]
+        if "role" in diffs:
+            user.role = UserRole(diffs["role"][1])
+        if "pin_last_four" in diffs:
+            user.pin_last_four = diffs["pin_last_four"][1]
+        if "is_active" in diffs:
+            user.is_active = True
+        if "location_ids" in diffs:
+            new_ids = diffs["location_ids"][1]
+            user.locations = [loc_by_id[i] for i in new_ids if i in loc_by_id]
+
+    for u in plan["to_deactivate"]:
+        user = (await db.execute(
+            select(User).where(User.id == u["id"])
+        )).scalar_one()
+        user.is_active = False
+
+    await db.commit()
+
+    await log_action(
+        db, current_user.id, "reconcile_employees", "user", None,
+        new_values=plan["summary"],
+    )
+    await db.commit()
+
+    return {"ok": True, **plan["summary"]}
