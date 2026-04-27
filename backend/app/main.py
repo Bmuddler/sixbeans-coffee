@@ -187,6 +187,10 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS cogs_percent "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.22"
         ))
+        await conn.execute(text(
+            "ALTER TABLE company_documents ADD COLUMN IF NOT EXISTS visibility "
+            "VARCHAR(20) NOT NULL DEFAULT 'all'"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints

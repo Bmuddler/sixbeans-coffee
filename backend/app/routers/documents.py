@@ -65,12 +65,16 @@ async def list_documents(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all documents (any authenticated user). Does not return file_data."""
-    result = await db.execute(
+    """List documents the user can see. Owner-only docs are filtered out for non-owners."""
+    query = (
         select(CompanyDocument)
         .options(selectinload(CompanyDocument.uploader))
         .order_by(CompanyDocument.created_at.desc())
     )
+    if current_user.role != UserRole.owner:
+        query = query.where(CompanyDocument.visibility == "all")
+
+    result = await db.execute(query)
     documents = result.scalars().all()
 
     return [
@@ -81,6 +85,7 @@ async def list_documents(
             "filename": doc.filename,
             "file_type": doc.file_type,
             "file_size": doc.file_size,
+            "visibility": doc.visibility,
             "uploaded_by_name": (
                 f"{doc.uploader.first_name} {doc.uploader.last_name}"
                 if doc.uploader
@@ -105,6 +110,11 @@ async def download_document(
     document = result.scalar_one_or_none()
 
     if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+
+    if document.visibility == "owner" and current_user.role != UserRole.owner:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )

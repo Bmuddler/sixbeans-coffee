@@ -10,6 +10,13 @@ import { Button } from '@/components/ui/Button';
 import { forms } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
 
+function formatSsn(digits: string): string {
+  const d = (digits ?? '').replace(/\D/g, '').slice(0, 9);
+  if (d.length <= 3) return d;
+  if (d.length <= 5) return `${d.slice(0, 3)}-${d.slice(3)}`;
+  return `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}`;
+}
+
 const FILING_STATUS_OPTIONS = [
   { value: 'single', label: 'Single or Married filing separately' },
   { value: 'married', label: 'Married filing jointly' },
@@ -19,7 +26,7 @@ const FILING_STATUS_OPTIONS = [
 interface W4Data {
   first_name: string;
   last_name: string;
-  ssn_last_four: string;
+  ssn: string;
   address: string;
   city: string;
   state: string;
@@ -38,7 +45,7 @@ interface W4Data {
 const defaultW4: W4Data = {
   first_name: '',
   last_name: '',
-  ssn_last_four: '',
+  ssn: '',
   address: '',
   city: '',
   state: 'CA',
@@ -89,6 +96,10 @@ export function W4Form() {
       toast.error('Please fill in your name and sign the form');
       return;
     }
+    if (form.ssn.replace(/\D/g, '').length !== 9) {
+      toast.error('Please enter your full 9-digit Social Security Number');
+      return;
+    }
     submitMutation.mutate();
   };
 
@@ -116,7 +127,16 @@ export function W4Form() {
             <Input label="First Name *" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} />
             <Input label="Last Name *" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} />
           </div>
-          <Input label="Last 4 of SSN" type="text" maxLength={4} value={form.ssn_last_four} onChange={(e) => set('ssn_last_four', e.target.value.replace(/\D/g, ''))} helperText="For identification only — full SSN is not stored" />
+          <Input
+            label="Social Security Number *"
+            type="text"
+            inputMode="numeric"
+            maxLength={11}
+            value={formatSsn(form.ssn)}
+            onChange={(e) => set('ssn', e.target.value.replace(/\D/g, '').slice(0, 9))}
+            placeholder="XXX-XX-XXXX"
+            helperText="Required by the IRS on Form W-4. The PDF is stored securely and only visible to the owner; your full SSN is not saved in the database."
+          />
           <Input label="Address" value={form.address} onChange={(e) => set('address', e.target.value)} />
           <div className="grid gap-4 sm:grid-cols-3">
             <Input label="City" value={form.city} onChange={(e) => set('city', e.target.value)} />

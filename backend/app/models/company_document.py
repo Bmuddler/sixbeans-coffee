@@ -18,5 +18,6 @@ class CompanyDocument(Base):
     file_size = Column(Integer, nullable=False)  # bytes
     uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    visibility = Column(String(20), nullable=False, default="all")  # "all" | "owner"
 
     uploader = relationship("User")

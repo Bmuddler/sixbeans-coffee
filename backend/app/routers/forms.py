@@ -1,3 +1,4 @@
+import base64
 import json
 from datetime import datetime
 
@@ -8,9 +9,14 @@ from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.dependencies import get_current_user, require_roles
+from app.models.company_document import CompanyDocument
 from app.models.form_submission import FormSubmission
 from app.models.user import User, UserRole
 from app.schemas.form_submission import FormSubmissionCreate, FormSubmissionResponse
+from app.services.w4_pdf import render_w4_pdf
+
+# Fields that may contain full SSN. We never persist these in form_submissions.
+SENSITIVE_FORM_FIELDS = {"ssn"}
 
 router = APIRouter()
 
@@ -37,6 +43,35 @@ async def submit_form(
     db: AsyncSession = Depends(get_db),
 ):
     """Submit or update a form. If user already has a submission for this form_type, update it."""
+    submitted_at = datetime.utcnow()
+    employee_name = f"{current_user.first_name} {current_user.last_name}".strip()
+
+    # For W-4: render the full form (including full SSN) into a PDF stored as
+    # an owner-only CompanyDocument. The SSN is then stripped before the
+    # submission row is persisted, so form_submissions.form_data never contains it.
+    if payload.form_type == "w4":
+        pdf_bytes = render_w4_pdf(payload.form_data, employee_name, submitted_at)
+        safe_filename = (
+            "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in employee_name)
+            or f"employee-{current_user.id}"
+        )
+        date_str = submitted_at.strftime("%Y-%m-%d")
+        pdf_doc = CompanyDocument(
+            title=f"W-4 — {employee_name} ({date_str})",
+            category="Tax Forms",
+            filename=f"W4_{safe_filename}_{date_str}.pdf",
+            file_data=base64.b64encode(pdf_bytes).decode("utf-8"),
+            file_type="application/pdf",
+            file_size=len(pdf_bytes),
+            uploaded_by=current_user.id,
+            visibility="owner",
+        )
+        db.add(pdf_doc)
+
+    safe_form_data = {
+        k: v for k, v in payload.form_data.items() if k not in SENSITIVE_FORM_FIELDS
+    }
+
     result = await db.execute(
         select(FormSubmission)
         .options(selectinload(FormSubmission.employee))
@@ -48,11 +83,10 @@ async def submit_form(
     existing = result.scalar_one_or_none()
 
     if existing:
-        existing.form_data = json.dumps(payload.form_data)
-        existing.updated_at = datetime.utcnow()
+        existing.form_data = json.dumps(safe_form_data)
+        existing.updated_at = submitted_at
         await db.commit()
         await db.refresh(existing)
-        # Re-load with relationship
         result = await db.execute(
             select(FormSubmission)
             .options(selectinload(FormSubmission.employee))
@@ -63,12 +97,13 @@ async def submit_form(
         submission = FormSubmission(
             employee_id=current_user.id,
             form_type=payload.form_type,
-            form_data=json.dumps(payload.form_data),
+            form_data=json.dumps(safe_form_data),
+            submitted_at=submitted_at,
+            updated_at=submitted_at,
         )
         db.add(submission)
         await db.commit()
         await db.refresh(submission)
-        # Load with relationship
         result = await db.execute(
             select(FormSubmission)
             .options(selectinload(FormSubmission.employee))
