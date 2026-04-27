@@ -2,6 +2,7 @@
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -13,6 +14,7 @@ from app.dependencies import require_roles
 from app.models.job_application import JobApplication
 from app.models.location import Location
 from app.models.user import User, UserRole, user_locations
+from app.services.gmail_watcher import send_email
 from app.services.notification_service import send_sms
 
 logger = logging.getLogger(__name__)
@@ -39,9 +41,11 @@ class JobApplicationResponse(BaseModel):
     message: str | None
     created_at: str
     status: str
+    rating: str | None
     forwarded_to_location_id: int | None
     forwarded_to_location_name: str | None
     forwarded_at: str | None
+    rejected_at: str | None
 
     class Config:
         from_attributes = True
@@ -49,6 +53,10 @@ class JobApplicationResponse(BaseModel):
 
 class ForwardRequest(BaseModel):
     location_id: int
+
+
+class RateRequest(BaseModel):
+    rating: Literal["yes", "maybe", "never"] | None
 
 
 @router.post("/", status_code=status.HTTP_201_CREATED)
@@ -94,10 +102,21 @@ def _to_response(app: JobApplication, loc_name: str | None) -> JobApplicationRes
         message=app.message,
         created_at=app.created_at.isoformat(),
         status=app.status or "new",
+        rating=app.rating,
         forwarded_to_location_id=app.forwarded_to_location_id,
         forwarded_to_location_name=loc_name,
         forwarded_at=app.forwarded_at.isoformat() if app.forwarded_at else None,
+        rejected_at=app.rejected_at.isoformat() if app.rejected_at else None,
     )
+
+
+async def _resolve_location_name(db: AsyncSession, app: JobApplication) -> str | None:
+    if not app.forwarded_to_location_id:
+        return None
+    loc = (await db.execute(
+        select(Location).where(Location.id == app.forwarded_to_location_id)
+    )).scalar_one_or_none()
+    return loc.name if loc else None
 
 
 @router.get("/", response_model=list[JobApplicationResponse])
@@ -127,6 +146,29 @@ async def list_applications(
     ]
 
 
+def _format_forward_email(app: JobApplication, location_name: str, sender_name: str) -> tuple[str, str]:
+    subject = f"[Six Beans] Job applicant for {location_name}: {app.name}"
+    lines = [
+        f"{sender_name} forwarded a job application to {location_name}.",
+        "",
+        "Applicant",
+        f"  Name:     {app.name}",
+        f"  Position: {app.position}",
+        f"  Phone:    {app.phone}",
+        f"  Email:    {app.email}",
+        f"  Applied for shop: {app.location}",
+        f"  Submitted: {app.created_at.strftime('%Y-%m-%d %H:%M UTC')}",
+    ]
+    if app.message:
+        lines += ["", "Their message:", app.message]
+    lines += [
+        "",
+        "Reach out directly to schedule an interview if you're interested.",
+        "— Six Beans Coffee Co.",
+    ]
+    return subject, "\n".join(lines)
+
+
 @router.post("/{application_id}/forward", response_model=JobApplicationResponse)
 async def forward_application(
     application_id: int,
@@ -136,9 +178,8 @@ async def forward_application(
 ):
     """Forward a job application to the managers at a specific location.
 
-    Sends each active manager assigned to that location an SMS with the
-    applicant's contact info. Marks the application as 'forwarded' and
-    records who forwarded it.
+    Emails each active manager assigned to that location with the full
+    application body. Marks the application as 'forwarded'.
     """
     app = (await db.execute(
         select(JobApplication).where(JobApplication.id == application_id)
@@ -162,20 +203,29 @@ async def forward_application(
         )
     )).scalars().all()
 
-    sent = 0
-    for mgr in managers:
-        if not mgr.phone:
-            continue
-        body = (
-            f"Six Beans: {current_user.first_name} forwarded a job applicant to {location.name}. "
-            f"{app.name} — {app.position}. "
-            f"Phone: {app.phone}. Email: {app.email}."
+    recipients = [m for m in managers if m.email and "@placeholder.sixbeans.local" not in m.email.lower()]
+    if not recipients:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No managers with a real email address are assigned to {location.name}.",
         )
+
+    subject, body = _format_forward_email(app, location.name, current_user.first_name)
+    sent = 0
+    failed: list[str] = []
+    for mgr in recipients:
         try:
-            await send_sms(mgr.phone, body)
+            await send_email(db, to=mgr.email, subject=subject, body=body)
             sent += 1
-        except Exception:
-            logger.exception("Failed to SMS manager %s for application %s", mgr.id, app.id)
+        except Exception as exc:
+            logger.exception("Failed to email manager %s for application %s", mgr.id, app.id)
+            failed.append(f"{mgr.email}: {exc}")
+
+    if sent == 0:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not send to any manager. Errors: {'; '.join(failed) or 'unknown'}",
+        )
 
     app.status = "forwarded"
     app.forwarded_to_location_id = location.id
@@ -185,6 +235,67 @@ async def forward_application(
     await db.refresh(app)
 
     return _to_response(app, location.name)
+
+
+def _format_rejection_email(app: JobApplication) -> tuple[str, str]:
+    subject = "Six Beans Coffee — Application Update"
+    body = (
+        f"Hi {app.name.split()[0] if app.name else 'there'},\n\n"
+        f"Thank you for applying for the {app.position} position at Six Beans Coffee. "
+        "We really appreciate your interest in joining our team.\n\n"
+        "We are not currently hiring for this role, but we will keep your application "
+        "on file and will reach out when we have an opening that matches your background.\n\n"
+        "Best,\nThe Six Beans Team"
+    )
+    return subject, body
+
+
+@router.post("/{application_id}/reject", response_model=JobApplicationResponse)
+async def reject_application(
+    application_id: int,
+    _current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send the canned 'not currently hiring' email and mark as rejected."""
+    app = (await db.execute(
+        select(JobApplication).where(JobApplication.id == application_id)
+    )).scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    if not app.email or "@" not in app.email:
+        raise HTTPException(status_code=400, detail="Applicant has no usable email on file")
+
+    subject, body = _format_rejection_email(app)
+    try:
+        await send_email(db, to=app.email, subject=subject, body=body)
+    except Exception as exc:
+        logger.exception("Rejection email send failed for application %s", app.id)
+        raise HTTPException(status_code=502, detail=f"Email send failed: {exc}") from exc
+
+    app.status = "rejected"
+    app.rejected_at = datetime.utcnow()
+    await db.commit()
+    await db.refresh(app)
+    return _to_response(app, await _resolve_location_name(db, app))
+
+
+@router.post("/{application_id}/rate", response_model=JobApplicationResponse)
+async def rate_application(
+    application_id: int,
+    payload: RateRequest,
+    _current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Set or clear the owner's hiring rating: yes / maybe / never / null."""
+    app = (await db.execute(
+        select(JobApplication).where(JobApplication.id == application_id)
+    )).scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
+    app.rating = payload.rating
+    await db.commit()
+    await db.refresh(app)
+    return _to_response(app, await _resolve_location_name(db, app))
 
 
 @router.post("/{application_id}/archive", response_model=JobApplicationResponse)
@@ -202,14 +313,7 @@ async def archive_application(
     app.status = "archived"
     await db.commit()
     await db.refresh(app)
-
-    loc_name = None
-    if app.forwarded_to_location_id:
-        loc = (await db.execute(
-            select(Location).where(Location.id == app.forwarded_to_location_id)
-        )).scalar_one_or_none()
-        loc_name = loc.name if loc else None
-    return _to_response(app, loc_name)
+    return _to_response(app, await _resolve_location_name(db, app))
 
 
 @router.delete("/{application_id}", status_code=status.HTTP_204_NO_CONTENT)

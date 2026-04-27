@@ -206,6 +206,12 @@ async def startup():
             "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS "
             "forwarded_by INTEGER REFERENCES users(id)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS rating VARCHAR(10)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE job_applications ADD COLUMN IF NOT EXISTS rejected_at TIMESTAMP"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints

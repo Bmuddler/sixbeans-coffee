@@ -16,8 +16,12 @@ class JobApplication(Base):
     location = Column(String(100), nullable=False)
     message = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    # 'new' | 'forwarded' | 'archived'
+    # 'new' | 'forwarded' | 'rejected' | 'archived'
     status = Column(String(20), nullable=False, default="new")
+    # 'yes' | 'maybe' | 'never' — owner's hiring shortlist signal,
+    # independent of status (you can rate before forwarding/rejecting).
+    rating = Column(String(10), nullable=True)
     forwarded_to_location_id = Column(Integer, ForeignKey("locations.id"), nullable=True)
     forwarded_at = Column(DateTime, nullable=True)
     forwarded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    rejected_at = Column(DateTime, nullable=True)
