@@ -400,16 +400,17 @@ async def reconcile_employees(
     locs = (await db.execute(select(Location))).scalars().all()
     loc_by_id = {loc.id: loc for loc in locs}
 
-    default_password_hash = hash_password("Sixb3ans12!")
-
     for c in plan["to_create"]:
+        # Initial password is the employee's phone number (must change on
+        # first login). Falls back to a generic temp password if no phone.
+        initial_password = c["phone"] or "Sixb3ans12!"
         new_user = User(
             email=c["email"],
             first_name=c["first_name"],
             last_name=c["last_name"],
             phone=c["phone"],
             role=UserRole(c["role"]),
-            hashed_password=default_password_hash,
+            hashed_password=hash_password(initial_password),
             pin_last_four=c["pin_last_four"],
             is_active=True,
             must_change_password=True,
