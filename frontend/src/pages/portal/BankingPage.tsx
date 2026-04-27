@@ -268,76 +268,196 @@ function StatCard({ label, value, hint, tone }: { label: string; value: string; 
 // Upload
 // ---------------------------------------------------------------------------
 
+interface DetectedFile {
+  filename: string;
+  size_bytes: number;
+  row_count: number;
+  total_inflow: number;
+  total_outflow: number;
+  suggested_account_id: number | null;
+  suggested_account_name: string | null;
+  detection_reason: string;
+  sample: { date: string; amount: number; description: string }[];
+  // Local state
+  file: File;
+  override_account_id: number | null;
+  result?: { inserted: number; skipped_duplicate: number; auto_categorized: number; uncategorized: number; error?: string };
+}
+
 function UploadTab() {
   const queryClient = useQueryClient();
   const { data: accounts } = useQuery<Account[]>({ queryKey: ['finance-accounts'], queryFn: finance.accounts });
-  const [accountId, setAccountId] = useState<string>('');
-  const [file, setFile] = useState<File | null>(null);
-  const [lastResult, setLastResult] = useState<any | null>(null);
+  const [detected, setDetected] = useState<DetectedFile[]>([]);
+  const [dragOver, setDragOver] = useState(false);
 
-  const uploadMutation = useMutation({
+  const detectMutation = useMutation({
+    mutationFn: (files: File[]) => finance.detect(files),
+    onSuccess: (data, files) => {
+      const items: DetectedFile[] = (data.files ?? []).map((d: any, i: number) => ({
+        ...d,
+        file: files[i],
+        override_account_id: d.suggested_account_id,
+      }));
+      setDetected(items);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Could not analyze files')),
+  });
+
+  const importMutation = useMutation({
     mutationFn: () => {
-      if (!file || !accountId) throw new Error('Pick an account and a file');
-      return finance.ingest(Number(accountId), file);
+      const ready = detected.filter((d) => d.override_account_id != null);
+      return finance.ingestBatch(ready.map((d) => ({ file: d.file, account_id: d.override_account_id! })));
     },
     onSuccess: (data) => {
-      setLastResult(data);
-      setFile(null);
+      const results = data.results ?? [];
+      setDetected((prev) =>
+        prev.map((d) => {
+          const r = results.find((x: any) => x.filename === d.filename);
+          if (!r) return d;
+          return { ...d, result: r };
+        }),
+      );
       queryClient.invalidateQueries({ queryKey: ['finance-accounts'] });
       queryClient.invalidateQueries({ queryKey: ['finance-uncat-count'] });
       queryClient.invalidateQueries({ queryKey: ['finance-pl'] });
       queryClient.invalidateQueries({ queryKey: ['finance-top-vendors'] });
-      toast.success(`Imported ${data.inserted} new transactions (${data.skipped_duplicate} duplicates skipped).`);
+      queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      const totalInserted = results.reduce((s: number, r: any) => s + (r.inserted ?? 0), 0);
+      const totalSkipped = results.reduce((s: number, r: any) => s + (r.skipped_duplicate ?? 0), 0);
+      const totalUncat = results.reduce((s: number, r: any) => s + (r.uncategorized ?? 0), 0);
+      toast.success(`Imported ${totalInserted} new transactions across ${results.length} files. ${totalSkipped} duplicates skipped, ${totalUncat} need categorizing.`);
     },
-    onError: (err: any) => toast.error(extractError(err, 'Upload failed')),
+    onError: (err: any) => toast.error(extractError(err, 'Import failed')),
   });
 
-  return (
-    <Card title="Upload bank or credit-card export">
-      <p className="text-sm text-gray-500 mb-4">
-        Pick the account, drop the CSV. Duplicates are auto-skipped. Auto-categorization runs on import.
-      </p>
-      <div className="grid gap-3 md:grid-cols-2">
-        <Select
-          label="Account"
-          options={[
-            { value: '', label: 'Pick an account…' },
-            ...((accounts ?? []).map((a) => ({ value: String(a.id), label: a.name }))),
-          ]}
-          value={accountId}
-          onChange={(e) => setAccountId(e.target.value)}
-        />
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1.5">File</label>
-          <input
-            type="file"
-            accept=".csv,text/csv"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer"
-          />
-        </div>
-      </div>
-      <div className="mt-4 flex justify-end">
-        <Button
-          onClick={() => uploadMutation.mutate()}
-          disabled={!file || !accountId}
-          loading={uploadMutation.isPending}
-        >
-          Import
-        </Button>
-      </div>
+  const handleFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    detectMutation.mutate(arr);
+  };
 
-      {lastResult && (
-        <div className="mt-6 rounded-lg bg-gray-50 p-4 text-sm space-y-1">
-          <p className="font-semibold">{lastResult.account}</p>
-          <p>Parsed: <strong>{lastResult.parsed}</strong></p>
-          <p>Inserted: <strong>{lastResult.inserted}</strong></p>
-          <p>Duplicates skipped: <strong>{lastResult.skipped_duplicate}</strong></p>
-          <p>Auto-categorized: <strong>{lastResult.auto_categorized}</strong></p>
-          <p>Uncategorized (need review): <strong className={lastResult.uncategorized > 0 ? 'text-orange-600' : ''}>{lastResult.uncategorized}</strong></p>
+  const accountOptions = useMemo(
+    () => [
+      { value: '', label: 'Skip this file' },
+      ...((accounts ?? []).map((a) => ({ value: String(a.id), label: a.name }))),
+    ],
+    [accounts],
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div
+          className={clsx(
+            'border-2 border-dashed rounded-lg p-10 text-center transition-colors',
+            dragOver ? 'border-primary bg-primary/5' : 'border-gray-300',
+          )}
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            handleFiles(e.dataTransfer.files);
+          }}
+        >
+          <Upload className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+          <p className="text-sm text-gray-700">
+            <strong>Drop all your files here at once</strong>
+            <br />
+            <span className="text-gray-500">— or —</span>
+          </p>
+          <label className="inline-block mt-3 px-4 py-2 bg-primary/10 text-primary rounded-lg cursor-pointer hover:bg-primary/20 text-sm font-semibold">
+            Pick files
+            <input
+              type="file"
+              multiple
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={(e) => e.target.files && handleFiles(e.target.files)}
+            />
+          </label>
+          <p className="text-xs text-gray-500 mt-3">
+            Wells Fargo Checking / Savings / Cap One transaction CSVs. The system will figure out which file goes where; you can override before importing.
+          </p>
+          {detectMutation.isPending && <p className="text-sm text-gray-500 mt-3">Analyzing…</p>}
         </div>
+      </Card>
+
+      {detected.length > 0 && (
+        <Card title={`${detected.length} file${detected.length === 1 ? '' : 's'} ready`}>
+          <div className="space-y-3">
+            {detected.map((d, idx) => (
+              <div key={`${d.filename}-${idx}`} className="border border-gray-200 rounded-lg p-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm">{d.filename}</p>
+                    <p className="text-xs text-gray-500">
+                      {d.row_count} rows · {money(d.total_inflow)} in / {money(d.total_outflow)} out
+                    </p>
+                    {d.sample && d.sample.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-1 truncate" title={d.sample.map((s) => s.description).join(' · ')}>
+                        First row: {d.sample[0].date} · {money(d.sample[0].amount)} · {d.sample[0].description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-right">
+                      <Select
+                        options={accountOptions}
+                        value={d.override_account_id == null ? '' : String(d.override_account_id)}
+                        onChange={(e) => {
+                          const v = e.target.value ? Number(e.target.value) : null;
+                          setDetected((prev) =>
+                            prev.map((x, i) => (i === idx ? { ...x, override_account_id: v } : x)),
+                          );
+                        }}
+                        className="min-w-[220px]"
+                      />
+                      <p className="text-[10px] text-gray-400 mt-0.5">{d.detection_reason}</p>
+                    </div>
+                    <button
+                      onClick={() => setDetected((prev) => prev.filter((_, i) => i !== idx))}
+                      className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-red-600"
+                      title="Remove from batch"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                {d.result && (
+                  <div className={clsx(
+                    'mt-3 rounded p-2 text-xs',
+                    d.result.error ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-800',
+                  )}>
+                    {d.result.error
+                      ? `Error: ${d.result.error}`
+                      : `Imported ${d.result.inserted} (${d.result.skipped_duplicate} dupes skipped, ${d.result.uncategorized} uncategorized).`}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 flex items-center justify-between flex-wrap gap-2">
+            <p className="text-xs text-gray-500">
+              {detected.filter((d) => d.override_account_id != null).length} of {detected.length} ready to import
+            </p>
+            <div className="flex gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setDetected([])}>
+                Clear
+              </Button>
+              <Button
+                onClick={() => importMutation.mutate()}
+                loading={importMutation.isPending}
+                disabled={!detected.some((d) => d.override_account_id != null) || detected.every((d) => d.result != null)}
+              >
+                Import all
+              </Button>
+            </div>
+          </div>
+        </Card>
       )}
-    </Card>
+    </div>
   );
 }
 

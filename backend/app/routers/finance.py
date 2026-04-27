@@ -25,7 +25,11 @@ from app.models.finance import (
     MonthlyClose,
 )
 from app.models.user import User, UserRole
-from app.services.finance_ingestion import ingest_csv, normalize_description
+from app.services.finance_ingestion import (
+    detect_account_short_code,
+    ingest_csv,
+    normalize_description,
+)
 
 router = APIRouter()
 
@@ -437,6 +441,13 @@ async def delete_rule(
 # ---------------------------------------------------------------------------
 
 
+def _decode(contents: bytes) -> str:
+    try:
+        return contents.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return contents.decode("latin-1")
+
+
 @router.post("/ingest")
 async def ingest_endpoint(
     account_id: int = Form(...),
@@ -447,11 +458,7 @@ async def ingest_endpoint(
     a = (await db.execute(select(BankAccount).where(BankAccount.id == account_id))).scalar_one_or_none()
     if not a:
         raise HTTPException(status_code=404, detail="Account not found")
-    contents = await file.read()
-    try:
-        text = contents.decode("utf-8-sig")
-    except UnicodeDecodeError:
-        text = contents.decode("latin-1")
+    text = _decode(await file.read())
     summary = await ingest_csv(db, a, text, source_filename=file.filename)
     return {
         "account": summary.account,
@@ -461,6 +468,91 @@ async def ingest_endpoint(
         "auto_categorized": summary.auto_categorized,
         "uncategorized": summary.uncategorized,
     }
+
+
+@router.post("/detect")
+async def detect_endpoint(
+    files: list[UploadFile] = File(...),
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Inspect each uploaded file and return the suggested account, with
+    a row preview so the owner can sanity-check before importing."""
+    accounts = (await db.execute(select(BankAccount))).scalars().all()
+    by_code = {a.short_code: a for a in accounts}
+
+    out: list[dict] = []
+    for f in files:
+        contents = await f.read()
+        try:
+            text = _decode(contents)
+            short_code, reason, rows = detect_account_short_code(f.filename, text)
+        except Exception as exc:
+            out.append({
+                "filename": f.filename,
+                "error": f"Could not parse: {exc}",
+            })
+            continue
+
+        suggested = by_code.get(short_code)
+        sample = [
+            {"date": r.txn_date.isoformat(), "amount": r.amount, "description": r.description[:80]}
+            for r in rows[:3]
+        ]
+        total_inflow = sum(r.amount for r in rows if r.amount > 0)
+        total_outflow = sum(-r.amount for r in rows if r.amount < 0)
+        out.append({
+            "filename": f.filename,
+            "size_bytes": len(contents),
+            "row_count": len(rows),
+            "total_inflow": round(total_inflow, 2),
+            "total_outflow": round(total_outflow, 2),
+            "suggested_account_id": suggested.id if suggested else None,
+            "suggested_account_name": suggested.name if suggested else None,
+            "detection_reason": reason,
+            "sample": sample,
+        })
+    return {"files": out}
+
+
+@router.post("/ingest-batch")
+async def ingest_batch_endpoint(
+    files: list[UploadFile] = File(...),
+    account_ids: list[int] = Form(...),
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a batch of files, one per account_id (positional)."""
+    if len(files) != len(account_ids):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Got {len(files)} files but {len(account_ids)} account_ids; counts must match.",
+        )
+
+    accounts = (await db.execute(select(BankAccount))).scalars().all()
+    by_id = {a.id: a for a in accounts}
+
+    results: list[dict] = []
+    for f, account_id in zip(files, account_ids):
+        a = by_id.get(account_id)
+        if a is None:
+            results.append({"filename": f.filename, "error": f"Unknown account_id {account_id}"})
+            continue
+        try:
+            text = _decode(await f.read())
+            summary = await ingest_csv(db, a, text, source_filename=f.filename)
+            results.append({
+                "filename": f.filename,
+                "account": summary.account,
+                "parsed": summary.parsed,
+                "inserted": summary.inserted,
+                "skipped_duplicate": summary.skipped_duplicate,
+                "auto_categorized": summary.auto_categorized,
+                "uncategorized": summary.uncategorized,
+            })
+        except Exception as exc:
+            results.append({"filename": f.filename, "account": a.name, "error": str(exc)})
+    return {"results": results}
 
 
 # ---------------------------------------------------------------------------

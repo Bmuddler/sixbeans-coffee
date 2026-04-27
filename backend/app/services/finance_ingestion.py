@@ -140,6 +140,74 @@ def parser_for(short_code: str):
     return parse_wells_fargo
 
 
+def detect_account_short_code(filename: str | None, csv_text: str) -> tuple[str, str, list[ParsedRow]]:
+    """Best-guess which account the file belongs to.
+
+    Returns (short_code, reason, parsed_rows). Filename wins for the
+    obvious cases; content heuristics break the tie between the three WF
+    Checking accounts (which all download with identical headers and
+    filenames like Checking.csv / Checking (1).csv).
+    """
+    fn = (filename or "").lower()
+
+    # Cap One detection: header is the giveaway, filename usually too.
+    first_line = (csv_text.splitlines() or [""])[0].lower()
+    if "transaction date" in first_line and "posted date" in first_line:
+        rows = parse_capital_one(csv_text)
+        return ("cap_one", "Capital One header detected", rows)
+    if "transaction_download" in fn or "capital" in fn:
+        rows = parse_capital_one(csv_text)
+        return ("cap_one", "Filename matches Cap One pattern", rows)
+
+    # Everything below is a WF export. Parse with WF parser.
+    rows = parse_wells_fargo(csv_text)
+
+    # Filename overrides
+    if "savings" in fn:
+        return ("wf_savings", "Filename contains 'savings'", rows)
+    if "payroll" in fn:
+        return ("wf_payroll", "Filename contains 'payroll'", rows)
+    if "merchant" in fn:
+        return ("wf_merchant", "Filename contains 'merchant'", rows)
+    if "main" in fn:
+        return ("wf_main", "Filename contains 'main'", rows)
+
+    # All 3 WF checking exports come down with the same filename — fall back
+    # to content fingerprinting.
+    n = len(rows)
+    if n == 0:
+        return ("wf_main", "No rows; defaulting to Main Checking", rows)
+
+    adp_count = sum(1 for r in rows if "ADP" in r.description.upper())
+    paycheck_zelle_count = sum(
+        1 for r in rows
+        if "EMPLOYEE PAYCHECK" in r.description.upper()
+        or ("ZELLE" in r.description.upper() and "PAYCHECK" in r.description.upper())
+    )
+    stripe_count = sum(1 for r in rows if "STRIPE" in r.description.upper())
+    interest_count = sum(1 for r in rows if "INTEREST PAYMENT" in r.description.upper())
+
+    # Savings (rare to see one with a "Checking" filename, but just in case):
+    # nearly empty + interest only.
+    if interest_count >= max(1, n * 0.5) and n < 20:
+        return ("wf_savings", "Mostly interest rows", rows)
+
+    # Merchant Checking: this is where Stripe deposits land before being
+    # swept to Main Checking. A dominant Stripe signature is the strongest
+    # tell — Main Checking has Stripe transfers IN from Merchant rather
+    # than direct merchant deposits.
+    if stripe_count >= max(5, n * 0.5):
+        return ("wf_merchant", f"{stripe_count}/{n} rows are Stripe (Merchant Checking)", rows)
+
+    # Payroll: dominated by ADP debits + employee Zelle paychecks.
+    if (adp_count + paycheck_zelle_count) >= max(5, n * 0.25):
+        return ("wf_payroll", f"{adp_count} ADP + {paycheck_zelle_count} paycheck rows", rows)
+
+    # Otherwise: Main Checking (the high-volume operating account with
+    # vendor pays, US Foods, utilities, transfers, etc.).
+    return ("wf_main", f"{n} rows, vendor-pay activity", rows)
+
+
 # ---------------------------------------------------------------------------
 # Description normalization (used as part of the dedup key)
 # ---------------------------------------------------------------------------

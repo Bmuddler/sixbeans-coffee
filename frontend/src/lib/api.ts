@@ -822,6 +822,23 @@ export const finance = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then((r) => r.data);
   },
+  detect: (files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('files', f));
+    return api.post('/finance/detect', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+  ingestBatch: (assignments: { file: File; account_id: number }[]) => {
+    const fd = new FormData();
+    assignments.forEach((a) => {
+      fd.append('files', a.file);
+      fd.append('account_ids', String(a.account_id));
+    });
+    return api.post('/finance/ingest-batch', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
 
   transactions: (params: any) =>
     api.get('/finance/transactions', { params }).then((r) => r.data),
