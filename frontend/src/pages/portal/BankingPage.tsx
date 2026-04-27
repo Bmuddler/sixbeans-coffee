@@ -26,7 +26,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
 import { finance } from '@/lib/api';
 
-type Tab = 'dashboard' | 'register' | 'upload' | 'rules' | 'ledger' | 'reports' | 'closes';
+type Tab = 'dashboard' | 'register' | 'upload' | 'rules' | 'categories' | 'ledger' | 'reports' | 'closes';
 
 interface Account {
   id: number;
@@ -104,6 +104,7 @@ export function BankingPage() {
     { key: 'register', label: 'Register', icon: <ListChecks className="h-4 w-4" /> },
     { key: 'upload', label: 'Upload', icon: <Upload className="h-4 w-4" /> },
     { key: 'rules', label: 'Rules', icon: <ScrollText className="h-4 w-4" /> },
+    { key: 'categories', label: 'Categories', icon: <BookOpen className="h-4 w-4" /> },
     { key: 'ledger', label: 'Manual Ledger', icon: <BookOpen className="h-4 w-4" /> },
     { key: 'reports', label: 'Reports', icon: <FileText className="h-4 w-4" /> },
     { key: 'closes', label: 'Closes', icon: <Lock className="h-4 w-4" /> },
@@ -142,6 +143,7 @@ export function BankingPage() {
       {tab === 'register' && <RegisterTab />}
       {tab === 'upload' && <UploadTab />}
       {tab === 'rules' && <RulesTab />}
+      {tab === 'categories' && <CategoriesTab />}
       {tab === 'ledger' && <LedgerTab />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'closes' && <ClosesTab />}
@@ -902,6 +904,199 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.match_text || !form.category_id}>
+            Save
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Categories
+// ---------------------------------------------------------------------------
+
+function CategoriesTab() {
+  const queryClient = useQueryClient();
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const { data: categories } = useQuery<Category[]>({
+    queryKey: ['finance-categories', includeArchived],
+    queryFn: () => finance.categories(includeArchived),
+  });
+  const [showAdd, setShowAdd] = useState(false);
+  const [editing, setEditing] = useState<Category | null>(null);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => finance.deleteCategory(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-categories'] });
+      toast.success('Category deleted');
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Delete failed')),
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: ({ id, isArchived }: { id: number; isArchived: boolean }) =>
+      finance.updateCategory(id, { is_archived: isArchived }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-categories'] });
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Update failed')),
+  });
+
+  const grouped = useMemo(() => {
+    const order = ['income', 'cogs', 'expense', 'transfer'];
+    const g: Record<string, Category[]> = {};
+    for (const c of categories ?? []) {
+      g[c.category_type] = g[c.category_type] ?? [];
+      g[c.category_type].push(c);
+    }
+    return order
+      .filter((k) => g[k] && g[k].length > 0)
+      .map((k) => ({ type: k, items: g[k] }));
+  }, [categories]);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h3 className="font-semibold">Categories</h3>
+            <p className="text-sm text-gray-500">
+              The chart of accounts for your books. Income / COGS / Expense / Transfer.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant={includeArchived ? 'secondary' : 'ghost'}
+              size="sm"
+              onClick={() => setIncludeArchived((v) => !v)}
+            >
+              {includeArchived ? 'Hide archived' : 'Show archived'}
+            </Button>
+            <Button onClick={() => setShowAdd(true)}>+ Add Category</Button>
+          </div>
+        </div>
+      </Card>
+
+      {grouped.map(({ type, items }) => (
+        <Card key={type} title={type === 'cogs' ? 'COGS' : type.charAt(0).toUpperCase() + type.slice(1)}>
+          <table className="min-w-full text-sm">
+            <thead className="text-xs uppercase text-gray-500 border-b">
+              <tr>
+                <th className="py-2 text-left">Name</th>
+                <th className="py-2 text-right">Sort</th>
+                <th className="py-2 text-left">Status</th>
+                <th className="py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {items.map((c) => (
+                <tr key={c.id} className={clsx((c as any).is_archived && 'text-gray-400')}>
+                  <td className="py-2">{c.name}</td>
+                  <td className="py-2 text-right text-gray-500">{(c as any).sort_order ?? '—'}</td>
+                  <td className="py-2 text-xs">
+                    {(c as any).is_archived ? (
+                      <Badge variant="denied">Archived</Badge>
+                    ) : (
+                      <Badge variant="approved">Active</Badge>
+                    )}
+                  </td>
+                  <td className="py-2 text-right">
+                    <div className="flex justify-end gap-2">
+                      <button onClick={() => setEditing(c)} className="text-xs text-primary hover:underline">Edit</button>
+                      <button
+                        onClick={() =>
+                          archiveMutation.mutate({ id: c.id, isArchived: !(c as any).is_archived })
+                        }
+                        className="text-xs text-gray-500 hover:underline"
+                      >
+                        {(c as any).is_archived ? 'Unarchive' : 'Archive'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete category "${c.name}"? Refused if any transactions or rules still use it — archive instead.`)) {
+                            deleteMutation.mutate(c.id);
+                          }
+                        }}
+                        className="rounded p-1 text-gray-400 hover:text-red-600"
+                        title="Delete"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ))}
+
+      <CategoryEditor
+        open={showAdd || editing !== null}
+        category={editing}
+        onClose={() => { setShowAdd(false); setEditing(null); }}
+      />
+    </div>
+  );
+}
+
+function CategoryEditor({ open, category, onClose }: { open: boolean; category: Category | null; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({
+    name: '',
+    category_type: 'expense' as 'income' | 'cogs' | 'expense' | 'transfer',
+  });
+
+  useEffect(() => {
+    if (category) {
+      setForm({ name: category.name, category_type: category.category_type as any });
+    } else if (open) {
+      setForm({ name: '', category_type: 'expense' });
+    }
+  }, [category, open]);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const data = { name: form.name.trim(), category_type: form.category_type };
+      return category ? finance.updateCategory(category.id, data) : finance.createCategory(data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-categories'] });
+      toast.success(category ? 'Category updated' : 'Category created');
+      onClose();
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Save failed')),
+  });
+
+  return (
+    <Modal open={open} onClose={onClose} title={category ? 'Edit category' : 'New category'}>
+      <div className="space-y-3">
+        <Input
+          label="Name"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="e.g. Loan Repayment, Office Supplies"
+        />
+        <Select
+          label="Type"
+          options={[
+            { value: 'income', label: 'Income — money in (sales, interest, refunds)' },
+            { value: 'cogs', label: 'COGS — direct cost of goods (food, supplies)' },
+            { value: 'expense', label: 'Expense — operating cost (rent, utilities, etc.)' },
+            { value: 'transfer', label: 'Transfer — internal moves, excluded from P&L' },
+          ]}
+          value={form.category_type}
+          onChange={(e) => setForm({ ...form, category_type: e.target.value as any })}
+        />
+        <p className="text-xs text-gray-500">
+          The Type controls where this category appears on the P&L. Transfer-typed categories
+          are excluded from both income and expense totals.
+        </p>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!form.name.trim()}>
             Save
           </Button>
         </div>
