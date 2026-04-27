@@ -20,7 +20,10 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
-    email: EmailStr | None = None
+    # Plain str rather than EmailStr because pydantic's EmailStr rejects the
+    # `.local` placeholder addresses we generate for employees with no real
+    # email — existing rows must remain editable.
+    email: str | None = None
     phone: str | None = None
     first_name: str | None = None
     last_name: str | None = None
