@@ -19,7 +19,7 @@ import toast from 'react-hot-toast';
 const LOCATIONS = [
   { name: 'Apple Valley', address: '21788 Bear Valley Rd', city: 'Apple Valley, CA 92308', phone: '(760) 946-9008', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '21788+Bear+Valley+Rd+Apple+Valley+CA' },
   { name: 'Hesperia', address: '15760 Ranchero Rd', city: 'Hesperia, CA 92345', phone: '(760) 948-0164', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '15760+Ranchero+Rd+Hesperia+CA' },
-  { name: 'Barstow', address: '921 Barstow Rd', city: 'Barstow, CA 92311', phone: '(760) 229-0997', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '921+Barstow+Rd+Barstow+CA' },
+  { name: 'Barstow', address: '921 Barstow Rd Unit B', city: 'Barstow, CA 92311', phone: '(760) 252-5396', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '921+Barstow+Rd+Unit+B+Barstow+CA' },
   { name: 'Victorville', address: '12875 Bear Valley Rd', city: 'Victorville, CA 92392', phone: '(760) 983-5028', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '12875+Bear+Valley+Rd+Victorville+CA' },
   { name: 'Yucca Loma', address: '13730 Apple Valley Rd', city: 'Apple Valley, CA 92307', phone: '(442) 292-2185', hours: 'Mon-Sat 5:30am-7pm · Sun 6am-7pm', mapQuery: '13730+Apple+Valley+Rd+Apple+Valley+CA' },
   { name: '7th Street', address: '14213 7th St', city: 'Victorville, CA 92395', phone: '(442) 229-2222', hours: 'Mon-Sun 6am-6pm', mapQuery: '14213+7th+St+Victorville+CA' },
