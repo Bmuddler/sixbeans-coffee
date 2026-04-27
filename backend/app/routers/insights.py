@@ -813,6 +813,56 @@ async def elite_scorecards(
     total_shared_curr = (shared_monthly / 30.44) * span + bakery_labor_curr
     total_shared_prev = (shared_monthly / 30.44) * span + bakery_labor_prev
 
+    # 28-day trailing sparkline window (always 28 days ending at curr_end,
+    # independent of the selected period). Daily profit per location is
+    # estimated as: gross − COGS − labor*burden − own monthly/30.44
+    # − share of (shared overhead + bakery labor) by 28-day revenue share.
+    # Window-share allocation keeps the daily series stable instead of
+    # bouncing when a single shop has a slow Tuesday.
+    SPARK_DAYS = 28
+    spark_end = curr_end
+    spark_start = spark_end - timedelta(days=SPARK_DAYS - 1)
+    spark_rev_rows = (await db.execute(
+        select(DailyRevenue).where(
+            and_(DailyRevenue.date >= spark_start, DailyRevenue.date <= spark_end)
+        )
+    )).scalars().all()
+    spark_labor_rows = (await db.execute(
+        select(DailyLabor).where(
+            and_(DailyLabor.date >= spark_start, DailyLabor.date <= spark_end)
+        )
+    )).scalars().all()
+    spark_rev_by_loc_day: dict[tuple[int, object], float] = defaultdict(float)
+    for r in spark_rev_rows:
+        spark_rev_by_loc_day[(r.location_id, r.date)] += r.gross_revenue or 0.0
+    spark_labor_by_loc_day: dict[tuple[int, object], float] = defaultdict(float)
+    for l in spark_labor_rows:
+        spark_labor_by_loc_day[(l.location_id, l.date)] += l.labor_cost or 0.0
+    spark_loc_total_rev: dict[int, float] = defaultdict(float)
+    for (loc_id, _date), gross in spark_rev_by_loc_day.items():
+        spark_loc_total_rev[loc_id] += gross
+    spark_total_rev = sum(spark_loc_total_rev.values())
+    spark_bakery_labor_total = sum(
+        (spark_labor_by_loc_day.get((bakery_id, spark_start + timedelta(days=i)), 0.0))
+        for i in range(SPARK_DAYS)
+    ) * burden if bakery_id else 0.0
+    spark_daily_shared = shared_monthly / 30.44
+    spark_daily_bakery = (spark_bakery_labor_total / SPARK_DAYS) if SPARK_DAYS else 0.0
+
+    def _profit_sparkline(loc_id: int, monthly_exp: float) -> list[float]:
+        loc_share = (spark_loc_total_rev.get(loc_id, 0.0) / spark_total_rev) if spark_total_rev else 0.0
+        daily_share = (spark_daily_shared + spark_daily_bakery) * loc_share
+        daily_own = monthly_exp / 30.44
+        out: list[float] = []
+        for i in range(SPARK_DAYS):
+            d = spark_start + timedelta(days=i)
+            gross = spark_rev_by_loc_day.get((loc_id, d), 0.0)
+            labor = spark_labor_by_loc_day.get((loc_id, d), 0.0) * burden
+            cogs = gross * cogs_pct
+            profit = gross - cogs - labor - daily_own - daily_share
+            out.append(round(profit, 2))
+        return out
+
     # First pass: build raw rollups, capture per-shop window revenue.
     pending = []
     for loc in locations:
@@ -865,6 +915,9 @@ async def elite_scorecards(
             "score": score,
             "grade": grade,
             "primary_action": action,
+            "profit_sparkline_28d": _profit_sparkline(
+                loc.id, exp_monthly_by_loc.get(loc.id, 0.0)
+            ),
         })
 
     # Sort: ungraded first, then by margin ascending (neediest first)

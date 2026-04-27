@@ -164,7 +164,7 @@ export function InsightsPage() {
       )}
 
       {/* Company Pulse */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <PulseCard
           label="Gross Revenue"
           value={pulse?.current?.gross}
@@ -189,6 +189,7 @@ export function InsightsPage() {
           format="int"
           loading={pulseLoading}
         />
+        <CompanyProfitCard window={window} />
       </div>
 
       {/* Elite scorecards */}
@@ -316,6 +317,103 @@ function PulseCard({
         )}
       </div>
     </Card>
+  );
+}
+
+function CompanyProfitCard({ window }: { window: InsightsWindow }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['insights-elite', JSON.stringify(window)],
+    queryFn: () => insights.eliteScorecards(window),
+  });
+
+  if (isLoading) {
+    return (
+      <Card>
+        <LoadingSpinner />
+      </Card>
+    );
+  }
+
+  const profit = data?.company?.profit ?? null;
+  const margin = data?.company?.margin_pct ?? null;
+  const opp = data?.company?.labor_opportunity ?? 0;
+  const tone = profit != null && profit < 0 ? 'red' : undefined;
+  const formatted = profit == null
+    ? 'n/a'
+    : `$${profit.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const marginText = margin == null ? '—' : `${margin.toFixed(1)}% margin`;
+
+  return (
+    <Card>
+      <div className="flex items-center gap-3">
+        <div className={clsx(
+          'h-10 w-10 rounded-lg flex items-center justify-center',
+          tone === 'red' ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600',
+        )}>
+          <TrendingUp className="h-5 w-5" />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm text-gray-500">True Profit</p>
+          <p className={clsx(
+            'text-xl font-bold tabular-nums',
+            tone === 'red' ? 'text-red-600' : 'text-gray-900',
+          )}>
+            {formatted}
+          </p>
+          <p className="text-xs text-gray-500">
+            {marginText}
+            {opp > 0 ? ` · $${Math.round(opp).toLocaleString('en-US')} labor opp.` : ''}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function Sparkline({ values, height = 32 }: { values: number[]; height?: number }) {
+  if (!values || values.length === 0) return null;
+  const min = Math.min(...values, 0);
+  const max = Math.max(...values, 0);
+  const range = max - min || 1;
+  const width = 120;
+  const step = values.length > 1 ? width / (values.length - 1) : 0;
+  const yFor = (v: number) => height - ((v - min) / range) * height;
+  const points = values.map((v, i) => `${(i * step).toFixed(2)},${yFor(v).toFixed(2)}`).join(' ');
+  const lastVal = values[values.length - 1];
+  const lastX = (values.length - 1) * step;
+  const lastY = yFor(lastVal);
+  const lastPositive = lastVal >= 0;
+  const stroke = lastPositive ? '#059669' : '#dc2626';
+  const baseY = yFor(0);
+  const trend = values.length > 1 ? values[values.length - 1] - values[0] : 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      <svg width={width} height={height} className="overflow-visible">
+        {/* zero line */}
+        {min < 0 && max > 0 && (
+          <line x1={0} y1={baseY} x2={width} y2={baseY} stroke="#e5e7eb" strokeDasharray="2,2" />
+        )}
+        <polyline
+          points={points}
+          fill="none"
+          stroke={stroke}
+          strokeWidth={1.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <circle cx={lastX} cy={lastY} r={2} fill={stroke} />
+      </svg>
+      <span
+        className={clsx(
+          'text-[10px] font-medium tabular-nums',
+          trend >= 0 ? 'text-green-600' : 'text-red-600',
+        )}
+        title="28-day trend (most recent vs. earliest day)"
+      >
+        {trend >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(trend)).toLocaleString('en-US')}
+      </span>
+    </div>
   );
 }
 
@@ -1003,6 +1101,15 @@ function EliteSection({ window }: { window: InsightsWindow }) {
                   </>
                 )}
               </div>
+
+              {s.profit_sparkline_28d && s.profit_sparkline_28d.length > 0 && (
+                <div className="mt-2 pt-2 border-t border-black/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] uppercase tracking-wide text-gray-500">28-day profit</span>
+                    <Sparkline values={s.profit_sparkline_28d} />
+                  </div>
+                </div>
+              )}
 
               <div className="mt-2 pt-2 border-t border-black/5 text-[11px] text-gray-700">
                 <span className="font-medium">Action: </span>{s.primary_action}
