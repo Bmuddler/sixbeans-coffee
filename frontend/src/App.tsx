@@ -35,6 +35,7 @@ import { USFoodsPage } from '@/pages/portal/USFoodsPage';
 import { AnalyticsAdminPage } from '@/pages/portal/admin/AnalyticsAdminPage';
 import { ExpensesAdminPage } from '@/pages/portal/admin/ExpensesAdminPage';
 import { InsightsPage } from '@/pages/portal/InsightsPage';
+import { ApplicationsPage } from '@/pages/portal/ApplicationsPage';
 
 export function App() {
   return (
@@ -135,6 +136,14 @@ export function App() {
           element={
             <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
               <AnalyticsAdminPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/portal/applications"
+          element={
+            <ProtectedRoute requiredRoles={[UserRole.OWNER]}>
+              <ApplicationsPage />
             </ProtectedRoute>
           }
         />

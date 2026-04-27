@@ -548,6 +548,14 @@ export const systemSettings = {
 export const applications = {
   submit: (data: { name: string; email: string; phone: string; position: string; location: string; message: string }) =>
     api.post('/applications/', data).then((r) => r.data),
+  list: (includeArchived = false) =>
+    api.get('/applications/', { params: { include_archived: includeArchived } }).then((r) => r.data),
+  forward: (id: number, locationId: number) =>
+    api.post(`/applications/${id}/forward`, { location_id: locationId }).then((r) => r.data),
+  archive: (id: number) =>
+    api.post(`/applications/${id}/archive`).then((r) => r.data),
+  delete: (id: number) =>
+    api.delete(`/applications/${id}`).then((r) => r.data),
 };
 
 // ============================================================

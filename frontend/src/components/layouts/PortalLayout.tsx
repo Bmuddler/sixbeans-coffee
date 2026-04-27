@@ -23,6 +23,7 @@ import {
   Truck,
   BarChart3,
   TrendingUp,
+  Briefcase,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/authStore';
@@ -91,6 +92,12 @@ const navItems: NavItem[] = [
     label: 'Employees',
     icon: <Users className="h-5 w-5" />,
     roles: [UserRole.MANAGER, UserRole.OWNER],
+  },
+  {
+    to: '/portal/applications',
+    label: 'Job Applications',
+    icon: <Briefcase className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
   },
   {
     to: '/portal/locations',
