@@ -353,6 +353,7 @@ def parse_godaddy_settlement(
         if d not in per_day:
             per_day[d] = {
                 "subtotal": 0.0, "tip": 0.0, "count": 0,
+                "card": 0.0, "cash": 0.0,
                 "hourly": {},  # (hour, quarter) -> [txns, gross]
             }
         return per_day[d]
@@ -360,6 +361,9 @@ def parse_godaddy_settlement(
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         if DETAIL_SHEET_RE.match(sheet_name):
+            sheet_lower = sheet_name.lower()
+            is_card = sheet_lower.startswith("card payments")
+            is_cash = sheet_lower.startswith("cash payments")
             rows = list(ws.iter_rows(values_only=True))
             header_idx = _find_header_row(rows)
             if header_idx is None:
@@ -393,6 +397,10 @@ def parse_godaddy_settlement(
                 bucket["subtotal"] += row_sub
                 bucket["tip"] += row_tip
                 bucket["count"] += 1
+                if is_card:
+                    bucket["card"] += row_sub + row_tip
+                elif is_cash:
+                    bucket["cash"] += row_sub + row_tip
 
                 hkey = (ts.hour, ts.minute // 15)
                 hb = bucket["hourly"].setdefault(hkey, [0, 0.0])
@@ -452,6 +460,8 @@ def parse_godaddy_settlement(
             net_revenue=round(net, 2),
             tip_total=round(b["tip"], 2) if b["tip"] else None,
             transaction_count=b["count"],
+            card_total=round(b["card"], 2) if b["card"] else None,
+            cash_total=round(b["cash"], 2) if b["cash"] else None,
             raw_notes={
                 "source_file": source_file,
                 "subtotal_sum": round(b["subtotal"], 2),
