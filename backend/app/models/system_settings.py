@@ -23,6 +23,9 @@ class SystemSettings(Base):
     # land in the bank. Default 2.3% per their published rate. Multiplied
     # against daily_revenue.card_total to estimate the silent fee cost.
     card_processing_fee_pct = Column(Float, default=0.023, nullable=False)
+    # TapMango processing fee — applied to 100% of TapMango gross since the
+    # loyalty/online ordering app is entirely card-based. Default 3%.
+    tapmango_fee_pct = Column(Float, default=0.03, nullable=False)
     # Monotonic marker for one-shot analytics-data self-healing migrations.
     # Bump the hard-coded TARGET below and boot will wipe & expect reload.
     analytics_reset_version = Column(Integer, default=0, nullable=False)

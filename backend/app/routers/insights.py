@@ -77,12 +77,16 @@ def _resolve_window(
     return today - timedelta(days=days - 1), today
 
 
-def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
+def _sum_rows(
+    rows,
+    card_processing_fee_pct: float = 0.023,
+    tapmango_fee_pct: float = 0.03,
+) -> dict:
     """Sum a list of DailyRevenue rows into totals.
 
     `card_processing_fee_pct` is applied to the GoDaddy card_total to
-    estimate the silent processing fee. Other channels don't carry a card
-    breakdown, so they don't contribute to the fee estimate.
+    estimate the silent processing fee. `tapmango_fee_pct` is applied to
+    100% of TapMango gross (it's all card — loyalty/online ordering app).
     """
     total_gross = 0.0
     total_net = 0.0
@@ -114,11 +118,18 @@ def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
         ch["cash"] += cash
 
     estimated_card_fee = total_card * (card_processing_fee_pct or 0.0)
-    total_silent_fees = estimated_card_fee + total_commission + total_other_fees
+    tapmango_gross = by_channel.get(CHANNEL_TAPMANGO, {}).get("gross", 0.0)
+    estimated_tapmango_fee = tapmango_gross * (tapmango_fee_pct or 0.0)
+    total_silent_fees = (
+        estimated_card_fee
+        + estimated_tapmango_fee
+        + total_commission
+        + total_other_fees
+    )
     return {
         "gross": round(total_gross, 2),
         "net": round(total_net, 2),
-        "net_after_card_fee": round(total_net - estimated_card_fee, 2),
+        "net_after_card_fee": round(total_net - estimated_card_fee - estimated_tapmango_fee, 2),
         "transactions": total_txns,
         "commission": round(total_commission, 2),
         "fees_other": round(total_other_fees, 2),
@@ -126,6 +137,9 @@ def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
         "cash_total": round(total_cash, 2),
         "estimated_card_processing_fee": round(estimated_card_fee, 2),
         "card_processing_fee_pct": card_processing_fee_pct,
+        "tapmango_gross": round(tapmango_gross, 2),
+        "estimated_tapmango_fee": round(estimated_tapmango_fee, 2),
+        "tapmango_fee_pct": tapmango_fee_pct,
         "total_silent_fees": round(total_silent_fees, 2),
         "by_channel": {
             ch: {k: round(v, 2) if isinstance(v, float) else v for k, v in data.items()}
@@ -171,8 +185,9 @@ async def company_pulse(
 
     settings_row = (await db.execute(select(SystemSettings).limit(1))).scalar_one_or_none()
     fee_pct = float(getattr(settings_row, "card_processing_fee_pct", None) or 0.023)
-    curr = _sum_rows(curr_rows, card_processing_fee_pct=fee_pct)
-    prev = _sum_rows(prev_rows, card_processing_fee_pct=fee_pct)
+    tm_fee_pct = float(getattr(settings_row, "tapmango_fee_pct", None) or 0.03)
+    curr = _sum_rows(curr_rows, card_processing_fee_pct=fee_pct, tapmango_fee_pct=tm_fee_pct)
+    prev = _sum_rows(prev_rows, card_processing_fee_pct=fee_pct, tapmango_fee_pct=tm_fee_pct)
 
     def pct_change(a: float, b: float) -> float | None:
         if not b:

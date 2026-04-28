@@ -228,6 +228,10 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS card_processing_fee_pct "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.023"
         ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS tapmango_fee_pct "
+            "DOUBLE PRECISION NOT NULL DEFAULT 0.03"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints

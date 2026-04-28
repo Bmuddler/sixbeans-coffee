@@ -180,11 +180,13 @@ export function InsightsPage() {
           icon={<DollarSign className="h-5 w-5" />}
           format="money"
           loading={pulseLoading}
-          subline={
-            pulse?.current?.estimated_card_processing_fee
-              ? `after ~$${Math.round(pulse.current.estimated_card_processing_fee).toLocaleString()} card fee (${((pulse.current.card_processing_fee_pct ?? 0.023) * 100).toFixed(1)}%)`
-              : undefined
-          }
+          subline={(() => {
+            const cf = pulse?.current?.estimated_card_processing_fee ?? 0;
+            const tf = pulse?.current?.estimated_tapmango_fee ?? 0;
+            const total = cf + tf;
+            if (!total) return undefined;
+            return `after ~$${Math.round(total).toLocaleString()} processing fees (GoDaddy + TapMango)`;
+          })()}
         />
         <PulseCard
           label="Transactions"
@@ -445,7 +447,10 @@ function ChannelFeesCard({ pulse }: { pulse: any }) {
   const ddGross = pulse.by_channel?.doordash?.gross ?? 0;
   const ddTotalFees = ddCommission + ddFees;
   const ddPct = ddGross > 0 ? (ddTotalFees / ddGross) * 100 : 0;
-  const totalSilent = pulse.total_silent_fees ?? cardFee + ddTotalFees;
+  const tmGross = pulse.tapmango_gross ?? pulse.by_channel?.tapmango?.gross ?? 0;
+  const tmFee = pulse.estimated_tapmango_fee ?? 0;
+  const tmFeePct = (pulse.tapmango_fee_pct ?? 0.03) * 100;
+  const totalSilent = pulse.total_silent_fees ?? cardFee + ddTotalFees + tmFee;
 
   const money = (v: number) =>
     `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -509,13 +514,33 @@ function ChannelFeesCard({ pulse }: { pulse: any }) {
         </div>
       )}
 
+      {tmGross > 0 && (
+        <div>
+          <p className="text-xs uppercase text-gray-500 mb-2">TapMango processing</p>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">Gross</p>
+              <p className="font-semibold tabular-nums">{money(tmGross)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Fee @ {tmFeePct.toFixed(1)}%</p>
+              <p className="font-semibold tabular-nums text-orange-600">{money(tmFee)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">After fee</p>
+              <p className="font-semibold tabular-nums">{money(tmGross - tmFee)}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="border-t pt-3 flex items-center justify-between">
         <p className="text-sm">
           <span className="text-gray-500">Total silent fees this window: </span>
           <strong className="tabular-nums text-orange-600">{money(totalSilent)}</strong>
         </p>
         <p className="text-xs text-gray-400">
-          GoDaddy ~{cardFeePct.toFixed(1)}% × card + DoorDash actual payout split
+          GoDaddy ~{cardFeePct.toFixed(1)}% × card + TapMango {tmFeePct.toFixed(1)}% + DoorDash split
         </p>
       </div>
     </div>
