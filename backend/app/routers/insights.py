@@ -88,16 +88,18 @@ def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
     total_net = 0.0
     total_txns = 0
     total_commission = 0.0
+    total_other_fees = 0.0
     total_card = 0.0
     total_cash = 0.0
     by_channel: dict[str, dict] = defaultdict(
-        lambda: {"gross": 0.0, "net": 0.0, "txns": 0, "commission": 0.0, "card": 0.0, "cash": 0.0}
+        lambda: {"gross": 0.0, "net": 0.0, "txns": 0, "commission": 0.0, "fees": 0.0, "card": 0.0, "cash": 0.0}
     )
     for r in rows:
         total_gross += r.gross_revenue or 0.0
         total_net += r.net_revenue or 0.0
         total_txns += r.transaction_count or 0
         total_commission += r.commission_total or 0.0
+        total_other_fees += r.fee_total or 0.0
         card = getattr(r, "card_total", None) or 0.0
         cash = getattr(r, "cash_total", None) or 0.0
         total_card += card
@@ -107,20 +109,24 @@ def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
         ch["net"] += r.net_revenue or 0.0
         ch["txns"] += r.transaction_count or 0
         ch["commission"] += r.commission_total or 0.0
+        ch["fees"] += r.fee_total or 0.0
         ch["card"] += card
         ch["cash"] += cash
 
     estimated_card_fee = total_card * (card_processing_fee_pct or 0.0)
+    total_silent_fees = estimated_card_fee + total_commission + total_other_fees
     return {
         "gross": round(total_gross, 2),
         "net": round(total_net, 2),
         "net_after_card_fee": round(total_net - estimated_card_fee, 2),
         "transactions": total_txns,
         "commission": round(total_commission, 2),
+        "fees_other": round(total_other_fees, 2),
         "card_total": round(total_card, 2),
         "cash_total": round(total_cash, 2),
         "estimated_card_processing_fee": round(estimated_card_fee, 2),
         "card_processing_fee_pct": card_processing_fee_pct,
+        "total_silent_fees": round(total_silent_fees, 2),
         "by_channel": {
             ch: {k: round(v, 2) if isinstance(v, float) else v for k, v in data.items()}
             for ch, data in by_channel.items()

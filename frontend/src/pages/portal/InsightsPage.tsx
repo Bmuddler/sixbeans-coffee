@@ -208,18 +208,14 @@ export function InsightsPage() {
         </Card>
       )}
 
-      {/* Cash vs Card mix (GoDaddy) */}
-      {pulse?.current?.card_total !== undefined && (pulse.current.card_total > 0 || pulse.current.cash_total > 0) && (
+      {/* Channel Fees: silent costs taken before deposits hit the bank */}
+      {pulse?.current && (pulse.current.total_silent_fees > 0 || (pulse.current.card_total ?? 0) > 0) && (
         <Card>
-          <h2 className="text-lg font-semibold mb-1">Cash vs Card</h2>
+          <h2 className="text-lg font-semibold mb-1">Channel Fees</h2>
           <p className="text-xs text-gray-500 mb-4">
-            From GoDaddy POS detail sheets. Card processing fee at {((pulse.current.card_processing_fee_pct ?? 0.023) * 100).toFixed(1)}% applies only to card sales.
+            Silent costs taken out before money lands in the bank. None of these appear as line items on your bank statement, but they reduce your real net revenue.
           </p>
-          <CashVsCardBar
-            card={pulse.current.card_total ?? 0}
-            cash={pulse.current.cash_total ?? 0}
-            fee={pulse.current.estimated_card_processing_fee ?? 0}
-          />
+          <ChannelFeesCard pulse={pulse.current} />
         </Card>
       )}
 
@@ -439,39 +435,88 @@ function Sparkline({ values, height = 32 }: { values: number[]; height?: number 
   );
 }
 
-function CashVsCardBar({ card, cash, fee }: { card: number; cash: number; fee: number }) {
+function ChannelFeesCard({ pulse }: { pulse: any }) {
+  const card = pulse.card_total ?? 0;
+  const cash = pulse.cash_total ?? 0;
+  const cardFee = pulse.estimated_card_processing_fee ?? 0;
+  const cardFeePct = (pulse.card_processing_fee_pct ?? 0.023) * 100;
+  const ddCommission = pulse.by_channel?.doordash?.commission ?? 0;
+  const ddFees = pulse.by_channel?.doordash?.fees ?? 0;
+  const ddGross = pulse.by_channel?.doordash?.gross ?? 0;
+  const ddTotalFees = ddCommission + ddFees;
+  const ddPct = ddGross > 0 ? (ddTotalFees / ddGross) * 100 : 0;
+  const totalSilent = pulse.total_silent_fees ?? cardFee + ddTotalFees;
+
+  const money = (v: number) =>
+    `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   const total = card + cash;
   const cardPct = total > 0 ? (card / total) * 100 : 0;
   const cashPct = total > 0 ? (cash / total) * 100 : 0;
-  const money = (v: number) =>
-    `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
   return (
-    <div className="space-y-3">
-      <div className="flex h-8 w-full overflow-hidden rounded-md border border-gray-200">
-        {card > 0 && (
-          <div className="bg-blue-500 text-white text-xs flex items-center justify-center" style={{ width: `${cardPct}%` }}>
-            {cardPct >= 10 ? `Card ${cardPct.toFixed(0)}%` : ''}
+    <div className="space-y-5">
+      {(card > 0 || cash > 0) && (
+        <div>
+          <p className="text-xs uppercase text-gray-500 mb-2">GoDaddy: Cash vs Card</p>
+          <div className="flex h-7 w-full overflow-hidden rounded-md border border-gray-200 mb-2">
+            {card > 0 && (
+              <div className="bg-blue-500 text-white text-xs flex items-center justify-center" style={{ width: `${cardPct}%` }}>
+                {cardPct >= 10 ? `Card ${cardPct.toFixed(0)}%` : ''}
+              </div>
+            )}
+            {cash > 0 && (
+              <div className="bg-emerald-500 text-white text-xs flex items-center justify-center" style={{ width: `${cashPct}%` }}>
+                {cashPct >= 10 ? `Cash ${cashPct.toFixed(0)}%` : ''}
+              </div>
+            )}
           </div>
-        )}
-        {cash > 0 && (
-          <div className="bg-emerald-500 text-white text-xs flex items-center justify-center" style={{ width: `${cashPct}%` }}>
-            {cashPct >= 10 ? `Cash ${cashPct.toFixed(0)}%` : ''}
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">Card</p>
+              <p className="font-semibold tabular-nums">{money(card)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Cash</p>
+              <p className="font-semibold tabular-nums">{money(cash)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Card fee @ {cardFeePct.toFixed(1)}%</p>
+              <p className="font-semibold tabular-nums text-orange-600">{money(cardFee)}</p>
+            </div>
           </div>
-        )}
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-        <div>
-          <p className="text-xs text-gray-500">Card</p>
-          <p className="font-semibold tabular-nums">{money(card)}</p>
         </div>
+      )}
+
+      {ddGross > 0 && (
         <div>
-          <p className="text-xs text-gray-500">Cash</p>
-          <p className="font-semibold tabular-nums">{money(cash)}</p>
+          <p className="text-xs uppercase text-gray-500 mb-2">DoorDash commission &amp; fees</p>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-gray-500">Gross</p>
+              <p className="font-semibold tabular-nums">{money(ddGross)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Commission + fees</p>
+              <p className="font-semibold tabular-nums text-orange-600">{money(ddTotalFees)}</p>
+              <p className="text-[11px] text-gray-500">{ddPct.toFixed(1)}% of gross</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Actual payout</p>
+              <p className="font-semibold tabular-nums">{money(pulse.by_channel?.doordash?.net ?? 0)}</p>
+            </div>
+          </div>
         </div>
-        <div>
-          <p className="text-xs text-gray-500">Estimated card processing fee</p>
-          <p className="font-semibold tabular-nums text-orange-600">{money(fee)}</p>
-        </div>
+      )}
+
+      <div className="border-t pt-3 flex items-center justify-between">
+        <p className="text-sm">
+          <span className="text-gray-500">Total silent fees this window: </span>
+          <strong className="tabular-nums text-orange-600">{money(totalSilent)}</strong>
+        </p>
+        <p className="text-xs text-gray-400">
+          GoDaddy ~{cardFeePct.toFixed(1)}% × card + DoorDash actual payout split
+        </p>
       </div>
     </div>
   );
