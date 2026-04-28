@@ -19,6 +19,10 @@ class SystemSettings(Base):
     # Cost of goods sold as a share of revenue. Used by Elite to estimate
     # profit when the actual COGS total isn't entered yet. 0.22 = 22%.
     cogs_percent = Column(Float, default=0.22, nullable=False)
+    # GoDaddy card-processing fee taken silently from card sales before they
+    # land in the bank. Default 2.3% per their published rate. Multiplied
+    # against daily_revenue.card_total to estimate the silent fee cost.
+    card_processing_fee_pct = Column(Float, default=0.023, nullable=False)
     # Monotonic marker for one-shot analytics-data self-healing migrations.
     # Bump the hard-coded TARGET below and boot will wipe & expect reload.
     analytics_reset_version = Column(Integer, default=0, nullable=False)

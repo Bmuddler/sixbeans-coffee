@@ -33,4 +33,6 @@ class ParsedRevenueRow:
     fee_total: float | None = None
     transaction_count: int | None = None
     rejected_count: int | None = None
+    card_total: float | None = None  # GoDaddy: subtotal+tip on Card Payments sheets
+    cash_total: float | None = None  # GoDaddy: subtotal+tip on Cash Payments sheets
     raw_notes: dict = field(default_factory=dict)  # parser-specific diagnostic info

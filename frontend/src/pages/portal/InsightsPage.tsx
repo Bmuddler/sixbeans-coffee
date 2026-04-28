@@ -175,11 +175,16 @@ export function InsightsPage() {
         />
         <PulseCard
           label="Net Revenue"
-          value={pulse?.current?.net}
+          value={pulse?.current?.net_after_card_fee ?? pulse?.current?.net}
           delta={pulse?.deltas?.net_pct}
           icon={<DollarSign className="h-5 w-5" />}
           format="money"
           loading={pulseLoading}
+          subline={
+            pulse?.current?.estimated_card_processing_fee
+              ? `after ~$${Math.round(pulse.current.estimated_card_processing_fee).toLocaleString()} card fee (${((pulse.current.card_processing_fee_pct ?? 0.023) * 100).toFixed(1)}%)`
+              : undefined
+          }
         />
         <PulseCard
           label="Transactions"
@@ -200,6 +205,21 @@ export function InsightsPage() {
         <Card>
           <h2 className="text-lg font-semibold mb-4">Revenue by channel</h2>
           <ChannelBars byChannel={pulse.current.by_channel} />
+        </Card>
+      )}
+
+      {/* Cash vs Card mix (GoDaddy) */}
+      {pulse?.current?.card_total !== undefined && (pulse.current.card_total > 0 || pulse.current.cash_total > 0) && (
+        <Card>
+          <h2 className="text-lg font-semibold mb-1">Cash vs Card</h2>
+          <p className="text-xs text-gray-500 mb-4">
+            From GoDaddy POS detail sheets. Card processing fee at {((pulse.current.card_processing_fee_pct ?? 0.023) * 100).toFixed(1)}% applies only to card sales.
+          </p>
+          <CashVsCardBar
+            card={pulse.current.card_total ?? 0}
+            cash={pulse.current.cash_total ?? 0}
+            fee={pulse.current.estimated_card_processing_fee ?? 0}
+          />
         </Card>
       )}
 
@@ -273,7 +293,7 @@ export function InsightsPage() {
 // -------------------------------------------------------------
 
 function PulseCard({
-  label, value, delta, icon, format, loading,
+  label, value, delta, icon, format, loading, subline,
 }: {
   label: string;
   value: number | undefined;
@@ -281,6 +301,7 @@ function PulseCard({
   icon: React.ReactNode;
   format: 'money' | 'int';
   loading: boolean;
+  subline?: string;
 }) {
   if (loading) {
     return (
@@ -303,6 +324,7 @@ function PulseCard({
         <div className="flex-1">
           <p className="text-sm text-gray-500">{label}</p>
           <p className="text-xl font-bold text-gray-900">{formatted}</p>
+          {subline && <p className="text-[11px] text-gray-500 mt-0.5">{subline}</p>}
         </div>
         {delta != null && (
           <div
@@ -413,6 +435,44 @@ function Sparkline({ values, height = 32 }: { values: number[]; height?: number 
       >
         {trend >= 0 ? '▲' : '▼'} ${Math.abs(Math.round(trend)).toLocaleString('en-US')}
       </span>
+    </div>
+  );
+}
+
+function CashVsCardBar({ card, cash, fee }: { card: number; cash: number; fee: number }) {
+  const total = card + cash;
+  const cardPct = total > 0 ? (card / total) * 100 : 0;
+  const cashPct = total > 0 ? (cash / total) * 100 : 0;
+  const money = (v: number) =>
+    `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return (
+    <div className="space-y-3">
+      <div className="flex h-8 w-full overflow-hidden rounded-md border border-gray-200">
+        {card > 0 && (
+          <div className="bg-blue-500 text-white text-xs flex items-center justify-center" style={{ width: `${cardPct}%` }}>
+            {cardPct >= 10 ? `Card ${cardPct.toFixed(0)}%` : ''}
+          </div>
+        )}
+        {cash > 0 && (
+          <div className="bg-emerald-500 text-white text-xs flex items-center justify-center" style={{ width: `${cashPct}%` }}>
+            {cashPct >= 10 ? `Cash ${cashPct.toFixed(0)}%` : ''}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+        <div>
+          <p className="text-xs text-gray-500">Card</p>
+          <p className="font-semibold tabular-nums">{money(card)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Cash</p>
+          <p className="font-semibold tabular-nums">{money(cash)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-gray-500">Estimated card processing fee</p>
+          <p className="font-semibold tabular-nums text-orange-600">{money(fee)}</p>
+        </div>
+      </div>
     </div>
   );
 }

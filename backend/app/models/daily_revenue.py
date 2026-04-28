@@ -66,6 +66,13 @@ class DailyRevenue(Base):
     transaction_count = Column(Integer, nullable=True)
     rejected_count = Column(Integer, nullable=True)  # e.g. DoorDash/TapMango rejected orders
 
+    # Tender-method breakdown — populated by the GoDaddy parser from the
+    # "Card Payments (N)" vs "Cash Payments (N)" sheets. Used to estimate
+    # silent card-processing fees that are taken out before deposits hit
+    # the bank (~2.3% on GoDaddy). Other channels leave these NULL.
+    card_total = Column(Float, nullable=True)
+    cash_total = Column(Float, nullable=True)
+
     # Book-keeping
     source_file = Column(String(300), nullable=True)  # path/name of ingested file
     ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)

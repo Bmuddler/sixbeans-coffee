@@ -449,6 +449,10 @@ async def ingest_godaddy_excel(
                 existing.tip_total = row.tip_total
                 existing.tax_total = row.tax_total
                 existing.transaction_count = row.transaction_count
+                if row.card_total is not None:
+                    existing.card_total = row.card_total
+                if row.cash_total is not None:
+                    existing.cash_total = row.cash_total
                 existing.source_file = row.raw_notes.get("source_file")
                 existing.updated_at = datetime.utcnow()
             else:
@@ -462,6 +466,8 @@ async def ingest_godaddy_excel(
                     tip_total=row.tip_total,
                     tax_total=row.tax_total,
                     transaction_count=row.transaction_count,
+                    card_total=row.card_total,
+                    cash_total=row.cash_total,
                     source_file=row.raw_notes.get("source_file"),
                 ))
 
@@ -575,6 +581,10 @@ async def ingest_tapmango_csv(
                 existing.tip_total = row.tip_total
                 existing.tax_total = row.tax_total
                 existing.transaction_count = row.transaction_count
+                if row.card_total is not None:
+                    existing.card_total = row.card_total
+                if row.cash_total is not None:
+                    existing.cash_total = row.cash_total
                 existing.source_file = row.raw_notes.get("source_file")
                 existing.updated_at = datetime.utcnow()
             else:
@@ -588,6 +598,8 @@ async def ingest_tapmango_csv(
                     tip_total=row.tip_total,
                     tax_total=row.tax_total,
                     transaction_count=row.transaction_count,
+                    card_total=row.card_total,
+                    cash_total=row.cash_total,
                     source_file=row.raw_notes.get("source_file"),
                 ))
             # Hourly heatmap rows for this (location, day)
@@ -818,6 +830,10 @@ async def _upsert_daily_revenue(db, loc_id: int, row) -> None:
         existing.commission_total = row.commission_total
         existing.fee_total = row.fee_total
         existing.transaction_count = row.transaction_count
+        if getattr(row, "card_total", None) is not None:
+            existing.card_total = row.card_total
+        if getattr(row, "cash_total", None) is not None:
+            existing.cash_total = row.cash_total
         existing.source_file = row.raw_notes.get("source_file")
         existing.updated_at = datetime.utcnow()
     else:
@@ -833,6 +849,8 @@ async def _upsert_daily_revenue(db, loc_id: int, row) -> None:
             commission_total=row.commission_total,
             fee_total=row.fee_total,
             transaction_count=row.transaction_count,
+            card_total=getattr(row, "card_total", None),
+            cash_total=getattr(row, "cash_total", None),
             source_file=row.raw_notes.get("source_file"),
         ))
 

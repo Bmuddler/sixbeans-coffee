@@ -77,30 +77,50 @@ def _resolve_window(
     return today - timedelta(days=days - 1), today
 
 
-def _sum_rows(rows) -> dict:
-    """Sum a list of DailyRevenue rows into totals."""
+def _sum_rows(rows, card_processing_fee_pct: float = 0.023) -> dict:
+    """Sum a list of DailyRevenue rows into totals.
+
+    `card_processing_fee_pct` is applied to the GoDaddy card_total to
+    estimate the silent processing fee. Other channels don't carry a card
+    breakdown, so they don't contribute to the fee estimate.
+    """
     total_gross = 0.0
     total_net = 0.0
     total_txns = 0
     total_commission = 0.0
+    total_card = 0.0
+    total_cash = 0.0
     by_channel: dict[str, dict] = defaultdict(
-        lambda: {"gross": 0.0, "net": 0.0, "txns": 0, "commission": 0.0}
+        lambda: {"gross": 0.0, "net": 0.0, "txns": 0, "commission": 0.0, "card": 0.0, "cash": 0.0}
     )
     for r in rows:
         total_gross += r.gross_revenue or 0.0
         total_net += r.net_revenue or 0.0
         total_txns += r.transaction_count or 0
         total_commission += r.commission_total or 0.0
+        card = getattr(r, "card_total", None) or 0.0
+        cash = getattr(r, "cash_total", None) or 0.0
+        total_card += card
+        total_cash += cash
         ch = by_channel[r.channel]
         ch["gross"] += r.gross_revenue or 0.0
         ch["net"] += r.net_revenue or 0.0
         ch["txns"] += r.transaction_count or 0
         ch["commission"] += r.commission_total or 0.0
+        ch["card"] += card
+        ch["cash"] += cash
+
+    estimated_card_fee = total_card * (card_processing_fee_pct or 0.0)
     return {
         "gross": round(total_gross, 2),
         "net": round(total_net, 2),
+        "net_after_card_fee": round(total_net - estimated_card_fee, 2),
         "transactions": total_txns,
         "commission": round(total_commission, 2),
+        "card_total": round(total_card, 2),
+        "cash_total": round(total_cash, 2),
+        "estimated_card_processing_fee": round(estimated_card_fee, 2),
+        "card_processing_fee_pct": card_processing_fee_pct,
         "by_channel": {
             ch: {k: round(v, 2) if isinstance(v, float) else v for k, v in data.items()}
             for ch, data in by_channel.items()
@@ -143,8 +163,10 @@ async def company_pulse(
         )
     )).scalars().all()
 
-    curr = _sum_rows(curr_rows)
-    prev = _sum_rows(prev_rows)
+    settings_row = (await db.execute(select(SystemSettings).limit(1))).scalar_one_or_none()
+    fee_pct = float(getattr(settings_row, "card_processing_fee_pct", None) or 0.023)
+    curr = _sum_rows(curr_rows, card_processing_fee_pct=fee_pct)
+    prev = _sum_rows(prev_rows, card_processing_fee_pct=fee_pct)
 
     def pct_change(a: float, b: float) -> float | None:
         if not b:

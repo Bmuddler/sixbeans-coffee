@@ -240,6 +240,11 @@ def parse_godaddy_excel(
     sheets_read: list[str] = []
     hourly: dict[HourBucketKey, list] = defaultdict(lambda: [0, 0.0])
 
+    # Track Card vs Cash sheet sub-totals separately so we can estimate the
+    # 2.3% GoDaddy processing fee on the card portion only.
+    card_payment_total = 0.0  # subtotal+tip on Card Payments sheets
+    cash_payment_total = 0.0  # subtotal+tip on Cash Payments sheets
+
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
         if DETAIL_SHEET_RE.match(sheet_name):
@@ -247,6 +252,14 @@ def parse_godaddy_excel(
             subtotal_sum += sub
             tip += tp
             count += c
+            sheet_total = sub + tp
+            sheet_lower = sheet_name.lower()
+            if sheet_lower.startswith("card payments"):
+                card_payment_total += sheet_total
+            elif sheet_lower.startswith("cash payments"):
+                cash_payment_total += sheet_total
+            # "Other Purchases" sheets (gift cards, etc.) are intentionally
+            # not bucketed as card or cash — they don't carry a CC fee.
             for k, (bt, bg) in sheet_hourly.items():
                 entry = hourly[k]
                 entry[0] += bt
@@ -292,6 +305,8 @@ def parse_godaddy_excel(
         net_revenue=round(net, 2) if (net or count) else None,
         tip_total=round(tip, 2) if tip else None,
         transaction_count=count,
+        card_total=round(card_payment_total, 2) if card_payment_total else None,
+        cash_total=round(cash_payment_total, 2) if cash_payment_total else None,
         raw_notes={
             "source_file": source_file,
             "sheets_read": sheets_read,

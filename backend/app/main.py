@@ -218,6 +218,16 @@ async def startup():
             "ALTER TABLE finance_rules ADD COLUMN IF NOT EXISTS "
             "account_id INTEGER REFERENCES bank_accounts(id)"
         ))
+        await conn.execute(text(
+            "ALTER TABLE daily_revenues ADD COLUMN IF NOT EXISTS card_total DOUBLE PRECISION"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE daily_revenues ADD COLUMN IF NOT EXISTS cash_total DOUBLE PRECISION"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS card_processing_fee_pct "
+            "DOUBLE PRECISION NOT NULL DEFAULT 0.023"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints
