@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Banknote,
@@ -1246,40 +1246,129 @@ function VendorInline({
   locked: boolean;
   onSave: (v: string | null) => void;
 }) {
+  const datalistId = useId();
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(vendor ?? '');
+  const [confirmNew, setConfirmNew] = useState<string | null>(null);
+
+  const { data: vendorsData } = useQuery<{ items: Array<{ vendor: string }> }>({
+    queryKey: ['finance-vendors'],
+    queryFn: finance.vendors,
+    enabled: editing,
+    staleTime: 60_000,
+  });
+  const knownVendors = (vendorsData?.items ?? []).map((v) => v.vendor);
 
   useEffect(() => { setValue(vendor ?? ''); }, [vendor]);
 
+  const commit = () => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      onSave(null);
+      setEditing(false);
+      return;
+    }
+    if (trimmed === (vendor ?? '')) {
+      setEditing(false);
+      return;
+    }
+    const exists = knownVendors.some((v) => v.toLowerCase() === trimmed.toLowerCase());
+    if (exists) {
+      const canonical = knownVendors.find((v) => v.toLowerCase() === trimmed.toLowerCase()) ?? trimmed;
+      onSave(canonical);
+      setEditing(false);
+    } else {
+      setConfirmNew(trimmed);
+    }
+  };
+
+  const closestMatches = (() => {
+    const q = (confirmNew ?? '').toLowerCase();
+    if (!q) return [];
+    return knownVendors
+      .filter((v) => v.toLowerCase().includes(q) || q.includes(v.toLowerCase()))
+      .slice(0, 5);
+  })();
+
   if (editing && !locked) {
     return (
-      <div className="flex items-center gap-1 mt-1">
-        <input
-          autoFocus
-          className="border border-gray-200 rounded px-2 py-0.5 text-xs flex-1 max-w-[180px]"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              onSave(value.trim() || null);
-              setEditing(false);
-            } else if (e.key === 'Escape') {
-              setValue(vendor ?? '');
-              setEditing(false);
-            }
-          }}
-        />
-        <button
-          onClick={() => { onSave(value.trim() || null); setEditing(false); }}
-          className="text-green-600 hover:text-green-700"
-          title="Save"
-        ><Check className="h-3 w-3" /></button>
-        <button
-          onClick={() => { setValue(vendor ?? ''); setEditing(false); }}
-          className="text-gray-400 hover:text-gray-600"
-          title="Cancel"
-        ><XIcon className="h-3 w-3" /></button>
-      </div>
+      <>
+        <div className="flex items-center gap-1 mt-1">
+          <input
+            autoFocus
+            list={datalistId}
+            className="border border-gray-200 rounded px-2 py-0.5 text-xs flex-1 max-w-[200px]"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                commit();
+              } else if (e.key === 'Escape') {
+                setValue(vendor ?? '');
+                setEditing(false);
+              }
+            }}
+          />
+          <datalist id={datalistId}>
+            {knownVendors.map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
+          <button onClick={commit} className="text-green-600 hover:text-green-700" title="Save">
+            <Check className="h-3 w-3" />
+          </button>
+          <button
+            onClick={() => { setValue(vendor ?? ''); setEditing(false); }}
+            className="text-gray-400 hover:text-gray-600"
+            title="Cancel"
+          ><XIcon className="h-3 w-3" /></button>
+        </div>
+
+        <Modal
+          open={!!confirmNew}
+          onClose={() => setConfirmNew(null)}
+          title={`Vendor "${confirmNew}" doesn't exist`}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">
+              Add <strong>{confirmNew}</strong> as a brand-new vendor, or pick an existing one below.
+            </p>
+            {closestMatches.length > 0 && (
+              <div className="border border-gray-200 rounded p-2 max-h-48 overflow-y-auto">
+                <p className="text-xs uppercase text-gray-500 mb-2">Existing vendors</p>
+                <div className="flex flex-col gap-1">
+                  {closestMatches.map((v) => (
+                    <button
+                      key={v}
+                      className="text-left text-sm px-2 py-1 hover:bg-gray-100 rounded"
+                      onClick={() => {
+                        onSave(v);
+                        setConfirmNew(null);
+                        setEditing(false);
+                      }}
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setConfirmNew(null)}>Back</Button>
+              <Button
+                onClick={() => {
+                  onSave(confirmNew);
+                  setConfirmNew(null);
+                  setEditing(false);
+                }}
+              >
+                Add as new vendor
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      </>
     );
   }
 
