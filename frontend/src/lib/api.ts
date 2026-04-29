@@ -888,6 +888,12 @@ export const finance = {
     api.post('/finance/vendors/rename', { old_name, new_name }).then((r) => r.data),
   backfillVendors: (overwrite = false) =>
     api.post(`/finance/vendors/backfill?overwrite=${overwrite}`).then((r) => r.data),
+  createVendor: (data: { name: string; default_category_id?: number | null; notes?: string | null }) =>
+    api.post('/finance/vendors', data).then((r) => r.data),
+  updateVendor: (id: number, data: { name?: string; default_category_id?: number | null; notes?: string | null }) =>
+    api.patch(`/finance/vendors/${id}`, data).then((r) => r.data),
+  deleteVendor: (id: number, clearFromTransactions = false) =>
+    api.delete(`/finance/vendors/${id}`, { params: { clear_from_transactions: clearFromTransactions } }).then((r) => r.data),
 
   suggestRules: (useLlm = true) =>
     api.post(`/finance/suggest-rules?use_llm=${useLlm}`).then((r) => r.data),

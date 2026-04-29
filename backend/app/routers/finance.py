@@ -23,6 +23,7 @@ from app.models.finance import (
     FinanceRule,
     ManualLedgerEntry,
     MonthlyClose,
+    Vendor,
 )
 from app.models.user import User, UserRole
 from app.services.finance_ingestion import (
@@ -682,7 +683,22 @@ async def update_transaction(
             raise HTTPException(status_code=400, detail="category_id not found")
         txn.category_id = payload.category_id
     if payload.vendor is not None:
-        txn.vendor = payload.vendor.strip() or None
+        new_vendor = payload.vendor.strip() or None
+        txn.vendor = new_vendor
+        # If the assigned vendor is registered with a default category and
+        # this transaction is currently Uncategorized (or has no category),
+        # apply the default automatically. This makes the inline-edit flow
+        # "tag with vendor → category fills itself in" feel instant.
+        if new_vendor:
+            v = (await db.execute(
+                select(Vendor).where(func.lower(Vendor.name) == new_vendor.lower())
+            )).scalar_one_or_none()
+            if v is not None and v.default_category_id is not None:
+                uncat = (await db.execute(
+                    select(FinanceCategory).where(FinanceCategory.name == "Uncategorized")
+                )).scalar_one_or_none()
+                if txn.category_id is None or (uncat is not None and txn.category_id == uncat.id):
+                    txn.category_id = v.default_category_id
     if payload.notes is not None:
         txn.notes = payload.notes.strip() or None
     if payload.flow_type is not None:
@@ -1480,17 +1496,30 @@ class VendorRenameRequest(BaseModel):
     new_name: str
 
 
+class VendorCreate(BaseModel):
+    name: str
+    default_category_id: int | None = None
+    notes: str | None = None
+
+
+class VendorUpdate(BaseModel):
+    name: str | None = None
+    default_category_id: int | None = None
+    notes: str | None = None
+
+
 @router.get("/vendors")
 async def list_vendors(
     _u: User = Depends(_owner_only()),
     db: AsyncSession = Depends(get_db),
 ):
-    """Distinct vendor names with txn count, total spend, and last-seen date.
+    """Vendor list — registered + orphan — with txn count, net amount, last seen.
 
-    Spend is computed from negative-amount rows only (so income channels like
-    GoDaddy / Stripe show $0 spend but still appear in the list).
+    A "registered" vendor lives in the finance_vendors table and may carry a
+    default category. An "orphan" vendor is a string used on transactions
+    that has no matching registry row yet.
     """
-    rows = (await db.execute(
+    txn_rows = (await db.execute(
         select(
             BankTransaction.vendor,
             func.count(BankTransaction.id),
@@ -1500,17 +1529,183 @@ async def list_vendors(
         .where(BankTransaction.vendor.isnot(None))
         .group_by(BankTransaction.vendor)
     )).all()
-    items = [
-        {
-            "vendor": v,
+    txn_stats: dict[str, dict] = {
+        v: {
             "txn_count": int(c or 0),
             "net_amount": round(float(s or 0.0), 2),
             "last_seen": ls.isoformat() if ls else None,
         }
-        for v, c, s, ls in rows
-    ]
+        for v, c, s, ls in txn_rows
+    }
+
+    registered = (await db.execute(
+        select(Vendor, FinanceCategory).outerjoin(
+            FinanceCategory, Vendor.default_category_id == FinanceCategory.id,
+        )
+    )).all()
+
+    items: list[dict] = []
+    seen_names: set[str] = set()
+    for vendor, cat in registered:
+        stats = txn_stats.get(vendor.name, {"txn_count": 0, "net_amount": 0.0, "last_seen": None})
+        items.append({
+            "id": vendor.id,
+            "vendor": vendor.name,
+            "default_category_id": vendor.default_category_id,
+            "default_category_name": cat.name if cat else None,
+            "notes": vendor.notes,
+            "registered": True,
+            **stats,
+        })
+        seen_names.add(vendor.name)
+
+    for name, stats in txn_stats.items():
+        if name in seen_names:
+            continue
+        items.append({
+            "id": None,
+            "vendor": name,
+            "default_category_id": None,
+            "default_category_name": None,
+            "notes": None,
+            "registered": False,
+            **stats,
+        })
+
     items.sort(key=lambda x: (-x["txn_count"], x["vendor"].lower()))
     return {"items": items}
+
+
+@router.post("/vendors", status_code=status.HTTP_201_CREATED)
+async def create_vendor(
+    payload: VendorCreate,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
+
+    existing = (await db.execute(
+        select(Vendor).where(func.lower(Vendor.name) == name.lower())
+    )).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(status_code=409, detail=f"Vendor '{name}' already exists")
+
+    if payload.default_category_id is not None:
+        cat = (await db.execute(
+            select(FinanceCategory).where(FinanceCategory.id == payload.default_category_id)
+        )).scalar_one_or_none()
+        if cat is None:
+            raise HTTPException(status_code=400, detail="default_category_id not found")
+
+    vendor = Vendor(
+        name=name,
+        default_category_id=payload.default_category_id,
+        notes=payload.notes.strip() if payload.notes else None,
+    )
+    db.add(vendor)
+    await db.commit()
+    await db.refresh(vendor)
+    return {"id": vendor.id, "name": vendor.name, "default_category_id": vendor.default_category_id}
+
+
+@router.patch("/vendors/{vendor_id}")
+async def update_vendor(
+    vendor_id: int,
+    payload: VendorUpdate,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    vendor = (await db.execute(select(Vendor).where(Vendor.id == vendor_id))).scalar_one_or_none()
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    txns_renamed = 0
+    rules_renamed = 0
+    if payload.name is not None:
+        new_name = payload.name.strip()
+        if not new_name:
+            raise HTTPException(status_code=400, detail="name cannot be blank")
+        if new_name != vendor.name:
+            collision = (await db.execute(
+                select(Vendor).where(
+                    func.lower(Vendor.name) == new_name.lower(),
+                    Vendor.id != vendor.id,
+                )
+            )).scalar_one_or_none()
+            if collision is not None:
+                raise HTTPException(status_code=409, detail=f"Vendor '{new_name}' already exists")
+
+            old_name = vendor.name
+            txns = (await db.execute(
+                select(BankTransaction).where(BankTransaction.vendor == old_name)
+            )).scalars().all()
+            for t in txns:
+                t.vendor = new_name
+            txns_renamed = len(txns)
+
+            rules = (await db.execute(
+                select(FinanceRule).where(FinanceRule.vendor == old_name)
+            )).scalars().all()
+            for r in rules:
+                r.vendor = new_name
+            rules_renamed = len(rules)
+
+            vendor.name = new_name
+
+    if payload.default_category_id is not None:
+        if payload.default_category_id == 0:
+            vendor.default_category_id = None
+        else:
+            cat = (await db.execute(
+                select(FinanceCategory).where(FinanceCategory.id == payload.default_category_id)
+            )).scalar_one_or_none()
+            if cat is None:
+                raise HTTPException(status_code=400, detail="default_category_id not found")
+            vendor.default_category_id = payload.default_category_id
+
+    if payload.notes is not None:
+        vendor.notes = payload.notes.strip() or None
+
+    await db.commit()
+    return {
+        "ok": True,
+        "txns_renamed": txns_renamed,
+        "rules_renamed": rules_renamed,
+    }
+
+
+@router.delete("/vendors/{vendor_id}")
+async def delete_vendor(
+    vendor_id: int,
+    clear_from_transactions: bool = False,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a registered vendor.
+
+    Pass `clear_from_transactions=true` to also null-out the vendor field on
+    every transaction with this vendor name. Otherwise transactions keep
+    the string label but the vendor is no longer "registered" (it'll appear
+    as an orphan in the list).
+    """
+    vendor = (await db.execute(select(Vendor).where(Vendor.id == vendor_id))).scalar_one_or_none()
+    if vendor is None:
+        raise HTTPException(status_code=404, detail="Vendor not found")
+
+    cleared = 0
+    if clear_from_transactions:
+        txns = (await db.execute(
+            select(BankTransaction).where(BankTransaction.vendor == vendor.name)
+        )).scalars().all()
+        for t in txns:
+            t.vendor = None
+        cleared = len(txns)
+
+    await db.delete(vendor)
+    await db.commit()
+    return {"ok": True, "cleared_from_transactions": cleared}
 
 
 @router.post("/vendors/rename")

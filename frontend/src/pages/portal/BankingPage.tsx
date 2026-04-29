@@ -1390,28 +1390,77 @@ function VendorInline({
 // Vendors tab — distinct list with bulk rename
 // ---------------------------------------------------------------------------
 
+type VendorRow = {
+  id: number | null;
+  vendor: string;
+  default_category_id: number | null;
+  default_category_name: string | null;
+  notes: string | null;
+  registered: boolean;
+  txn_count: number;
+  net_amount: number;
+  last_seen: string | null;
+};
+
 function VendorsTab() {
   const queryClient = useQueryClient();
-  const { data, isLoading } = useQuery<{ items: Array<{ vendor: string; txn_count: number; net_amount: number; last_seen: string | null }> }>({
+  const { data, isLoading } = useQuery<{ items: VendorRow[] }>({
     queryKey: ['finance-vendors'],
     queryFn: finance.vendors,
   });
+  const { data: categories } = useQuery<Category[]>({
+    queryKey: ['finance-categories'],
+    queryFn: () => finance.categories(false),
+  });
 
   const [search, setSearch] = useState('');
-  const [renameTarget, setRenameTarget] = useState<string | null>(null);
-  const [renameTo, setRenameTo] = useState('');
+  const [editor, setEditor] = useState<{ mode: 'create' | 'edit'; row: VendorRow | null } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<VendorRow | null>(null);
+  const [deleteAlsoClear, setDeleteAlsoClear] = useState(false);
 
-  const renameMutation = useMutation({
-    mutationFn: ({ oldName, newName }: { oldName: string; newName: string }) => finance.renameVendor(oldName, newName),
+  const createMutation = useMutation({
+    mutationFn: (data: { name: string; default_category_id: number | null; notes: string | null }) => finance.createVendor(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
+      toast.success('Vendor created');
+      setEditor(null);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Create failed')),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => finance.updateVendor(id, data),
     onSuccess: (resp) => {
       queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
       queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['finance-rules'] });
-      toast.success(`Renamed ${resp.updated} transactions${resp.rules_updated ? ` and ${resp.rules_updated} rule(s)` : ''}.`);
-      setRenameTarget(null);
-      setRenameTo('');
+      const renamed = resp.txns_renamed ?? 0;
+      toast.success(renamed ? `Vendor saved · renamed ${renamed} transaction(s)` : 'Vendor saved');
+      setEditor(null);
     },
-    onError: (err: any) => toast.error(extractError(err, 'Rename failed')),
+    onError: (err: any) => toast.error(extractError(err, 'Save failed')),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ id, clear }: { id: number; clear: boolean }) => finance.deleteVendor(id, clear),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      const cleared = resp.cleared_from_transactions ?? 0;
+      toast.success(cleared ? `Vendor deleted · cleared from ${cleared} transaction(s)` : 'Vendor deleted');
+      setDeleteTarget(null);
+      setDeleteAlsoClear(false);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Delete failed')),
+  });
+
+  const registerOrphan = useMutation({
+    mutationFn: (name: string) => finance.createVendor({ name }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
+      toast.success('Vendor registered');
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Register failed')),
   });
 
   const backfillMutation = useMutation({
@@ -1435,6 +1484,9 @@ function VendorsTab() {
           <div className="flex-1 min-w-[200px]">
             <Input placeholder="Search vendors…" value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
+          <Button size="sm" onClick={() => setEditor({ mode: 'create', row: null })}>
+            + New vendor
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => backfillMutation.mutate(false)} loading={backfillMutation.isPending}>
             Backfill missing
           </Button>
@@ -1452,13 +1504,14 @@ function VendorsTab() {
         {isLoading ? (
           <div className="p-6"><LoadingSpinner size="sm" /></div>
         ) : filtered.length === 0 ? (
-          <p className="p-8 text-center text-sm text-gray-500">No vendors yet — upload some statements.</p>
+          <p className="p-8 text-center text-sm text-gray-500">No vendors yet — upload some statements or click + New vendor.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                 <tr>
                   <th className="px-3 py-2 text-left">Vendor</th>
+                  <th className="px-3 py-2 text-left">Default category</th>
                   <th className="px-3 py-2 text-right">Transactions</th>
                   <th className="px-3 py-2 text-right">Net amount</th>
                   <th className="px-3 py-2 text-left">Last seen</th>
@@ -1468,16 +1521,35 @@ function VendorsTab() {
               <tbody className="divide-y divide-gray-100 bg-white">
                 {filtered.map((v) => (
                   <tr key={v.vendor}>
-                    <td className="px-3 py-2 font-medium">{v.vendor}</td>
+                    <td className="px-3 py-2 font-medium">
+                      <div className="flex items-center gap-2">
+                        {v.vendor}
+                        {!v.registered && <Badge variant="pending">unregistered</Badge>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{v.default_category_name ?? <span className="text-gray-300">—</span>}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{v.txn_count}</td>
                     <td className={clsx('px-3 py-2 text-right tabular-nums', v.net_amount < 0 ? 'text-gray-900' : 'text-green-600')}>
                       {money(v.net_amount)}
                     </td>
                     <td className="px-3 py-2 text-gray-500">{v.last_seen ?? '—'}</td>
                     <td className="px-3 py-2 text-right">
-                      <Button size="sm" variant="ghost" icon={<Pencil className="h-4 w-4" />} onClick={() => { setRenameTarget(v.vendor); setRenameTo(v.vendor); }}>
-                        Rename
-                      </Button>
+                      <div className="flex justify-end gap-1">
+                        {v.registered ? (
+                          <>
+                            <Button size="sm" variant="ghost" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditor({ mode: 'edit', row: v })}>
+                              Edit
+                            </Button>
+                            <Button size="sm" variant="ghost" icon={<Trash2 className="h-4 w-4" />} onClick={() => setDeleteTarget(v)}>
+                              Delete
+                            </Button>
+                          </>
+                        ) : (
+                          <Button size="sm" variant="ghost" onClick={() => registerOrphan.mutate(v.vendor)} loading={registerOrphan.isPending}>
+                            Register
+                          </Button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1487,25 +1559,140 @@ function VendorsTab() {
         )}
       </Card>
 
-      <Modal open={!!renameTarget} onClose={() => setRenameTarget(null)} title={`Rename "${renameTarget}"`}>
+      <VendorEditor
+        editor={editor}
+        categories={categories ?? []}
+        onClose={() => setEditor(null)}
+        onCreate={(data) => createMutation.mutate(data)}
+        onUpdate={(id, data) => updateMutation.mutate({ id, data })}
+        saving={createMutation.isPending || updateMutation.isPending}
+      />
+
+      <Modal open={!!deleteTarget} onClose={() => { setDeleteTarget(null); setDeleteAlsoClear(false); }} title={`Delete "${deleteTarget?.vendor}"?`}>
         <div className="space-y-3">
           <p className="text-sm text-gray-600">
-            This renames every transaction with vendor <strong>{renameTarget}</strong> in bulk. If another vendor already has this name, they'll be merged.
+            This removes the vendor from the registry. {deleteTarget && deleteTarget.txn_count > 0 ? (
+              <>It currently labels <strong>{deleteTarget.txn_count}</strong> transaction(s).</>
+            ) : null}
           </p>
-          <Input label="New vendor name" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} />
+          {deleteTarget && deleteTarget.txn_count > 0 && (
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={deleteAlsoClear}
+                onChange={(e) => setDeleteAlsoClear(e.target.checked)}
+              />
+              <span>
+                <strong>Also clear the vendor name</strong> from those {deleteTarget.txn_count} transactions.
+                <span className="block text-xs text-gray-500">Leave unchecked to keep the labels (vendor will appear as "unregistered").</span>
+              </span>
+            </label>
+          )}
+          <p className="text-xs text-red-600">This cannot be undone.</p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => { setDeleteTarget(null); setDeleteAlsoClear(false); }}>Cancel</Button>
             <Button
-              onClick={() => renameMutation.mutate({ oldName: renameTarget!, newName: renameTo.trim() })}
-              loading={renameMutation.isPending}
-              disabled={!renameTo.trim() || renameTo.trim() === renameTarget}
+              variant="danger"
+              onClick={() => deleteTarget && deleteMutation.mutate({ id: deleteTarget.id!, clear: deleteAlsoClear })}
+              loading={deleteMutation.isPending}
             >
-              Rename
+              Delete
             </Button>
           </div>
         </div>
       </Modal>
     </div>
+  );
+}
+
+function VendorEditor({
+  editor,
+  categories,
+  onClose,
+  onCreate,
+  onUpdate,
+  saving,
+}: {
+  editor: { mode: 'create' | 'edit'; row: VendorRow | null } | null;
+  categories: Category[];
+  onClose: () => void;
+  onCreate: (data: { name: string; default_category_id: number | null; notes: string | null }) => void;
+  onUpdate: (id: number, data: { name: string; default_category_id: number | null; notes: string | null }) => void;
+  saving: boolean;
+}) {
+  const [form, setForm] = useState({ name: '', default_category_id: '' as string, notes: '' });
+
+  useEffect(() => {
+    if (!editor) return;
+    if (editor.mode === 'edit' && editor.row) {
+      setForm({
+        name: editor.row.vendor,
+        default_category_id: editor.row.default_category_id ? String(editor.row.default_category_id) : '',
+        notes: editor.row.notes ?? '',
+      });
+    } else {
+      setForm({ name: '', default_category_id: '', notes: '' });
+    }
+  }, [editor]);
+
+  const isEdit = editor?.mode === 'edit';
+  const initialName = editor?.row?.vendor ?? '';
+  const willRenameTxns = isEdit && form.name.trim() && form.name.trim() !== initialName && (editor?.row?.txn_count ?? 0) > 0;
+
+  return (
+    <Modal
+      open={!!editor}
+      onClose={onClose}
+      title={isEdit ? `Edit "${initialName}"` : 'New vendor'}
+    >
+      <div className="space-y-3">
+        <Input
+          label="Vendor name"
+          value={form.name}
+          onChange={(e) => setForm({ ...form, name: e.target.value })}
+          placeholder="e.g. Big West Properties"
+        />
+        <Select
+          label="Default category (optional)"
+          options={[{ value: '', label: 'No default — leave uncategorized' }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
+          value={form.default_category_id}
+          onChange={(e) => setForm({ ...form, default_category_id: e.target.value })}
+        />
+        <Input
+          label="Notes (optional)"
+          value={form.notes}
+          onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          placeholder="Anything you want to remember about this vendor"
+        />
+        {willRenameTxns && (
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+            This will rename {editor?.row?.txn_count} existing transaction(s) from "{initialName}" to "{form.name.trim()}".
+          </p>
+        )}
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              const data = {
+                name: form.name.trim(),
+                default_category_id: form.default_category_id ? Number(form.default_category_id) : null,
+                notes: form.notes.trim() || null,
+              };
+              if (isEdit && editor?.row?.id) {
+                onUpdate(editor.row.id, data);
+              } else if (!isEdit) {
+                onCreate(data);
+              }
+            }}
+            loading={saving}
+            disabled={!form.name.trim()}
+          >
+            {isEdit ? 'Save' : 'Create vendor'}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

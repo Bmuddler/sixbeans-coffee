@@ -133,6 +133,28 @@ class BankTransaction(Base):
     category = relationship("FinanceCategory")
 
 
+class Vendor(Base):
+    """Registered vendors with an optional default category.
+
+    The `vendor` string column on BankTransaction references a vendor by
+    name (case-insensitive). Renames cascade via the rename endpoint.
+    Default category is applied when a transaction is tagged with a
+    vendor (via the inline edit) and the transaction is currently
+    Uncategorized.
+    """
+
+    __tablename__ = "finance_vendors"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, unique=True)
+    default_category_id = Column(Integer, ForeignKey("finance_categories.id"), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    default_category = relationship("FinanceCategory")
+
+
 class ManualLedgerEntry(Base):
     """Things that don't come from bank feeds: Food Inventory, Furniture &
     Equipment, Notes Receivable, member equity / draws."""
