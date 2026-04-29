@@ -942,12 +942,12 @@ function TransactionRow({
       <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{txn.txn_date}</td>
       <td className="px-3 py-2 text-gray-500 text-xs">{txn.account_name.replace('Wells Fargo - ', 'WF ')}</td>
       <td className="px-3 py-2 max-w-md" title={txn.description}>
-        <div className="truncate">{txn.description}</div>
         <VendorInline
           vendor={txn.vendor}
           locked={txn.is_locked}
           onSave={(v) => onUpdate({ vendor: v })}
         />
+        <div className="truncate text-xs text-gray-500 mt-0.5">{txn.description}</div>
       </td>
       <td className={clsx('px-3 py-2 text-right tabular-nums', txn.amount < 0 ? 'text-gray-900' : 'text-green-600')}>
         {money(txn.amount)}
@@ -1373,8 +1373,10 @@ function VendorInline({
   }
 
   return (
-    <div className="flex items-center gap-1 mt-0.5">
-      <span className="text-xs text-gray-500">{vendor || <span className="italic text-gray-300">unnamed</span>}</span>
+    <div className="flex items-center gap-1">
+      <span className="text-sm font-semibold text-gray-900">
+        {vendor || <span className="italic font-normal text-gray-400">unnamed</span>}
+      </span>
       {!locked && (
         <button
           onClick={() => setEditing(true)}
