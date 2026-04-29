@@ -15,7 +15,6 @@ from app.models.job_application import JobApplication
 from app.models.location import Location
 from app.models.user import User, UserRole, user_locations
 from app.services.gmail_watcher import send_email
-from app.services.notification_service import send_sms
 
 logger = logging.getLogger(__name__)
 
@@ -76,17 +75,6 @@ async def submit_application(
     db.add(application)
     await db.commit()
     await db.refresh(application)
-
-    result = await db.execute(
-        select(User).where(User.role == UserRole.owner, User.is_active.is_(True))
-    )
-    owners = result.scalars().all()
-    for owner in owners:
-        if owner.phone:
-            await send_sms(
-                owner.phone,
-                f"Six Beans: New job application from {data.name} for {data.position} at {data.location}. Log in to review.",
-            )
 
     return {"message": "Application submitted successfully", "id": application.id}
 
