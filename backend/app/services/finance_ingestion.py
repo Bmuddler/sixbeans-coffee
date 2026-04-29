@@ -33,6 +33,7 @@ from app.models.finance import (
     FinanceCategory,
     FinanceRule,
 )
+from app.services.finance_rule_suggester import extract_merchant
 
 
 # ---------------------------------------------------------------------------
@@ -382,6 +383,12 @@ async def ingest_csv(
 
         if cat_id is None and uncategorized is not None:
             cat_id = uncategorized.id
+
+        # Always populate a vendor display name. Rules win when they match;
+        # otherwise extract a best-guess merchant signature so the register
+        # has a clean label and the Vendors tab can group/rename in bulk.
+        if not vendor:
+            vendor = extract_merchant(row.description) or None
 
         is_categorized = cat_id is not None and cat_id != (uncategorized.id if uncategorized else -1)
         if is_categorized:

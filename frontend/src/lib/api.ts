@@ -842,6 +842,8 @@ export const finance = {
 
   transactions: (params: any) =>
     api.get('/finance/transactions', { params }).then((r) => r.data),
+  transactionMonths: (accountId?: number) =>
+    api.get('/finance/transactions/months', { params: accountId ? { account_id: accountId } : {} }).then((r) => r.data),
   updateTransaction: (id: number, data: any) =>
     api.patch(`/finance/transactions/${id}`, data).then((r) => r.data),
   deleteTransaction: (id: number) =>
@@ -880,6 +882,12 @@ export const finance = {
 
   recategorizeUncategorized: () =>
     api.post('/finance/recategorize-uncategorized').then((r) => r.data),
+
+  vendors: () => api.get('/finance/vendors').then((r) => r.data),
+  renameVendor: (old_name: string, new_name: string) =>
+    api.post('/finance/vendors/rename', { old_name, new_name }).then((r) => r.data),
+  backfillVendors: (overwrite = false) =>
+    api.post(`/finance/vendors/backfill?overwrite=${overwrite}`).then((r) => r.data),
 
   suggestRules: (useLlm = true) =>
     api.post(`/finance/suggest-rules?use_llm=${useLlm}`).then((r) => r.data),

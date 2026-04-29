@@ -17,6 +17,7 @@ import {
   X as XIcon,
   Paperclip,
   RefreshCw,
+  Tag,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import clsx from 'clsx';
@@ -29,7 +30,7 @@ import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { Modal } from '@/components/ui/Modal';
 import { finance } from '@/lib/api';
 
-type Tab = 'dashboard' | 'register' | 'upload' | 'rules' | 'categories' | 'ledger' | 'reports' | 'closes';
+type Tab = 'dashboard' | 'register' | 'upload' | 'rules' | 'categories' | 'vendors' | 'ledger' | 'reports' | 'closes';
 
 interface Account {
   id: number;
@@ -108,6 +109,7 @@ export function BankingPage() {
     { key: 'upload', label: 'Upload', icon: <Upload className="h-4 w-4" /> },
     { key: 'rules', label: 'Rules', icon: <ScrollText className="h-4 w-4" /> },
     { key: 'categories', label: 'Categories', icon: <BookOpen className="h-4 w-4" /> },
+    { key: 'vendors', label: 'Vendors', icon: <Tag className="h-4 w-4" /> },
     { key: 'ledger', label: 'Manual Ledger', icon: <BookOpen className="h-4 w-4" /> },
     { key: 'reports', label: 'Reports', icon: <FileText className="h-4 w-4" /> },
     { key: 'closes', label: 'Closes', icon: <Lock className="h-4 w-4" /> },
@@ -147,6 +149,7 @@ export function BankingPage() {
       {tab === 'upload' && <UploadTab />}
       {tab === 'rules' && <RulesTab />}
       {tab === 'categories' && <CategoriesTab />}
+      {tab === 'vendors' && <VendorsTab />}
       {tab === 'ledger' && <LedgerTab />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'closes' && <ClosesTab />}
@@ -705,7 +708,9 @@ function RegisterTab() {
   const [onlyUncat, setOnlyUncat] = useState(false);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
+  const [pageJump, setPageJump] = useState('');
   const [suggestOpen, setSuggestOpen] = useState(false);
+  const [monthFilter, setMonthFilter] = useState<string>(''); // YYYY-MM
 
   const params = useMemo(() => {
     const p: any = { page, per_page: 100 };
@@ -713,8 +718,20 @@ function RegisterTab() {
     if (categoryId) p.category_id = Number(categoryId);
     if (onlyUncat) p.only_uncategorized = true;
     if (search) p.search = search;
+    if (monthFilter) {
+      const [y, m] = monthFilter.split('-').map(Number);
+      const firstOfMonth = new Date(y, m - 1, 1);
+      const lastOfMonth = new Date(y, m, 0);
+      p.start_date = firstOfMonth.toISOString().slice(0, 10);
+      p.end_date = lastOfMonth.toISOString().slice(0, 10);
+    }
     return p;
-  }, [page, accountId, categoryId, onlyUncat, search]);
+  }, [page, accountId, categoryId, onlyUncat, search, monthFilter]);
+
+  const { data: monthsData } = useQuery<{ items: Array<{ year: number; month: number; label: string }> }>({
+    queryKey: ['finance-txn-months', accountId],
+    queryFn: () => finance.transactionMonths(accountId ? Number(accountId) : undefined),
+  });
 
   const { data, isLoading } = useQuery({
     queryKey: ['finance-transactions', params],
@@ -793,6 +810,38 @@ function RegisterTab() {
 
       <SuggestRulesModal open={suggestOpen} onClose={() => setSuggestOpen(false)} categories={categories ?? []} />
 
+      {(monthsData?.items?.length ?? 0) > 0 && (
+        <Card className="!p-3">
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-xs uppercase text-gray-500 mr-2">Jump to month</span>
+            <button
+              onClick={() => { setPage(1); setMonthFilter(''); }}
+              className={clsx(
+                'px-2 py-1 text-xs rounded',
+                !monthFilter ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100',
+              )}
+            >
+              All
+            </button>
+            {(monthsData?.items ?? []).map((m) => {
+              const label = new Date(m.year, m.month - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+              return (
+                <button
+                  key={m.label}
+                  onClick={() => { setPage(1); setMonthFilter(m.label); }}
+                  className={clsx(
+                    'px-2 py-1 text-xs rounded',
+                    monthFilter === m.label ? 'bg-primary text-white' : 'text-gray-600 hover:bg-gray-100',
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
       <Card title={`Transactions${data?.total != null ? ` · ${data.total}` : ''}`} className="!p-0 overflow-hidden">
         {isLoading ? (
           <div className="p-6"><LoadingSpinner size="sm" /></div>
@@ -827,19 +876,42 @@ function RegisterTab() {
         )}
       </Card>
 
-      {data?.total != null && data.total > 100 && (
-        <div className="flex justify-center gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
-            Previous
-          </Button>
-          <span className="text-sm text-gray-600 self-center">
-            Page {page} of {Math.ceil(data.total / 100)}
-          </span>
-          <Button size="sm" variant="ghost" onClick={() => setPage((p) => p + 1)} disabled={page * 100 >= data.total}>
-            Next
-          </Button>
-        </div>
-      )}
+      {data?.total != null && data.total > 100 && (() => {
+        const totalPages = Math.ceil(data.total / 100);
+        const submitJump = () => {
+          const n = Number(pageJump);
+          if (!Number.isFinite(n) || n < 1) return;
+          setPage(Math.min(totalPages, Math.max(1, Math.floor(n))));
+          setPageJump('');
+        };
+        return (
+          <div className="flex flex-wrap justify-center items-center gap-2">
+            <Button size="sm" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+              Previous
+            </Button>
+            <span className="text-sm text-gray-600 self-center">
+              Page {page} of {totalPages}
+            </span>
+            <Button size="sm" variant="ghost" onClick={() => setPage((p) => p + 1)} disabled={page * 100 >= data.total}>
+              Next
+            </Button>
+            <div className="flex items-center gap-1 ml-3">
+              <span className="text-xs text-gray-500">Go to</span>
+              <input
+                type="number"
+                min={1}
+                max={totalPages}
+                value={pageJump}
+                onChange={(e) => setPageJump(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitJump(); }}
+                className="w-16 border border-gray-200 rounded px-2 py-1 text-xs"
+                placeholder="#"
+              />
+              <Button size="sm" variant="ghost" onClick={submitJump}>Go</Button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -869,9 +941,13 @@ function TransactionRow({
     <tr className={clsx(txn.is_locked && 'bg-gray-50')}>
       <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{txn.txn_date}</td>
       <td className="px-3 py-2 text-gray-500 text-xs">{txn.account_name.replace('Wells Fargo - ', 'WF ')}</td>
-      <td className="px-3 py-2 max-w-md truncate" title={txn.description}>
-        <div>{txn.description}</div>
-        {txn.vendor && <div className="text-xs text-gray-500">{txn.vendor}</div>}
+      <td className="px-3 py-2 max-w-md" title={txn.description}>
+        <div className="truncate">{txn.description}</div>
+        <VendorInline
+          vendor={txn.vendor}
+          locked={txn.is_locked}
+          onSave={(v) => onUpdate({ vendor: v })}
+        />
       </td>
       <td className={clsx('px-3 py-2 text-right tabular-nums', txn.amount < 0 ? 'text-gray-900' : 'text-green-600')}>
         {money(txn.amount)}
@@ -1032,6 +1108,11 @@ function RulesTab() {
 function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: Rule | null; categories: Category[]; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { data: accounts } = useQuery<Account[]>({ queryKey: ['finance-accounts'], queryFn: finance.accounts });
+  const { data: vendorsData } = useQuery<{ items: Array<{ vendor: string }> }>({
+    queryKey: ['finance-vendors'],
+    queryFn: finance.vendors,
+    enabled: open,
+  });
   const [form, setForm] = useState({
     rule_name: '',
     match_type: 'contains' as const,
@@ -1105,7 +1186,21 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
             className="col-span-2"
           />
         </div>
-        <Input label="Vendor (optional)" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Vendor (optional)</label>
+          <input
+            list="rule-editor-vendor-list"
+            className="block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            value={form.vendor}
+            onChange={(e) => setForm({ ...form, vendor: e.target.value })}
+            placeholder="Pick existing or type a new one"
+          />
+          <datalist id="rule-editor-vendor-list">
+            {(vendorsData?.items ?? []).map((v) => (
+              <option key={v.vendor} value={v.vendor} />
+            ))}
+          </datalist>
+        </div>
         <Select
           label="Category"
           options={[{ value: '', label: 'Pick…' }, ...categories.map((c) => ({ value: String(c.id), label: c.name }))]}
@@ -1135,6 +1230,193 @@ function RuleEditor({ open, rule, categories, onClose }: { open: boolean; rule: 
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Vendor inline edit (used inside the register rows)
+// ---------------------------------------------------------------------------
+
+function VendorInline({
+  vendor,
+  locked,
+  onSave,
+}: {
+  vendor: string | null;
+  locked: boolean;
+  onSave: (v: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(vendor ?? '');
+
+  useEffect(() => { setValue(vendor ?? ''); }, [vendor]);
+
+  if (editing && !locked) {
+    return (
+      <div className="flex items-center gap-1 mt-1">
+        <input
+          autoFocus
+          className="border border-gray-200 rounded px-2 py-0.5 text-xs flex-1 max-w-[180px]"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              onSave(value.trim() || null);
+              setEditing(false);
+            } else if (e.key === 'Escape') {
+              setValue(vendor ?? '');
+              setEditing(false);
+            }
+          }}
+        />
+        <button
+          onClick={() => { onSave(value.trim() || null); setEditing(false); }}
+          className="text-green-600 hover:text-green-700"
+          title="Save"
+        ><Check className="h-3 w-3" /></button>
+        <button
+          onClick={() => { setValue(vendor ?? ''); setEditing(false); }}
+          className="text-gray-400 hover:text-gray-600"
+          title="Cancel"
+        ><XIcon className="h-3 w-3" /></button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1 mt-0.5">
+      <span className="text-xs text-gray-500">{vendor || <span className="italic text-gray-300">unnamed</span>}</span>
+      {!locked && (
+        <button
+          onClick={() => setEditing(true)}
+          className="text-gray-300 hover:text-gray-500"
+          title="Rename vendor"
+        ><Pencil className="h-3 w-3" /></button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Vendors tab — distinct list with bulk rename
+// ---------------------------------------------------------------------------
+
+function VendorsTab() {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useQuery<{ items: Array<{ vendor: string; txn_count: number; net_amount: number; last_seen: string | null }> }>({
+    queryKey: ['finance-vendors'],
+    queryFn: finance.vendors,
+  });
+
+  const [search, setSearch] = useState('');
+  const [renameTarget, setRenameTarget] = useState<string | null>(null);
+  const [renameTo, setRenameTo] = useState('');
+
+  const renameMutation = useMutation({
+    mutationFn: ({ oldName, newName }: { oldName: string; newName: string }) => finance.renameVendor(oldName, newName),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-rules'] });
+      toast.success(`Renamed ${resp.updated} transactions${resp.rules_updated ? ` and ${resp.rules_updated} rule(s)` : ''}.`);
+      setRenameTarget(null);
+      setRenameTo('');
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Rename failed')),
+  });
+
+  const backfillMutation = useMutation({
+    mutationFn: (overwrite: boolean) => finance.backfillVendors(overwrite),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['finance-vendors'] });
+      queryClient.invalidateQueries({ queryKey: ['finance-transactions'] });
+      toast.success(`Backfilled ${resp.updated} of ${resp.examined} transactions.`);
+    },
+    onError: (err: any) => toast.error(extractError(err, 'Backfill failed')),
+  });
+
+  const filtered = (data?.items ?? []).filter((v) =>
+    !search || v.vendor.toLowerCase().includes(search.toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div className="flex-1 min-w-[200px]">
+            <Input placeholder="Search vendors…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => backfillMutation.mutate(false)} loading={backfillMutation.isPending}>
+            Backfill missing
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => {
+            if (confirm('Re-extract vendor names for ALL transactions? Manual renames will be overwritten.')) {
+              backfillMutation.mutate(true);
+            }
+          }}>
+            Re-extract all
+          </Button>
+        </div>
+      </Card>
+
+      <Card title={`Vendors${data?.items ? ` · ${data.items.length}` : ''}`} className="!p-0 overflow-hidden">
+        {isLoading ? (
+          <div className="p-6"><LoadingSpinner size="sm" /></div>
+        ) : filtered.length === 0 ? (
+          <p className="p-8 text-center text-sm text-gray-500">No vendors yet — upload some statements.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">Vendor</th>
+                  <th className="px-3 py-2 text-right">Transactions</th>
+                  <th className="px-3 py-2 text-right">Net amount</th>
+                  <th className="px-3 py-2 text-left">Last seen</th>
+                  <th className="px-3 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {filtered.map((v) => (
+                  <tr key={v.vendor}>
+                    <td className="px-3 py-2 font-medium">{v.vendor}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{v.txn_count}</td>
+                    <td className={clsx('px-3 py-2 text-right tabular-nums', v.net_amount < 0 ? 'text-gray-900' : 'text-green-600')}>
+                      {money(v.net_amount)}
+                    </td>
+                    <td className="px-3 py-2 text-gray-500">{v.last_seen ?? '—'}</td>
+                    <td className="px-3 py-2 text-right">
+                      <Button size="sm" variant="ghost" icon={<Pencil className="h-4 w-4" />} onClick={() => { setRenameTarget(v.vendor); setRenameTo(v.vendor); }}>
+                        Rename
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <Modal open={!!renameTarget} onClose={() => setRenameTarget(null)} title={`Rename "${renameTarget}"`}>
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600">
+            This renames every transaction with vendor <strong>{renameTarget}</strong> in bulk. If another vendor already has this name, they'll be merged.
+          </p>
+          <Input label="New vendor name" value={renameTo} onChange={(e) => setRenameTo(e.target.value)} />
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setRenameTarget(null)}>Cancel</Button>
+            <Button
+              onClick={() => renameMutation.mutate({ oldName: renameTarget!, newName: renameTo.trim() })}
+              loading={renameMutation.isPending}
+              disabled={!renameTo.trim() || renameTo.trim() === renameTarget}
+            >
+              Rename
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
   );
 }
 

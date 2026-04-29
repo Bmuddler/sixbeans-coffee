@@ -30,6 +30,7 @@ from app.services.finance_ingestion import (
     ingest_csv,
     normalize_description,
 )
+from app.services.finance_rule_suggester import extract_merchant
 
 router = APIRouter()
 
@@ -564,6 +565,29 @@ async def ingest_batch_endpoint(
 # ---------------------------------------------------------------------------
 
 
+@router.get("/transactions/months")
+async def list_transaction_months(
+    account_id: int | None = None,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Distinct YYYY-MM buckets that have transactions, newest first.
+
+    Used by the register UI to render quick month-jump tabs.
+    """
+    q = select(BankTransaction.txn_date)
+    if account_id:
+        q = q.where(BankTransaction.account_id == account_id)
+    rows = (await db.execute(q)).scalars().all()
+    months = sorted({(d.year, d.month) for d in rows}, reverse=True)
+    return {
+        "items": [
+            {"year": y, "month": m, "label": f"{y:04d}-{m:02d}"}
+            for y, m in months
+        ]
+    }
+
+
 @router.get("/transactions")
 async def list_transactions(
     account_id: int | None = None,
@@ -573,6 +597,7 @@ async def list_transactions(
     start_date: date | None = None,
     end_date: date | None = None,
     search: str | None = None,
+    vendor: str | None = None,
     page: int = 1,
     per_page: int = 100,
     _u: User = Depends(_owner_only()),
@@ -605,6 +630,8 @@ async def list_transactions(
     if search:
         like = f"%{search.upper()}%"
         q = q.where(BankTransaction.description_normalized.like(like))
+    if vendor:
+        q = q.where(BankTransaction.vendor == vendor)
 
     count_q = select(func.count()).select_from(q.subquery())
     total = (await db.execute(count_q)).scalar() or 0
@@ -1441,3 +1468,105 @@ async def recategorize_uncategorized(
             updated += 1
     await db.commit()
     return {"updated": updated, "examined": len(txns)}
+
+
+# ---------------------------------------------------------------------------
+# Vendors: distinct vendor list, bulk rename, backfill
+# ---------------------------------------------------------------------------
+
+
+class VendorRenameRequest(BaseModel):
+    old_name: str
+    new_name: str
+
+
+@router.get("/vendors")
+async def list_vendors(
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Distinct vendor names with txn count, total spend, and last-seen date.
+
+    Spend is computed from negative-amount rows only (so income channels like
+    GoDaddy / Stripe show $0 spend but still appear in the list).
+    """
+    rows = (await db.execute(
+        select(
+            BankTransaction.vendor,
+            func.count(BankTransaction.id),
+            func.sum(BankTransaction.amount),
+            func.max(BankTransaction.txn_date),
+        )
+        .where(BankTransaction.vendor.isnot(None))
+        .group_by(BankTransaction.vendor)
+    )).all()
+    items = [
+        {
+            "vendor": v,
+            "txn_count": int(c or 0),
+            "net_amount": round(float(s or 0.0), 2),
+            "last_seen": ls.isoformat() if ls else None,
+        }
+        for v, c, s, ls in rows
+    ]
+    items.sort(key=lambda x: (-x["txn_count"], x["vendor"].lower()))
+    return {"items": items}
+
+
+@router.post("/vendors/rename")
+async def rename_vendor(
+    payload: VendorRenameRequest,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-rename every transaction whose vendor == old_name.
+
+    Also updates any FinanceRule whose vendor field matches so future
+    auto-categorization carries the new name forward.
+    """
+    old = payload.old_name.strip()
+    new = payload.new_name.strip()
+    if not old or not new:
+        raise HTTPException(status_code=400, detail="old_name and new_name are required")
+    if old == new:
+        return {"updated": 0, "rules_updated": 0}
+
+    txns = (await db.execute(
+        select(BankTransaction).where(BankTransaction.vendor == old)
+    )).scalars().all()
+    for t in txns:
+        t.vendor = new
+
+    rules = (await db.execute(
+        select(FinanceRule).where(FinanceRule.vendor == old)
+    )).scalars().all()
+    for r in rules:
+        r.vendor = new
+
+    await db.commit()
+    return {"updated": len(txns), "rules_updated": len(rules)}
+
+
+@router.post("/vendors/backfill")
+async def backfill_vendors(
+    overwrite: bool = False,
+    _u: User = Depends(_owner_only()),
+    db: AsyncSession = Depends(get_db),
+):
+    """Populate vendor for transactions missing one, using extract_merchant().
+
+    Pass overwrite=true to re-run for every row. Defaults to filling NULLs
+    only so manual renames aren't clobbered.
+    """
+    q = select(BankTransaction)
+    if not overwrite:
+        q = q.where(BankTransaction.vendor.is_(None))
+    txns = (await db.execute(q)).scalars().all()
+    updated = 0
+    for t in txns:
+        guess = extract_merchant(t.description) or None
+        if guess and t.vendor != guess:
+            t.vendor = guess
+            updated += 1
+    await db.commit()
+    return {"examined": len(txns), "updated": updated}
