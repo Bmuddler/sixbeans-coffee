@@ -19,6 +19,7 @@ import {
   Menu,
   X,
   Banknote,
+  ChefHat,
   ShoppingCart,
   Truck,
   BarChart3,
@@ -103,6 +104,12 @@ const navItems: NavItem[] = [
     to: '/portal/banking',
     label: 'Banking',
     icon: <Banknote className="h-5 w-5" />,
+    roles: [UserRole.OWNER],
+  },
+  {
+    to: '/portal/recipes',
+    label: 'Recipes',
+    icon: <ChefHat className="h-5 w-5" />,
     roles: [UserRole.OWNER],
   },
   {

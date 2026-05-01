@@ -903,6 +903,7 @@ export const finance = {
     api.post('/finance/recategorize-uncategorized').then((r) => r.data),
 
   vendors: () => api.get('/finance/vendors').then((r) => r.data),
+  // (recipes API at the bottom of this file)
   renameVendor: (old_name: string, new_name: string) =>
     api.post('/finance/vendors/rename', { old_name, new_name }).then((r) => r.data),
   backfillVendors: (overwrite = false) =>
@@ -918,4 +919,51 @@ export const finance = {
     api.post(`/finance/suggest-rules?use_llm=${useLlm}`).then((r) => r.data),
   acceptRules: (proposals: Array<{ merchant: string; category_id: number; vendor?: string | null; create_rule?: boolean }>) =>
     api.post('/finance/accept-rules', { proposals }).then((r) => r.data),
+};
+
+// ============================================================
+// Recipes
+// ============================================================
+
+export const recipes = {
+  categories: (includeArchived = false) =>
+    api.get('/recipe-categories', { params: { include_archived: includeArchived } }).then((r) => r.data),
+  createCategory: (data: { name: string; sort_order?: number }) =>
+    api.post('/recipe-categories', data).then((r) => r.data),
+  updateCategory: (id: number, data: { name?: string; sort_order?: number; is_archived?: boolean }) =>
+    api.patch(`/recipe-categories/${id}`, data).then((r) => r.data),
+  deleteCategory: (id: number) =>
+    api.delete(`/recipe-categories/${id}`).then((r) => r.data),
+
+  list: (params: { category_id?: number; is_template?: boolean; include_archived?: boolean; search?: string } = {}) =>
+    api.get('/recipes', { params }).then((r) => r.data),
+  get: (id: number) => api.get(`/recipes/${id}`).then((r) => r.data),
+  create: (data: {
+    name: string;
+    category_id: number;
+    sku?: string | null;
+    is_template?: boolean;
+    yields_amount?: number | null;
+    yields_unit?: string | null;
+    base_size?: string | null;
+    notes?: string | null;
+    template_id?: number | null;
+  }) => api.post('/recipes', data).then((r) => r.data),
+  updateMeta: (id: number, data: any) =>
+    api.patch(`/recipes/${id}`, data).then((r) => r.data),
+  archive: (id: number) => api.delete(`/recipes/${id}`).then((r) => r.data),
+  duplicate: (id: number) => api.post(`/recipes/${id}/duplicate`).then((r) => r.data),
+  replaceIngredients: (id: number, lines: Array<{
+    supply_item_id?: number | null;
+    sub_recipe_id?: number | null;
+    amount: number;
+    unit: string;
+    size_variant?: string | null;
+    sort_order?: number;
+    notes?: string | null;
+  }>) =>
+    api.put(`/recipes/${id}/ingredients`, lines).then((r) => r.data),
+
+  ingredientOptions: (search?: string) =>
+    api.get('/recipe-ingredients/options', { params: search ? { search } : {} }).then((r) => r.data),
 };
