@@ -51,3 +51,4 @@ from app.models.recipe import (  # noqa: E402, F401
     RecipeModifier,
     RecipeSizeMap,
 )
+from app.models.pos_sale import PosSale, PosSaleModifier  # noqa: E402, F401

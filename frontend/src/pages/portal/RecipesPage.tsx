@@ -10,11 +10,15 @@ import {
   Beaker,
   Layers,
   X as XIcon,
+  Upload as UploadIcon,
+  Receipt as ReceiptIcon,
+  Link as LinkIcon,
+  AlertCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import toast from 'react-hot-toast';
 
-import { recipes } from '@/lib/api';
+import { recipes, posSales, locations as locationsApi } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -49,7 +53,7 @@ const SIZE_OPTIONS = [
   { value: 'XL', label: 'Extra Large' },
 ];
 
-type Tab = 'recipes' | 'templates' | 'categories';
+type Tab = 'recipes' | 'templates' | 'categories' | 'sales';
 
 interface RecipeCategory {
   id: number;
@@ -134,6 +138,7 @@ export function RecipesPage() {
     { key: 'recipes', label: 'Recipes', icon: <ChefHat className="h-4 w-4" /> },
     { key: 'templates', label: 'Templates', icon: <Layers className="h-4 w-4" /> },
     { key: 'categories', label: 'Categories', icon: <Tag className="h-4 w-4" /> },
+    { key: 'sales', label: 'POS Sales', icon: <ReceiptIcon className="h-4 w-4" /> },
   ];
 
   return (
@@ -165,6 +170,7 @@ export function RecipesPage() {
       {tab === 'recipes' && <RecipeListTab onlyTemplates={false} />}
       {tab === 'templates' && <RecipeListTab onlyTemplates={true} />}
       {tab === 'categories' && <CategoriesTab />}
+      {tab === 'sales' && <PosSalesTab />}
     </div>
   );
 }
@@ -891,6 +897,257 @@ function CategoriesTab() {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// POS Sales tab
+// ---------------------------------------------------------------------------
+
+interface PosSaleRow {
+  id: number;
+  sale_datetime: string;
+  transaction_id: string;
+  order_id: string | null;
+  sku: string | null;
+  item_name: string;
+  modifiers: Array<{ group: string; value: string }>;
+  unit_price: number;
+  quantity: number;
+  subtotal: number;
+  item_discount: number;
+  grand_total: number;
+  status: string | null;
+  location_id: number | null;
+  location_name: string | null;
+  linked_recipe_id: number | null;
+  linked_recipe_name: string | null;
+}
+
+function PosSalesTab() {
+  const queryClient = useQueryClient();
+  const today = new Date();
+  const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+  const [start, setStart] = useState(fmt(sevenDaysAgo));
+  const [end, setEnd] = useState(fmt(today));
+  const [locationId, setLocationId] = useState<string>('');
+  const [skuFilter, setSkuFilter] = useState('');
+  const [page, setPage] = useState(1);
+
+  const { data: locs } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ['locations'],
+    queryFn: locationsApi.list,
+  });
+
+  const params = useMemo(() => {
+    const p: any = { start_date: start, end_date: end, page, per_page: 100 };
+    if (locationId) p.location_id = Number(locationId);
+    if (skuFilter) p.sku = skuFilter;
+    return p;
+  }, [start, end, locationId, skuFilter, page]);
+
+  const statsParams = useMemo(() => {
+    const p: any = { start_date: start, end_date: end };
+    if (locationId) p.location_id = Number(locationId);
+    return p;
+  }, [start, end, locationId]);
+
+  const { data: stats } = useQuery({
+    queryKey: ['pos-sales-stats', statsParams],
+    queryFn: () => posSales.stats(statsParams),
+  });
+
+  const { data, isLoading } = useQuery<{ items: PosSaleRow[]; total: number }>({
+    queryKey: ['pos-sales', params],
+    queryFn: () => posSales.list(params),
+  });
+
+  const upload = useMutation({
+    mutationFn: ({ file, locId }: { file: File; locId: number }) =>
+      posSales.uploadItemsXlsx(file, locId),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['pos-sales'] });
+      queryClient.invalidateQueries({ queryKey: ['pos-sales-stats'] });
+      toast.success(`Imported ${resp.inserted} new line(s) - skipped ${resp.skipped_duplicate} duplicate(s)`);
+    },
+    onError: (err: any) => toast.error(err?.response?.data?.detail ?? 'Upload failed'),
+  });
+
+  const handleFile = (file: File) => {
+    if (!locationId) {
+      toast.error('Pick a location before uploading');
+      return;
+    }
+    upload.mutate({ file, locId: Number(locationId) });
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <div className="flex flex-wrap gap-3 items-end">
+          <Input label="Start date" type="date" value={start} onChange={(e) => { setPage(1); setStart(e.target.value); }} />
+          <Input label="End date" type="date" value={end} onChange={(e) => { setPage(1); setEnd(e.target.value); }} />
+          <Select
+            label="Location"
+            className="w-56"
+            options={[{ value: '', label: 'All locations' }, ...((locs ?? []).map((l) => ({ value: String(l.id), label: l.name })))]}
+            value={locationId}
+            onChange={(e) => { setPage(1); setLocationId(e.target.value); }}
+          />
+          <Input label="SKU" value={skuFilter} onChange={(e) => { setPage(1); setSkuFilter(e.target.value); }} placeholder="e.g. FLVRD-LTT-0" />
+          <div className="ml-auto flex items-end gap-2">
+            <label className="cursor-pointer inline-flex">
+              <input
+                type="file"
+                accept=".xlsx"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFile(f);
+                  e.currentTarget.value = '';
+                }}
+              />
+              <span className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-md bg-primary text-white shadow-sm cursor-pointer hover:opacity-90">
+                <UploadIcon className="h-4 w-4" />
+                {upload.isPending ? 'Uploading...' : 'Upload Items XLSX'}
+              </span>
+            </label>
+          </div>
+        </div>
+        {!locationId && (
+          <p className="text-xs text-amber-700 mt-2 flex items-center gap-1">
+            <AlertCircle className="h-3 w-3" /> Pick a location before uploading - the GoDaddy export does not carry one.
+          </p>
+        )}
+      </Card>
+
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card>
+            <p className="text-xs uppercase text-gray-500">Lines</p>
+            <p className="text-2xl font-semibold tabular-nums">{stats.rows.toLocaleString()}</p>
+          </Card>
+          <Card>
+            <p className="text-xs uppercase text-gray-500">Gross subtotal</p>
+            <p className="text-2xl font-semibold tabular-nums">${stats.gross_subtotal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </Card>
+          <Card>
+            <p className="text-xs uppercase text-gray-500">Distinct SKUs</p>
+            <p className="text-2xl font-semibold tabular-nums">{stats.distinct_skus}</p>
+          </Card>
+          <Card>
+            <p className="text-xs uppercase text-gray-500">Recipe coverage</p>
+            <p className="text-2xl font-semibold tabular-nums">
+              {stats.linked_skus} / {stats.distinct_skus}
+            </p>
+            <p className="text-xs text-gray-500">{stats.unlinked_skus} unlinked</p>
+          </Card>
+        </div>
+      )}
+
+      {stats?.top_skus?.length > 0 && (
+        <Card title="Top SKUs by quantity (this window)" className="!p-0 overflow-hidden">
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+              <tr>
+                <th className="px-3 py-2 text-left">SKU</th>
+                <th className="px-3 py-2 text-right">Qty</th>
+                <th className="px-3 py-2 text-right">Lines</th>
+                <th className="px-3 py-2 text-right">Gross</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100 bg-white">
+              {stats.top_skus.map((s: any) => (
+                <tr key={s.sku}>
+                  <td className="px-3 py-1.5 font-mono text-xs">{s.sku}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{s.qty}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{s.lines}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">${s.gross.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      <Card title={`Sales - ${data?.total ?? 0}`} className="!p-0 overflow-hidden">
+        {isLoading ? (
+          <div className="p-6"><LoadingSpinner size="sm" /></div>
+        ) : !data?.items?.length ? (
+          <p className="p-8 text-center text-sm text-gray-500">No POS sales in this window - upload an Items XLSX to start.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left">Time</th>
+                  <th className="px-3 py-2 text-left">Item</th>
+                  <th className="px-3 py-2 text-left">Modifiers</th>
+                  <th className="px-3 py-2 text-right">Qty</th>
+                  <th className="px-3 py-2 text-right">Price</th>
+                  <th className="px-3 py-2 text-left">Recipe</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 bg-white">
+                {data.items.map((s) => (
+                  <tr key={s.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-500 text-xs whitespace-nowrap">
+                      {new Date(s.sale_datetime).toLocaleString(undefined, {
+                        month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit',
+                      })}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium">{s.item_name}</div>
+                      {s.sku && <div className="text-xs text-gray-400 font-mono">{s.sku}</div>}
+                    </td>
+                    <td className="px-3 py-2">
+                      {s.modifiers.length === 0 ? (
+                        <span className="text-xs text-gray-300">-</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {s.modifiers.map((m, i) => (
+                            <span key={i} className="text-xs bg-gray-100 px-1.5 py-0.5 rounded">
+                              <span className="text-gray-500">{m.group}:</span> {m.value}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{s.quantity}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">${s.unit_price.toFixed(2)}</td>
+                    <td className="px-3 py-2">
+                      {s.linked_recipe_id ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                          <LinkIcon className="h-3 w-3" /> {s.linked_recipe_name}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-gray-400">no recipe</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {data?.total != null && data.total > 100 && (
+        <div className="flex justify-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}>
+            Previous
+          </Button>
+          <span className="text-sm text-gray-600 self-center">
+            Page {page} of {Math.ceil(data.total / 100)}
+          </span>
+          <Button size="sm" variant="ghost" onClick={() => setPage((p) => p + 1)} disabled={page * 100 >= data.total}>
+            Next
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

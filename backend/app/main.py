@@ -30,6 +30,7 @@ from app.routers import (
     locations,
     messaging,
     payroll,
+    pos_sales,
     recipes,
     schedules,
     shift_swap,
@@ -79,6 +80,7 @@ app.include_router(insights.router, prefix="/api", tags=["Insights"])
 app.include_router(expenses.router, prefix="/api", tags=["Expenses"])
 app.include_router(finance.router, prefix="/api/finance", tags=["Finance"])
 app.include_router(recipes.router, prefix="/api", tags=["Recipes"])
+app.include_router(pos_sales.router, prefix="/api", tags=["POS Sales"])
 
 SEED_LOCATIONS = [
     {"name": "Six Beans - Apple Valley", "address": "21788 Bear Valley Rd", "city": "Apple Valley", "state": "CA", "zip_code": "92308", "phone": "(760) 946-9008"},

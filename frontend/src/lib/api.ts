@@ -967,3 +967,24 @@ export const recipes = {
   ingredientOptions: (search?: string) =>
     api.get('/recipe-ingredients/options', { params: search ? { search } : {} }).then((r) => r.data),
 };
+
+// ============================================================
+// POS Sales (GoDaddy Items export)
+// ============================================================
+
+export const posSales = {
+  uploadItemsXlsx: (file: File, locationId: number) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('location_id', String(locationId));
+    return api.post('/pos-sales/upload-items-xlsx', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+  list: (params: { start_date?: string; end_date?: string; location_id?: number; sku?: string; page?: number; per_page?: number }) =>
+    api.get('/pos-sales', { params }).then((r) => r.data),
+  stats: (params: { start_date?: string; end_date?: string; location_id?: number } = {}) =>
+    api.get('/pos-sales/stats', { params }).then((r) => r.data),
+  remove: (id: number) =>
+    api.delete(`/pos-sales/${id}`).then((r) => r.data),
+};
