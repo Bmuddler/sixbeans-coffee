@@ -232,6 +232,28 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS tapmango_fee_pct "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.03"
         ))
+        # Recipe-costing fields on the supply catalog. All nullable so
+        # existing rows aren't disturbed; the catalog UI prompts the
+        # owner to fill these in over time.
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS pack_size DOUBLE PRECISION"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS pack_unit VARCHAR(20)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS is_count_item BOOLEAN NOT NULL DEFAULT FALSE"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS density_oz_per_cup DOUBLE PRECISION"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS cost_per_base_unit DOUBLE PRECISION"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP "
+            "NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
         # actually exist on the live DB. create_all() only adds constraints
@@ -570,6 +592,10 @@ async def startup():
         from app.data.finance_seed import seed_finance, ensure_account_scoped_rules
         await seed_finance(session)
         await ensure_account_scoped_rules(session)
+
+        # Recipe categories: idempotent default seed.
+        from app.data.recipe_seed import seed_recipe_categories
+        await seed_recipe_categories(session)
 
         # USFoods: ensure the Victorville mapping picks up the typo'd shop
         # name "Six beans victorvillle" (three L's) we see on Square orders.

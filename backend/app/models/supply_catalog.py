@@ -13,10 +13,32 @@ class SupplyItem(Base):
     name = Column(String(255), nullable=False)
     category = Column(String(100), nullable=False)
     description = Column(Text, nullable=True)
+    # Pack price — what we pay for one pack/case/jug. Used as the numerator
+    # for cost-per-unit calculations.
     price = Column(Float, nullable=True)
     square_token = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    # ----- Recipe-costing fields -----
+    # How much product is in one pack at `price`. e.g. a $42 case of milk
+    # might be pack_size=128, pack_unit='oz' → cost $0.328/oz.
+    pack_size = Column(Float, nullable=True)
+    # Native pack unit. Use lowercase canonical strings:
+    #   weight: 'oz', 'lb', 'g', 'kg'
+    #   volume: 'floz', 'cup', 'tbsp', 'tsp', 'gal', 'qt', 'pt', 'ml', 'l'
+    #   count:  'each'
+    pack_unit = Column(String(20), nullable=True)
+    # True if the item is countable (eggs, bagels, lids, cups). Recipes can
+    # only ask for whole/half units of these — no oz conversion.
+    is_count_item = Column(Boolean, default=False, nullable=False)
+    # Optional density for items that need volume↔weight conversion
+    # (flour, sugar). Stored as oz of weight per 1 cup of volume.
+    density_oz_per_cup = Column(Float, nullable=True)
+    # Cached cost-per-base-unit. For weight items: $/oz. For volume items:
+    # $/floz. For count items: $/each. Kept in sync via a service helper
+    # whenever price or pack_size changes; the UI also displays this.
+    cost_per_base_unit = Column(Float, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
 class SupplyOrder(Base):

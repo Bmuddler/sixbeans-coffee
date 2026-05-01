@@ -16,6 +16,7 @@ from app.models.location import Location
 from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem
 from app.models.user import User, UserRole
 from app.services.notification_service import send_sms, user_wants_sms
+from app.services.units import compute_cost_per_base_unit, base_unit_for, normalize_unit
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,10 @@ class CatalogItemIn(BaseModel):
     description: str | None = None
     price: float | None = None
     square_token: str | None = None
+    pack_size: float | None = None
+    pack_unit: str | None = None
+    is_count_item: bool = False
+    density_oz_per_cup: float | None = None
 
 
 class CatalogItemUpdate(BaseModel):
@@ -54,6 +59,10 @@ class CatalogItemUpdate(BaseModel):
     price: float | None = None
     is_active: bool | None = None
     square_token: str | None = None
+    pack_size: float | None = None
+    pack_unit: str | None = None
+    is_count_item: bool | None = None
+    density_oz_per_cup: float | None = None
 
 
 # --- Endpoints ---
@@ -78,6 +87,12 @@ async def get_catalog(
             "name": item.name,
             "description": item.description,
             "price": item.price,
+            "pack_size": item.pack_size,
+            "pack_unit": item.pack_unit,
+            "is_count_item": item.is_count_item,
+            "density_oz_per_cup": item.density_oz_per_cup,
+            "cost_per_base_unit": item.cost_per_base_unit,
+            "base_unit": base_unit_for(item.pack_unit) if item.pack_unit else None,
         })
 
     categories = [
@@ -94,20 +109,22 @@ async def create_catalog_item(
     db: AsyncSession = Depends(get_db),
 ):
     """Add a new item to the supply catalog (owner only)."""
+    pack_unit = normalize_unit(body.pack_unit) or None
     item = SupplyItem(
         name=body.name,
         category=body.category,
         description=body.description,
         price=body.price,
         square_token=body.square_token,
+        pack_size=body.pack_size,
+        pack_unit=pack_unit,
+        is_count_item=bool(body.is_count_item),
+        density_oz_per_cup=body.density_oz_per_cup,
+        cost_per_base_unit=compute_cost_per_base_unit(body.price, body.pack_size, pack_unit),
     )
     db.add(item)
     await db.flush()
-    return {
-        "id": item.id, "name": item.name, "category": item.category,
-        "description": item.description, "price": item.price,
-        "is_active": item.is_active,
-    }
+    return _serialize_item(item)
 
 
 @router.patch("/catalog/{item_id}")
@@ -124,15 +141,19 @@ async def update_catalog_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     update_data = body.model_dump(exclude_unset=True)
+    if "pack_unit" in update_data:
+        update_data["pack_unit"] = normalize_unit(update_data["pack_unit"]) or None
     for field, value in update_data.items():
         setattr(item, field, value)
+    # Recompute the cached cost-per-base-unit whenever any cost-driving
+    # input changed.
+    if any(k in update_data for k in ("price", "pack_size", "pack_unit")):
+        item.cost_per_base_unit = compute_cost_per_base_unit(
+            item.price, item.pack_size, item.pack_unit,
+        )
     await db.flush()
 
-    return {
-        "id": item.id, "name": item.name, "category": item.category,
-        "description": item.description, "price": item.price,
-        "is_active": item.is_active,
-    }
+    return _serialize_item(item)
 
 
 @router.delete("/catalog/{item_id}")
@@ -170,14 +191,32 @@ async def copy_catalog_item(
         description=original.description,
         price=original.price,
         square_token=None,
+        pack_size=original.pack_size,
+        pack_unit=original.pack_unit,
+        is_count_item=original.is_count_item,
+        density_oz_per_cup=original.density_oz_per_cup,
+        cost_per_base_unit=original.cost_per_base_unit,
     )
     db.add(copy)
     await db.flush()
 
+    return _serialize_item(copy)
+
+
+def _serialize_item(item: SupplyItem) -> dict:
     return {
-        "id": copy.id, "name": copy.name, "category": copy.category,
-        "description": copy.description, "price": copy.price,
-        "is_active": copy.is_active,
+        "id": item.id,
+        "name": item.name,
+        "category": item.category,
+        "description": item.description,
+        "price": item.price,
+        "is_active": item.is_active,
+        "pack_size": item.pack_size,
+        "pack_unit": item.pack_unit,
+        "is_count_item": item.is_count_item,
+        "density_oz_per_cup": item.density_oz_per_cup,
+        "cost_per_base_unit": item.cost_per_base_unit,
+        "base_unit": base_unit_for(item.pack_unit) if item.pack_unit else None,
     }
 
 

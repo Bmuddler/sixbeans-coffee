@@ -585,10 +585,29 @@ export const supplyOrders = {
   deleteOrder: (id: number) =>
     api.delete(`/supply-orders/orders/${id}`).then((r) => r.data),
 
-  createCatalogItem: (data: { name: string; category: string; description?: string; price?: number }) =>
+  createCatalogItem: (data: {
+    name: string;
+    category: string;
+    description?: string;
+    price?: number;
+    pack_size?: number;
+    pack_unit?: string;
+    is_count_item?: boolean;
+    density_oz_per_cup?: number;
+  }) =>
     api.post('/supply-orders/catalog', data).then((r) => r.data),
 
-  updateCatalogItem: (id: number, data: { name?: string; category?: string; description?: string; price?: number; is_active?: boolean }) =>
+  updateCatalogItem: (id: number, data: {
+    name?: string;
+    category?: string;
+    description?: string;
+    price?: number;
+    is_active?: boolean;
+    pack_size?: number | null;
+    pack_unit?: string | null;
+    is_count_item?: boolean;
+    density_oz_per_cup?: number | null;
+  }) =>
     api.patch(`/supply-orders/catalog/${id}`, data).then((r) => r.data),
 
   deleteCatalogItem: (id: number) =>

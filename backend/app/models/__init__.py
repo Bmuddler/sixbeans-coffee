@@ -41,4 +41,13 @@ from app.models.finance import (  # noqa: E402, F401
     BankTransaction,
     ManualLedgerEntry,
     MonthlyClose,
+    Vendor,
+)
+from app.models.recipe import (  # noqa: E402, F401
+    RecipeCategory,
+    Recipe,
+    RecipeVersion,
+    RecipeIngredient,
+    RecipeModifier,
+    RecipeSizeMap,
 )

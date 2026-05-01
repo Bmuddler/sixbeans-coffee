@@ -24,7 +24,31 @@ interface CatalogItem {
   category: string;
   price: number;
   unit?: string;
+  pack_size?: number | null;
+  pack_unit?: string | null;
+  is_count_item?: boolean;
+  density_oz_per_cup?: number | null;
+  cost_per_base_unit?: number | null;
+  base_unit?: string | null;
 }
+
+const UNIT_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'oz', label: 'oz (weight)' },
+  { value: 'lb', label: 'lb' },
+  { value: 'g', label: 'g' },
+  { value: 'kg', label: 'kg' },
+  { value: 'floz', label: 'fl oz' },
+  { value: 'cup', label: 'cup' },
+  { value: 'tbsp', label: 'tbsp' },
+  { value: 'tsp', label: 'tsp' },
+  { value: 'gal', label: 'gallon' },
+  { value: 'qt', label: 'quart' },
+  { value: 'pt', label: 'pint' },
+  { value: 'ml', label: 'ml' },
+  { value: 'l', label: 'liter' },
+  { value: 'each', label: 'each (count)' },
+];
 
 interface CartItem {
   supply_item_id: number;
@@ -122,7 +146,16 @@ export function SupplyOrderPage() {
   // Catalog management (owner only)
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
   const [showAddItem, setShowAddItem] = useState(false);
-  const [itemForm, setItemForm] = useState({ name: '', category: '', description: '', price: '' });
+  const [itemForm, setItemForm] = useState({
+    name: '',
+    category: '',
+    description: '',
+    price: '',
+    pack_size: '',
+    pack_unit: '',
+    is_count_item: false,
+    density_oz_per_cup: '',
+  });
   const [manageCategory, setManageCategory] = useState<string>('');
 
   // Persist cart
@@ -169,7 +202,7 @@ export function SupplyOrderPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
       setShowAddItem(false);
-      setItemForm({ name: '', category: '', description: '', price: '' });
+      setItemForm({ name: '', category: '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
       toast.success('Item added');
     },
     onError: () => toast.error('Failed to add item'),
@@ -667,7 +700,7 @@ export function SupplyOrderPage() {
             <Button
               icon={<PlusCircle className="h-4 w-4" />}
               onClick={() => {
-                setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '' });
+                setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
                 setShowAddItem(true);
               }}
             >
@@ -690,6 +723,17 @@ export function SupplyOrderPage() {
                       </p>
                       <p className="text-sm font-medium text-[#5CB832]">
                         {item.price != null ? formatPrice(item.price) : 'No price'}
+                        {item.pack_size != null && item.pack_unit && (
+                          <span className="ml-2 text-xs font-normal text-gray-500">
+                            · {item.pack_size} {item.pack_unit}
+                            {item.cost_per_base_unit != null && (
+                              <> · ${item.cost_per_base_unit.toFixed(4)}/{item.base_unit}</>
+                            )}
+                          </span>
+                        )}
+                        {item.is_count_item && !item.pack_size && (
+                          <span className="ml-2 text-xs font-normal text-gray-500">· count item</span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -701,6 +745,10 @@ export function SupplyOrderPage() {
                             category: item.category,
                             description: item.description || '',
                             price: item.price != null ? String(item.price) : '',
+                            pack_size: item.pack_size != null ? String(item.pack_size) : '',
+                            pack_unit: item.pack_unit ?? '',
+                            is_count_item: !!item.is_count_item,
+                            density_oz_per_cup: item.density_oz_per_cup != null ? String(item.density_oz_per_cup) : '',
                           });
                         }}
                         className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
@@ -770,13 +818,14 @@ export function SupplyOrderPage() {
                 placeholder="e.g. Case of 6"
               />
               <Input
-                label="Price"
+                label="Pack price (what we pay for one pack/case)"
                 type="number"
                 step="0.01"
                 value={itemForm.price}
                 onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
                 placeholder="0.00"
               />
+              <CatalogUnitFields itemForm={itemForm} setItemForm={setItemForm} />
               <Button
                 className="w-full"
                 onClick={() => {
@@ -789,6 +838,10 @@ export function SupplyOrderPage() {
                     category: itemForm.category.trim(),
                     description: itemForm.description.trim() || undefined,
                     price: itemForm.price ? parseFloat(itemForm.price) : undefined,
+                    pack_size: itemForm.pack_size ? parseFloat(itemForm.pack_size) : undefined,
+                    pack_unit: itemForm.pack_unit || undefined,
+                    is_count_item: itemForm.is_count_item,
+                    density_oz_per_cup: itemForm.density_oz_per_cup ? parseFloat(itemForm.density_oz_per_cup) : undefined,
                   });
                 }}
                 loading={createItemMutation.isPending}
@@ -824,12 +877,13 @@ export function SupplyOrderPage() {
                 onChange={(e) => setItemForm((f) => ({ ...f, description: e.target.value }))}
               />
               <Input
-                label="Price"
+                label="Pack price"
                 type="number"
                 step="0.01"
                 value={itemForm.price}
                 onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
               />
+              <CatalogUnitFields itemForm={itemForm} setItemForm={setItemForm} />
               <Button
                 className="w-full"
                 onClick={() => {
@@ -841,6 +895,10 @@ export function SupplyOrderPage() {
                       category: itemForm.category.trim(),
                       description: itemForm.description.trim() || undefined,
                       price: itemForm.price ? parseFloat(itemForm.price) : undefined,
+                      pack_size: itemForm.pack_size ? parseFloat(itemForm.pack_size) : null,
+                      pack_unit: itemForm.pack_unit || null,
+                      is_count_item: itemForm.is_count_item,
+                      density_oz_per_cup: itemForm.density_oz_per_cup ? parseFloat(itemForm.density_oz_per_cup) : null,
                     },
                   });
                 }}
@@ -1213,5 +1271,106 @@ function OrderHistoryView({
         )}
       </Modal>
     </>
+  );
+}
+
+
+// ============================================================
+// CatalogUnitFields — pack size / unit / count / density inputs
+// ============================================================
+
+type CatalogUnitFormState = {
+  pack_size: string;
+  pack_unit: string;
+  is_count_item: boolean;
+  density_oz_per_cup: string;
+  price: string;
+  [k: string]: any;
+};
+
+function CatalogUnitFields({
+  itemForm,
+  setItemForm,
+}: {
+  itemForm: CatalogUnitFormState;
+  setItemForm: React.Dispatch<React.SetStateAction<any>>;
+}) {
+  // Live cost-per-base-unit preview using simple front-end conversion.
+  const preview = (() => {
+    const price = parseFloat(itemForm.price);
+    const size = parseFloat(itemForm.pack_size);
+    if (!Number.isFinite(price) || !Number.isFinite(size) || size <= 0) return null;
+    const u = (itemForm.pack_unit || '').toLowerCase();
+    if (!u) return null;
+    const toBase: Record<string, [string, number]> = {
+      oz: ['oz', 1], lb: ['oz', 16], g: ['oz', 0.035274], kg: ['oz', 35.274],
+      floz: ['floz', 1], cup: ['floz', 8], tbsp: ['floz', 0.5], tsp: ['floz', 0.16667],
+      gal: ['floz', 128], qt: ['floz', 32], pt: ['floz', 16],
+      ml: ['floz', 0.033814], l: ['floz', 33.814],
+      each: ['each', 1],
+    };
+    const c = toBase[u];
+    if (!c) return null;
+    const baseAmount = size * c[1];
+    if (baseAmount <= 0) return null;
+    return { unit: c[0], cost: price / baseAmount };
+  })();
+
+  return (
+    <div className="space-y-3 rounded-md border border-gray-200 p-3 bg-gray-50">
+      <p className="text-xs uppercase text-gray-500">Recipe costing (optional)</p>
+      <div className="grid grid-cols-2 gap-3">
+        <Input
+          label="Pack size"
+          type="number"
+          step="0.01"
+          value={itemForm.pack_size}
+          onChange={(e) => setItemForm((f: any) => ({ ...f, pack_size: e.target.value }))}
+          placeholder="e.g. 128"
+        />
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+          <select
+            value={itemForm.pack_unit}
+            onChange={(e) => {
+              const u = e.target.value;
+              setItemForm((f: any) => ({
+                ...f,
+                pack_unit: u,
+                is_count_item: u === 'each' ? true : f.is_count_item && u !== '' ? false : f.is_count_item,
+              }));
+            }}
+            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832]"
+          >
+            {UNIT_OPTIONS.map((u) => (
+              <option key={u.value} value={u.value}>{u.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={itemForm.is_count_item}
+          onChange={(e) => setItemForm((f: any) => ({ ...f, is_count_item: e.target.checked }))}
+        />
+        <span>Count item (eggs, bagels, lids — recipes use whole units)</span>
+      </label>
+      {(itemForm.pack_unit === 'cup' || itemForm.pack_unit === 'tbsp' || itemForm.pack_unit === 'tsp') && (
+        <Input
+          label="Density (oz of weight per 1 cup) — optional, lets recipes mix volume + weight"
+          type="number"
+          step="0.01"
+          value={itemForm.density_oz_per_cup}
+          onChange={(e) => setItemForm((f: any) => ({ ...f, density_oz_per_cup: e.target.value }))}
+          placeholder="e.g. 4.25 for flour"
+        />
+      )}
+      {preview && (
+        <p className="text-sm text-gray-700">
+          Per-unit cost: <strong>${preview.cost.toFixed(4)}</strong> / {preview.unit}
+        </p>
+      )}
+    </div>
   );
 }
