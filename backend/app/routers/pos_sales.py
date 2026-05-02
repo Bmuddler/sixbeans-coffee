@@ -186,24 +186,36 @@ async def pos_sales_stats(
        - SKU coverage: how many distinct SKUs have a recipe linked
        - top 10 SKUs by quantity
     """
-    base_q = select(PosSale)
+    # Build the WHERE clauses once and reuse — avoids the cartesian-product
+    # bug we'd hit with .select_from(base_q.subquery()) while still
+    # referencing PosSale columns in the outer aggregate.
+    conds = []
     if location_id:
-        base_q = base_q.where(PosSale.location_id == location_id)
+        conds.append(PosSale.location_id == location_id)
     if start_date:
-        base_q = base_q.where(func.date(PosSale.sale_datetime) >= start_date)
+        conds.append(func.date(PosSale.sale_datetime) >= start_date)
     if end_date:
-        base_q = base_q.where(func.date(PosSale.sale_datetime) <= end_date)
+        conds.append(func.date(PosSale.sale_datetime) <= end_date)
 
-    count = (await db.execute(select(func.count()).select_from(base_q.subquery()))).scalar() or 0
-    gross = (await db.execute(
-        select(func.coalesce(func.sum(PosSale.subtotal), 0.0)).select_from(base_q.subquery())
-    )).scalar() or 0.0
+    count_q = select(func.count(PosSale.id))
+    if conds:
+        count_q = count_q.where(*conds)
+    count = (await db.execute(count_q)).scalar() or 0
 
-    distinct_skus = (await db.execute(
-        select(PosSale.sku, func.count(), func.sum(PosSale.quantity), func.sum(PosSale.subtotal))
-        .select_from(base_q.subquery().alias("p"))
-        .group_by(PosSale.sku)
-    )).all()
+    gross_q = select(func.coalesce(func.sum(PosSale.subtotal), 0.0))
+    if conds:
+        gross_q = gross_q.where(*conds)
+    gross = (await db.execute(gross_q)).scalar() or 0.0
+
+    distinct_q = select(
+        PosSale.sku,
+        func.count(PosSale.id),
+        func.sum(PosSale.quantity),
+        func.sum(PosSale.subtotal),
+    ).group_by(PosSale.sku)
+    if conds:
+        distinct_q = distinct_q.where(*conds)
+    distinct_skus = (await db.execute(distinct_q)).all()
 
     # Recipe coverage
     skus = {row[0] for row in distinct_skus if row[0]}
