@@ -330,12 +330,16 @@ function RecipeCreateModal({
   onCreated,
   categories,
   defaultIsTemplate,
+  prefillName,
+  prefillSku,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: (id: number) => void;
   categories: RecipeCategory[];
   defaultIsTemplate: boolean;
+  prefillName?: string;
+  prefillSku?: string;
 }) {
   const [form, setForm] = useState({
     name: '',
@@ -350,15 +354,15 @@ function RecipeCreateModal({
   useEffect(() => {
     if (!open) return;
     setForm({
-      name: '',
+      name: prefillName ?? '',
       category_id: categories[0] ? String(categories[0].id) : '',
-      sku: '',
+      sku: prefillSku ?? '',
       is_template: defaultIsTemplate,
       yields_amount: '',
       yields_unit: '',
       template_id: '',
     });
-  }, [open, defaultIsTemplate, categories]);
+  }, [open, defaultIsTemplate, categories, prefillName, prefillSku]);
 
   const { data: templates } = useQuery<{ items: RecipeSummary[] }>({
     queryKey: ['recipes', 'templates-only'],
@@ -576,9 +580,15 @@ function IngredientEditor({
       </div>
 
       {lines.length === 0 ? (
-        <p className="text-sm text-gray-500 py-4 text-center border border-dashed border-gray-200 rounded">
-          No ingredients yet — click + Add ingredient.
-        </p>
+        <div className="border border-dashed border-gray-300 rounded p-6 text-center bg-gray-50">
+          <p className="text-sm text-gray-700 font-medium mb-1">No ingredients yet</p>
+          <p className="text-xs text-gray-500 mb-3">
+            Add every ingredient that goes into this drink — milk, espresso, syrup, ice, etc. Each line sets an amount and unit (most use oz; eggs/bagels use "each").
+          </p>
+          <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => setPickerOpen(true)}>
+            Add first ingredient
+          </Button>
+        </div>
       ) : (
         <div className="overflow-x-auto border border-gray-200 rounded">
           <table className="min-w-full text-sm">
@@ -936,10 +946,17 @@ function PosSalesTab() {
   const [locationId, setLocationId] = useState<string>('');
   const [skuFilter, setSkuFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [prefill, setPrefill] = useState<{ name: string; sku: string } | null>(null);
+  const [editorRecipeId, setEditorRecipeId] = useState<number | null>(null);
 
   const { data: locs } = useQuery<Array<{ id: number; name: string }>>({
     queryKey: ['locations'],
     queryFn: locationsApi.list,
+  });
+
+  const { data: cats } = useQuery<{ items: RecipeCategory[] }>({
+    queryKey: ['recipe-categories'],
+    queryFn: () => recipes.categories(false),
   });
 
   const params = useMemo(() => {
@@ -1120,11 +1137,22 @@ function PosSalesTab() {
                     <td className="px-3 py-2 text-right tabular-nums">${s.unit_price.toFixed(2)}</td>
                     <td className="px-3 py-2">
                       {s.linked_recipe_id ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+                        <button
+                          className="inline-flex items-center gap-1 text-xs text-emerald-700 hover:underline"
+                          onClick={() => setEditorRecipeId(s.linked_recipe_id!)}
+                        >
                           <LinkIcon className="h-3 w-3" /> {s.linked_recipe_name}
-                        </span>
+                        </button>
+                      ) : s.sku ? (
+                        <button
+                          onClick={() => setPrefill({ name: s.item_name, sku: s.sku! })}
+                          className="text-xs text-primary hover:underline"
+                          title="Create a recipe for this SKU"
+                        >
+                          + create recipe
+                        </button>
                       ) : (
-                        <span className="text-xs text-gray-400">no recipe</span>
+                        <span className="text-xs text-gray-300" title="Custom items have no SKU — they can't be linked to a recipe.">no SKU</span>
                       )}
                     </td>
                   </tr>
@@ -1147,6 +1175,33 @@ function PosSalesTab() {
             Next
           </Button>
         </div>
+      )}
+
+      <RecipeCreateModal
+        open={!!prefill}
+        onClose={() => setPrefill(null)}
+        onCreated={(id) => {
+          setPrefill(null);
+          setEditorRecipeId(id);
+          queryClient.invalidateQueries({ queryKey: ['pos-sales'] });
+          queryClient.invalidateQueries({ queryKey: ['pos-sales-stats'] });
+          queryClient.invalidateQueries({ queryKey: ['recipes'] });
+        }}
+        categories={cats?.items ?? []}
+        defaultIsTemplate={false}
+        prefillName={prefill?.name}
+        prefillSku={prefill?.sku}
+      />
+
+      {editorRecipeId !== null && (
+        <RecipeEditorModal
+          recipeId={editorRecipeId}
+          categories={cats?.items ?? []}
+          onClose={() => {
+            setEditorRecipeId(null);
+            queryClient.invalidateQueries({ queryKey: ['pos-sales'] });
+          }}
+        />
       )}
     </div>
   );
