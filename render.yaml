@@ -33,41 +33,10 @@ services:
       - key: GODADDY_API_SECRET
         sync: false
 
-  # Daily analytics health check — emails the owner if yesterday's
-  # GoDaddy or TapMango Orders failed to sync. Uses the same Gmail
-  # OAuth refresh token as the DoorDash watcher (new gmail.send scope
-  # means the owner must re-consent on the Analytics Admin page once
-  # after this deploy).
-  - type: cron
-    name: sixbeans-analytics-alerter
-    runtime: docker
-    region: oregon
-    plan: starter
-    rootDir: backend
-    dockerfilePath: ./Dockerfile.ingest
-    # 15:00 UTC = 8:00 AM PDT / 7:00 AM PST.
-    schedule: "0 15 * * *"
-    dockerCommand: python -m scripts.alert_if_missing
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: sixbeans-db
-          property: connectionString
-      - key: SCRAPER_SESSION_ENCRYPTION_KEY
-        sync: false
-      - key: GMAIL_OAUTH_CLIENT_ID
-        sync: false
-      - key: GMAIL_OAUTH_CLIENT_SECRET
-        sync: false
-      - key: GMAIL_OAUTH_REDIRECT_URI
-        sync: false
-      - key: ANALYTICS_ALERT_RECIPIENT
-        value: logcastles@gmail.com
-
   # Weekly database backup — pg_dumps the Postgres DB and emails the
   # file (Gmail attachment, custom format) to the owner. Uses the same
-  # Gmail OAuth token the analytics alerter already uses, so no new
-  # secrets. Restore with pg_restore from the attached .dump file.
+  # Gmail OAuth token the rest of the app uses, so no new secrets.
+  # Restore with pg_restore from the attached .dump file.
   - type: cron
     name: sixbeans-db-backup
     runtime: docker
