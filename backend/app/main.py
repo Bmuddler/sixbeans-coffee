@@ -627,8 +627,12 @@ async def startup():
         # marker so it never repeats.
         #
         # v1 (2026-05-02): vendor renegotiation — drop every price 15%.
+        # NOTE: do not re-import SystemSettings here. Python's scoping
+        # rules treat any name assigned anywhere in a function as local
+        # to the whole function, so a local `from … import SystemSettings`
+        # would shadow the module-level import even from earlier lines
+        # and break analytics_reset_version handling above.
         from sqlalchemy import select as _select
-        from app.models.system_settings import SystemSettings
         from app.models.supply_catalog import SupplyItem
         from app.services.units import compute_cost_per_base_unit as _cpbu
 
