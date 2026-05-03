@@ -236,6 +236,10 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS tapmango_fee_pct "
             "DOUBLE PRECISION NOT NULL DEFAULT 0.03"
         ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS catalog_price_version "
+            "INTEGER NOT NULL DEFAULT 0"
+        ))
         # Recipe-costing fields on the supply catalog. All nullable so
         # existing rows aren't disturbed; the catalog UI prompts the
         # owner to fill these in over time.
@@ -615,6 +619,64 @@ async def startup():
                 result["filled"], result["unrecognised_count"],
                 result["skipped_existing"],
             )
+
+        # One-shot supply catalog price adjustments. The TARGET counter
+        # below is bumped manually by an engineer to fire a new pass.
+        # Each version multiplies every active catalog price by the
+        # corresponding factor, exactly once, then bumps the stored
+        # marker so it never repeats.
+        #
+        # v1 (2026-05-02): vendor renegotiation — drop every price 15%.
+        from sqlalchemy import select as _select
+        from app.models.system_settings import SystemSettings
+        from app.models.supply_catalog import SupplyItem
+        from app.services.units import compute_cost_per_base_unit as _cpbu
+
+        CATALOG_PRICE_TARGET_VERSION = 1
+        CATALOG_PRICE_PASSES = {
+            # version → (multiplier, label)
+            1: (0.85, "vendor renegotiation: -15%"),
+        }
+
+        sysrow = (await session.execute(
+            _select(SystemSettings).limit(1)
+        )).scalar_one_or_none()
+        if sysrow is None:
+            sysrow = SystemSettings(id=1)
+            session.add(sysrow)
+            await session.flush()
+
+        current_v = int(getattr(sysrow, "catalog_price_version", 0) or 0)
+        while current_v < CATALOG_PRICE_TARGET_VERSION:
+            next_v = current_v + 1
+            spec = CATALOG_PRICE_PASSES.get(next_v)
+            if spec is None:
+                break
+            multiplier, label = spec
+            items_q = _select(SupplyItem).where(SupplyItem.is_active.is_(True))
+            items = (await session.execute(items_q)).scalars().all()
+            updated = 0
+            total_old = 0.0
+            total_new = 0.0
+            for item in items:
+                if item.price is None:
+                    continue
+                old = float(item.price)
+                new = round(old * multiplier, 4)
+                total_old += old
+                total_new += new
+                item.price = new
+                if item.pack_size and item.pack_unit:
+                    item.cost_per_base_unit = _cpbu(new, item.pack_size, item.pack_unit)
+                updated += 1
+            sysrow.catalog_price_version = next_v
+            await session.commit()
+            logger.warning(
+                "Catalog price pass v%d (%s) applied: %d items repriced, "
+                "catalog total %.2f -> %.2f (Δ %.2f)",
+                next_v, label, updated, total_old, total_new, total_new - total_old,
+            )
+            current_v = next_v
 
         # USFoods: ensure the Victorville mapping picks up the typo'd shop
         # name "Six beans victorvillle" (three L's) we see on Square orders.

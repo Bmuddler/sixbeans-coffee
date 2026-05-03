@@ -29,4 +29,8 @@ class SystemSettings(Base):
     # Monotonic marker for one-shot analytics-data self-healing migrations.
     # Bump the hard-coded TARGET below and boot will wipe & expect reload.
     analytics_reset_version = Column(Integer, default=0, nullable=False)
+    # Monotonic marker for one-shot supply catalog price adjustments.
+    # Bump the TARGET in main.py and boot multiplies every active
+    # catalog price by the corresponding factor, exactly once.
+    catalog_price_version = Column(Integer, default=0, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
