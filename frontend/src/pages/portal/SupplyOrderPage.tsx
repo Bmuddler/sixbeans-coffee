@@ -913,84 +913,88 @@ export function SupplyOrderPage() {
 
       {/* Review / Submit Modal */}
       <Modal open={reviewOpen} onClose={() => setReviewOpen(false)} title="Review Order" size="lg">
-        <div className="space-y-4">
-          {/* Location */}
-          {locationOptions.length > 1 && (
-            <Select
-              label="Location"
-              options={locationOptions}
-              value={locationId}
-              onChange={(e) => setLocationId(Number(e.target.value))}
-              placeholder="Select location"
-            />
-          )}
-          {locationOptions.length === 1 && (
-            <p className="text-sm text-gray-600">
-              <span className="font-medium">Location:</span> {locationOptions[0].label}
-            </p>
-          )}
+        {/* Flex column inside the modal body. Items list is the only thing
+             that scrolls; total + notes + Submit stay pinned in view so
+             the order can always be submitted no matter how big the cart. */}
+        <div className="flex flex-col gap-4 -m-6 h-full">
+          <div className="flex-shrink-0 px-6 pt-6 space-y-3">
+            {locationOptions.length > 1 && (
+              <Select
+                label="Location"
+                options={locationOptions}
+                value={locationId}
+                onChange={(e) => setLocationId(Number(e.target.value))}
+                placeholder="Select location"
+              />
+            )}
+            {locationOptions.length === 1 && (
+              <p className="text-sm text-gray-600">
+                <span className="font-medium">Location:</span> {locationOptions[0].label}
+              </p>
+            )}
+          </div>
 
-          {/* Items */}
-          <div className="border rounded-lg divide-y divide-gray-100 max-h-[40vh] overflow-y-auto">
-            {cart.map((item) => (
-              <div key={item.supply_item_id} className="flex items-center gap-3 px-3 py-2">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                  <p className="text-xs text-gray-500">{item.category}</p>
+          {/* Items — flex-1 so it eats the remaining vertical space */}
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 border-y border-gray-100">
+            <div className="divide-y divide-gray-100">
+              {cart.map((item) => (
+                <div key={item.supply_item_id} className="flex items-center gap-3 py-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{item.name}</p>
+                    <p className="text-xs text-gray-500">{item.category}</p>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <input
+                      type="number"
+                      min={1}
+                      value={item.quantity}
+                      onChange={(e) =>
+                        updateCartQty(item.supply_item_id, parseInt(e.target.value) || 1)
+                      }
+                      className="h-7 w-14 rounded border border-gray-300 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="text-sm font-medium text-gray-700 w-16 text-right">
+                      {formatPrice(item.price * item.quantity)}
+                    </span>
+                    <button
+                      onClick={() => removeFromCart(item.supply_item_id)}
+                      className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <input
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    onChange={(e) =>
-                      updateCartQty(item.supply_item_id, parseInt(e.target.value) || 1)
-                    }
-                    className="h-7 w-14 rounded border border-gray-300 text-center text-sm [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-sm font-medium text-gray-700 w-16 text-right">
-                    {formatPrice(item.price * item.quantity)}
-                  </span>
-                  <button
-                    onClick={() => removeFromCart(item.supply_item_id)}
-                    className="p-1 rounded text-gray-400 hover:text-red-500 hover:bg-red-50"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
 
-          {/* Total */}
-          <div className="flex justify-between items-center pt-2 border-t">
-            <span className="font-semibold text-gray-900">Total ({cartCount} items)</span>
-            <span className="text-lg font-bold text-[#5CB832]">{formatPrice(cartTotal)}</span>
+          {/* Sticky footer — total + notes + submit always visible */}
+          <div className="flex-shrink-0 px-6 pb-6 space-y-3 bg-white">
+            <div className="flex justify-between items-center">
+              <span className="font-semibold text-gray-900">Total ({cartCount} items)</span>
+              <span className="text-lg font-bold text-[#5CB832]">{formatPrice(cartTotal)}</span>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Notes (optional)
+              </label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                placeholder="Any special instructions..."
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832] focus:border-[#5CB832]"
+              />
+            </div>
+            <Button
+              onClick={handleSubmit}
+              loading={submitMutation.isPending}
+              className="w-full bg-[#5CB832] hover:bg-[#4a9628]"
+              size="lg"
+            >
+              Submit Order
+            </Button>
           </div>
-
-          {/* Notes */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Notes (optional)
-            </label>
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={2}
-              placeholder="Any special instructions..."
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832] focus:border-[#5CB832]"
-            />
-          </div>
-
-          {/* Submit */}
-          <Button
-            onClick={handleSubmit}
-            loading={submitMutation.isPending}
-            className="w-full bg-[#5CB832] hover:bg-[#4a9628]"
-            size="lg"
-          >
-            Submit Order
-          </Button>
         </div>
       </Modal>
     </div>

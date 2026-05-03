@@ -45,12 +45,16 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
     >
       <div
         className={clsx(
-          'w-full rounded-xl bg-white shadow-xl',
+          // Flex column so we can pin a sticky title at top, scroll the
+          // body, and keep any footer (rendered via the children) visible.
+          // max-h prevents the modal from exceeding the viewport — the
+          // body becomes the scroll surface instead.
+          'flex w-full flex-col rounded-xl bg-white shadow-xl max-h-[calc(100vh-2rem)]',
           sizeStyles[size],
         )}
       >
         {title && (
-          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+          <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4 flex-shrink-0">
             <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
             <button
               onClick={onClose}
@@ -60,7 +64,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }: ModalProp
             </button>
           </div>
         )}
-        <div className="p-6">{children}</div>
+        <div className="p-6 overflow-y-auto flex-1 min-h-0">{children}</div>
       </div>
     </div>
   );
