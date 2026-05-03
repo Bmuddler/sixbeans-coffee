@@ -236,6 +236,17 @@ export function SupplyOrderPage() {
     onError: () => toast.error('Failed to copy item'),
   });
 
+  const autoFillUnitsMutation = useMutation({
+    mutationFn: (overwrite: boolean) => supplyOrders.autoFillCatalogUnits(overwrite),
+    onSuccess: (resp) => {
+      queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
+      toast.success(
+        `Auto-filled ${resp.filled} item(s)${resp.unrecognised_count ? ` · ${resp.unrecognised_count} still need manual review` : ''}.`,
+      );
+    },
+    onError: () => toast.error('Auto-fill failed'),
+  });
+
   const deleteOrderMutation = useMutation({
     mutationFn: supplyOrders.deleteOrder,
     onSuccess: () => {
@@ -697,15 +708,26 @@ export function SupplyOrderPage() {
                 </button>
               ))}
             </div>
-            <Button
-              icon={<PlusCircle className="h-4 w-4" />}
-              onClick={() => {
-                setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
-                setShowAddItem(true);
-              }}
-            >
-              Add Item
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={autoFillUnitsMutation.isPending}
+                onClick={() => autoFillUnitsMutation.mutate(false)}
+                title="Heuristic parser fills pack size + unit + count flag from each item's name and description, only on items that don't have one yet"
+              >
+                Auto-fill pack info
+              </Button>
+              <Button
+                icon={<PlusCircle className="h-4 w-4" />}
+                onClick={() => {
+                  setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
+                  setShowAddItem(true);
+                }}
+              >
+                Add Item
+              </Button>
+            </div>
           </div>
 
           {/* Items list */}

@@ -601,6 +601,21 @@ async def startup():
         from app.data.recipe_seed import seed_recipe_categories
         await seed_recipe_categories(session)
 
+        # Catalog pack-info backfill: heuristic parser fills any rows
+        # that don't yet have pack_size/pack_unit set. Idempotent —
+        # skips items the owner has already filled in. Logs unrecognised
+        # count so we can tell from boot logs how many still need
+        # manual review.
+        from app.data.catalog_unit_backfill import backfill_catalog_units
+        result = await backfill_catalog_units(session, overwrite=False)
+        if result["filled"] or result["unrecognised_count"]:
+            logger.info(
+                "Catalog pack-info backfill: filled=%d unrecognised=%d "
+                "skipped_existing=%d",
+                result["filled"], result["unrecognised_count"],
+                result["skipped_existing"],
+            )
+
         # USFoods: ensure the Victorville mapping picks up the typo'd shop
         # name "Six beans victorvillle" (three L's) we see on Square orders.
         # Idempotent: only updates if the keyword isn't already there.

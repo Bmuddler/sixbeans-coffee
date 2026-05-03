@@ -17,6 +17,7 @@ from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem
 from app.models.user import User, UserRole
 from app.services.notification_service import send_sms, user_wants_sms
 from app.services.units import compute_cost_per_base_unit, base_unit_for, normalize_unit
+from app.data.catalog_unit_backfill import backfill_catalog_units
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +172,22 @@ async def delete_catalog_item(
     item.is_active = False
     await db.flush()
     return {"ok": True}
+
+
+@router.post("/catalog/auto-fill-units")
+async def auto_fill_units(
+    overwrite: bool = False,
+    current_user: User = Depends(require_roles(UserRole.owner)),
+    db: AsyncSession = Depends(get_db),
+):
+    """Run the heuristic parser over every catalog item and fill missing
+    pack_size / pack_unit / is_count_item from name + description.
+
+    overwrite=False (default) only fills items where pack_size IS NULL,
+    so manual edits are never clobbered. overwrite=True re-runs against
+    every item.
+    """
+    return await backfill_catalog_units(db, overwrite=overwrite)
 
 
 @router.post("/catalog/{item_id}/copy", status_code=status.HTTP_201_CREATED)

@@ -610,6 +610,9 @@ export const supplyOrders = {
   }) =>
     api.patch(`/supply-orders/catalog/${id}`, data).then((r) => r.data),
 
+  autoFillCatalogUnits: (overwrite = false) =>
+    api.post(`/supply-orders/catalog/auto-fill-units?overwrite=${overwrite}`).then((r) => r.data),
+
   deleteCatalogItem: (id: number) =>
     api.delete(`/supply-orders/catalog/${id}`).then((r) => r.data),
 
