@@ -2,6 +2,9 @@
 
 Replaces the local sixbeans_report.py script. Runs on Mon/Fri via external
 cron (Render cron job or similar) or manually from the dashboard.
+
+Also merges in orders placed via the in-app /portal/supply-orders page so
+shops that no longer use Square still show up on the same report.
 """
 
 import re
@@ -15,7 +18,13 @@ from email.mime.text import MIMEText
 import pytz
 import httpx
 
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from app.config import settings
+from app.database import async_session
+from app.models.location import Location
+from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem
 
 logger = logging.getLogger(__name__)
 
@@ -168,6 +177,56 @@ def _get_shop_name(order: dict) -> str:
         if val:
             return re.sub(r"\s+", " ", val[:60])
     return "Unknown Shop"
+
+
+async def fetch_portal_orders(start_iso: str, end_iso: str) -> dict:
+    """Walk SupplyOrder rows created in the [start, end) window and
+    return them in the same {supplier: {shop: [item_text]}} structure
+    that parse_orders() produces from Square. Aggregates duplicate items
+    on the same order into a single line with an x{N} suffix.
+    """
+    start_dt = datetime.fromisoformat(start_iso)
+    end_dt = datetime.fromisoformat(end_iso)
+    # Strip tz so the comparison against naive created_at works.
+    if start_dt.tzinfo is not None:
+        start_dt = start_dt.astimezone(pytz.utc).replace(tzinfo=None)
+    if end_dt.tzinfo is not None:
+        end_dt = end_dt.astimezone(pytz.utc).replace(tzinfo=None)
+
+    out: dict = defaultdict(lambda: defaultdict(list))
+
+    async with async_session() as session:
+        rows = (await session.execute(
+            select(SupplyOrder)
+            .where(SupplyOrder.created_at >= start_dt)
+            .where(SupplyOrder.created_at < end_dt)
+            .options(
+                selectinload(SupplyOrder.items).selectinload(SupplyOrderItem.supply_item),
+                selectinload(SupplyOrder.location),
+            )
+        )).scalars().all()
+
+        for order in rows:
+            shop = order.location.name if order.location else "Unknown Shop"
+            # Aggregate same-item lines on this order
+            agg: dict[tuple[str, str], int] = defaultdict(int)
+            for line in order.items:
+                supplier = (line.supply_item.supplier if line.supply_item else None) or "OTHER"
+                name = line.item_name or (line.supply_item.name if line.supply_item else "(unknown)")
+                agg[(supplier, name)] += int(line.quantity or 1)
+
+            for (supplier, name), qty in agg.items():
+                text = name if qty <= 1 else f"{name} x{qty}"
+                out[supplier][shop].append(text)
+
+    return out
+
+
+def merge_report_data(into: dict, extra: dict) -> None:
+    """In-place merge of {supplier: {shop: [items]}} dicts."""
+    for supplier, shops in extra.items():
+        for shop, items in shops.items():
+            into[supplier][shop].extend(items)
 
 
 def parse_orders(orders: list[dict]) -> dict:
@@ -598,12 +657,21 @@ async def run_supply_report(manual: bool = False) -> dict:
         batch_name, window_label, manual,
     )
 
-    # Fetch
-    all_orders = await fetch_square_orders(start_iso, end_iso)
+    # Fetch from both sources in parallel-ish (sequential is fine for the
+    # cron path; the important thing is we don't bail early when one is
+    # empty).
+    try:
+        all_orders = await fetch_square_orders(start_iso, end_iso)
+    except Exception:
+        logger.exception("Square fetch failed — continuing with portal orders only")
+        all_orders = []
 
-    # No orders — send notice
-    if not all_orders:
-        logger.info("No orders found, sending notice email")
+    portal_data = await fetch_portal_orders(start_iso, end_iso)
+    portal_line_count = sum(len(items) for shops in portal_data.values() for items in shops.values())
+
+    # No orders from either source — send notice and stop.
+    if not all_orders and not portal_line_count:
+        logger.info("No orders found from Square or portal, sending notice email")
         send_report_email(
             FULL_RECIPIENTS,
             f"Six Beans Scheduled Window (NO ORDERS) ({window_label})",
@@ -616,12 +684,14 @@ async def run_supply_report(manual: bool = False) -> dict:
             "batch_name": batch_name,
             "window": window_label,
             "total_orders": 0,
+            "portal_lines": 0,
             "tagged_suppliers": 0,
             "emails_sent": 1,
         }
 
-    # Parse
+    # Parse Square + merge portal-placed orders into the same buckets.
     report_data = parse_orders(all_orders)
+    merge_report_data(report_data, portal_data)
 
     # ── Build PDF of all orders ────────────────────────────
     pdf_data = _build_orders_pdf(report_data, batch_name, window_label, len(all_orders))
@@ -696,6 +766,7 @@ async def run_supply_report(manual: bool = False) -> dict:
         "batch_name": batch_name,
         "window": window_label,
         "total_orders": len(all_orders),
+        "portal_lines": portal_line_count,
         "tagged_suppliers": len(report_data),
         "has_bakery": has_bakery,
         "emails_sent": emails_sent,

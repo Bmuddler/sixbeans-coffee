@@ -30,7 +30,24 @@ interface CatalogItem {
   density_oz_per_cup?: number | null;
   cost_per_base_unit?: number | null;
   base_unit?: string | null;
+  supplier?: string | null;
+  usfoods_pn?: string | null;
 }
+
+const SUPPLIER_OPTIONS = [
+  { value: '', label: '—' },
+  { value: 'WAREHOUSE', label: 'Warehouse' },
+  { value: 'BAKERY', label: 'Bakery' },
+  { value: 'DAIRY', label: 'Dairy' },
+  { value: 'US FOODS', label: 'US Foods' },
+  { value: 'COSTCO', label: 'Costco' },
+  { value: 'WINCO', label: 'WinCo' },
+  { value: 'WEBSTAURANT', label: 'Webstaurant' },
+  { value: 'KLATCH', label: 'Klatch' },
+  { value: 'OLD TOWN BAKING', label: 'Old Town Baking' },
+  { value: 'BANK', label: 'Bank' },
+  { value: 'OTHER', label: 'Other' },
+];
 
 const UNIT_OPTIONS = [
   { value: '', label: '—' },
@@ -155,6 +172,8 @@ export function SupplyOrderPage() {
     pack_unit: '',
     is_count_item: false,
     density_oz_per_cup: '',
+    supplier: '',
+    usfoods_pn: '',
   });
   const [manageCategory, setManageCategory] = useState<string>('');
 
@@ -202,7 +221,7 @@ export function SupplyOrderPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
       setShowAddItem(false);
-      setItemForm({ name: '', category: '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
+      setItemForm({ name: '', category: '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '', supplier: '', usfoods_pn: '' });
       toast.success('Item added');
     },
     onError: () => toast.error('Failed to add item'),
@@ -721,7 +740,7 @@ export function SupplyOrderPage() {
               <Button
                 icon={<PlusCircle className="h-4 w-4" />}
                 onClick={() => {
-                  setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '' });
+                  setItemForm({ name: '', category: manageCategory || categories[0] || '', description: '', price: '', pack_size: '', pack_unit: '', is_count_item: false, density_oz_per_cup: '', supplier: '', usfoods_pn: '' });
                   setShowAddItem(true);
                 }}
               >
@@ -756,6 +775,11 @@ export function SupplyOrderPage() {
                         {item.is_count_item && !item.pack_size && (
                           <span className="ml-2 text-xs font-normal text-gray-500">· count item</span>
                         )}
+                        {item.supplier && (
+                          <span className="ml-2 text-xs font-normal text-gray-500">
+                            · from {item.supplier}{item.usfoods_pn ? ` PN:${item.usfoods_pn}` : ''}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
@@ -771,6 +795,8 @@ export function SupplyOrderPage() {
                             pack_unit: item.pack_unit ?? '',
                             is_count_item: !!item.is_count_item,
                             density_oz_per_cup: item.density_oz_per_cup != null ? String(item.density_oz_per_cup) : '',
+                            supplier: item.supplier ?? '',
+                            usfoods_pn: item.usfoods_pn ?? '',
                           });
                         }}
                         className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50"
@@ -848,6 +874,7 @@ export function SupplyOrderPage() {
                 placeholder="0.00"
               />
               <CatalogUnitFields itemForm={itemForm} setItemForm={setItemForm} />
+              <CatalogSupplierFields itemForm={itemForm} setItemForm={setItemForm} />
               <Button
                 className="w-full"
                 onClick={() => {
@@ -864,6 +891,8 @@ export function SupplyOrderPage() {
                     pack_unit: itemForm.pack_unit || undefined,
                     is_count_item: itemForm.is_count_item,
                     density_oz_per_cup: itemForm.density_oz_per_cup ? parseFloat(itemForm.density_oz_per_cup) : undefined,
+                    supplier: itemForm.supplier || undefined,
+                    usfoods_pn: itemForm.usfoods_pn.trim() || undefined,
                   });
                 }}
                 loading={createItemMutation.isPending}
@@ -906,6 +935,7 @@ export function SupplyOrderPage() {
                 onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))}
               />
               <CatalogUnitFields itemForm={itemForm} setItemForm={setItemForm} />
+              <CatalogSupplierFields itemForm={itemForm} setItemForm={setItemForm} />
               <Button
                 className="w-full"
                 onClick={() => {
@@ -921,6 +951,8 @@ export function SupplyOrderPage() {
                       pack_unit: itemForm.pack_unit || null,
                       is_count_item: itemForm.is_count_item,
                       density_oz_per_cup: itemForm.density_oz_per_cup ? parseFloat(itemForm.density_oz_per_cup) : null,
+                      supplier: itemForm.supplier || null,
+                      usfoods_pn: itemForm.usfoods_pn.trim() || null,
                     },
                   });
                 }}
@@ -1313,6 +1345,47 @@ type CatalogUnitFormState = {
   price: string;
   [k: string]: any;
 };
+
+function CatalogSupplierFields({
+  itemForm,
+  setItemForm,
+}: {
+  itemForm: { supplier: string; usfoods_pn: string; [k: string]: any };
+  setItemForm: React.Dispatch<React.SetStateAction<any>>;
+}) {
+  const isUSFoods = itemForm.supplier === 'US FOODS';
+  return (
+    <div className="space-y-3 rounded-md border border-gray-200 p-3 bg-gray-50">
+      <p className="text-xs uppercase text-gray-500">Supplier</p>
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Order this from
+        </label>
+        <select
+          value={itemForm.supplier}
+          onChange={(e) => setItemForm((f: any) => ({ ...f, supplier: e.target.value }))}
+          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#5CB832]"
+        >
+          {SUPPLIER_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>{s.label}</option>
+          ))}
+        </select>
+        <p className="mt-1 text-xs text-gray-500">
+          Tells the Mon/Fri 9 AM supply report which list this item belongs on when it's ordered through the portal.
+        </p>
+      </div>
+      {isUSFoods && (
+        <Input
+          label="US Foods product # (PN)"
+          value={itemForm.usfoods_pn}
+          onChange={(e) => setItemForm((f: any) => ({ ...f, usfoods_pn: e.target.value }))}
+          placeholder="e.g. 1234567"
+          helperText="7-digit number from your US Foods catalog. Required for the Monday US Foods cron to include portal-placed orders."
+        />
+      )}
+    </div>
+  );
+}
 
 function CatalogUnitFields({
   itemForm,

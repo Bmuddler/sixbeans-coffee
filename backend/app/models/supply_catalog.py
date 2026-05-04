@@ -37,6 +37,18 @@ class SupplyItem(Base):
     # $/floz. For count items: $/each. Kept in sync via a service helper
     # whenever price or pack_size changes; the UI also displays this.
     cost_per_base_unit = Column(Float, nullable=True)
+    # Which supplier this item is ordered from. Must be one of the keys
+    # in TAG_MAPPING from supply_report_service.py (WAREHOUSE, BAKERY,
+    # DAIRY, US FOODS, COSTCO, WINCO, WEBSTAURANT, KLATCH,
+    # OLD TOWN BAKING, BANK, OTHER) — same vocabulary the legacy
+    # Square-tagged report uses. Lets the Mon/Fri 9 AM supply report
+    # cron group portal orders into the same supplier buckets.
+    supplier = Column(String(40), nullable=True)
+    # US Foods catalog product number (7-digit PN). Required for the
+    # Monday US Foods generator to include a portal-placed order on the
+    # weekly CSV. Matched against USFoodsProduct.product_number; nullable
+    # for items that aren't ordered from US Foods.
+    usfoods_pn = Column(String(20), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

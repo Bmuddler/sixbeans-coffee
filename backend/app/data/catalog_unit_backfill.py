@@ -38,7 +38,62 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.supply_catalog import SupplyItem
+from app.models.usfoods import USFoodsProduct
 from app.services.units import compute_cost_per_base_unit
+
+
+# -- Supplier inference ----------------------------------------------------
+
+
+# Canonical supplier keys, matching TAG_MAPPING in supply_report_service.
+SUPPLIER_KEYS = [
+    "WAREHOUSE", "BAKERY", "DAIRY", "US FOODS", "COSTCO", "WINCO",
+    "WEBSTAURANT", "KLATCH", "OLD TOWN BAKING", "BANK", "OTHER",
+]
+
+
+def infer_supplier(name: str, category: str | None) -> str | None:
+    """Best-effort: match a SupplyItem to one of the canonical suppliers.
+
+    Returns None when the inference is too weak — owner reviews in the
+    Manage Catalog UI.
+    """
+    upper = (name or "").upper()
+    cat = (category or "").strip()
+
+    # Strongest signals: vendor name appearing in the item name.
+    if "OLD TOWN" in upper:
+        return "OLD TOWN BAKING"
+    if "KLATCH" in upper:
+        return "KLATCH"
+    if "WEBSTAURANT" in upper:
+        return "WEBSTAURANT"
+    if "WINCO" in upper:
+        return "WINCO"
+    if "COSTCO" in upper:
+        return "COSTCO"
+    if "BUNN" in upper:  # Bunn coffee filters historically come from US Foods
+        return "US FOODS"
+
+    if cat == "Coins And Cash":
+        return "BANK"
+    if cat == "Bakery Only":
+        return "BAKERY"
+    if cat == "Coffee And Teas":
+        return "WAREHOUSE"  # roaster + tea inventory live in the warehouse
+    if cat == "Cups And Lids" or cat == "Disposables":
+        return "WEBSTAURANT"
+    if cat == "Cleaning Supplies":
+        return "WAREHOUSE"
+    if cat == "Frappe Powders":
+        return "WAREHOUSE"
+    if cat == "Syrups And Sauces":
+        # Most syrups are house-made or warehouse-stocked
+        return "WAREHOUSE"
+
+    # Food And Milks is ambiguous — milk = DAIRY, eggs/bacon/produce =
+    # mostly US FOODS or COSTCO. Leave None and let the owner pick.
+    return None
 
 logger = logging.getLogger(__name__)
 
@@ -407,6 +462,42 @@ def parse_pack_info(name: str, description: str | None) -> PackInfo | None:
 # -- Backfill driver --------------------------------------------------------
 
 
+async def _build_usfoods_pn_lookup(db: AsyncSession) -> dict[str, str]:
+    """Map normalised USFoodsProduct names → product_number for fuzzy
+    matching against SupplyItem names."""
+    rows = (await db.execute(select(USFoodsProduct))).scalars().all()
+    lookup: dict[str, str] = {}
+    for p in rows:
+        if not p.product_number:
+            continue
+        norm = re.sub(r"[^A-Z0-9]+", "", (p.name or "").upper())
+        if norm:
+            lookup[norm] = p.product_number
+    return lookup
+
+
+def _try_match_usfoods_pn(name: str, lookup: dict[str, str]) -> str | None:
+    """Loose match: SupplyItem name (normalised) shares a long prefix
+    with a USFoodsProduct name. Returns the PN or None."""
+    if not lookup:
+        return None
+    norm = re.sub(r"[^A-Z0-9]+", "", (name or "").upper())
+    if not norm:
+        return None
+    if norm in lookup:
+        return lookup[norm]
+    # Substring containment in either direction; pick the longest match.
+    best: tuple[int, str] | None = None
+    for key, pn in lookup.items():
+        if len(key) < 8:
+            continue
+        if key in norm or norm in key:
+            score = min(len(key), len(norm))
+            if best is None or score > best[0]:
+                best = (score, pn)
+    return best[1] if best else None
+
+
 async def backfill_catalog_units(
     db: AsyncSession,
     *,
@@ -414,43 +505,70 @@ async def backfill_catalog_units(
 ) -> dict:
     """Walk every active SupplyItem and fill missing pack info.
 
+    Also infers supplier from name + category and, for items routed to
+    US FOODS, looks up the product number against USFoodsProduct.
+
     `overwrite=False` (default) only fills rows where pack_size is NULL,
     so the owner's manual edits are never clobbered. Pass True to
     re-run from scratch.
     """
     rows = (await db.execute(select(SupplyItem))).scalars().all()
+    pn_lookup = await _build_usfoods_pn_lookup(db)
+
     examined = 0
     filled = 0
     skipped_existing = 0
+    supplier_filled = 0
+    pn_filled = 0
     unrecognised: list[tuple[int, str, str]] = []
 
     for item in rows:
         examined += 1
-        if not overwrite and item.pack_size is not None:
+
+        # Pack info — gated by overwrite.
+        if overwrite or item.pack_size is None:
+            info = parse_pack_info(item.name, item.description)
+            if info is None or info.pack_size is None:
+                unrecognised.append((item.id, item.name, item.description or ""))
+            else:
+                item.pack_size = info.pack_size
+                item.pack_unit = info.pack_unit
+                item.is_count_item = info.is_count_item
+                item.cost_per_base_unit = compute_cost_per_base_unit(
+                    item.price, info.pack_size, info.pack_unit,
+                )
+                filled += 1
+        else:
             skipped_existing += 1
-            continue
-        info = parse_pack_info(item.name, item.description)
-        if info is None or info.pack_size is None:
-            unrecognised.append((item.id, item.name, item.description or ""))
-            continue
-        item.pack_size = info.pack_size
-        item.pack_unit = info.pack_unit
-        item.is_count_item = info.is_count_item
-        item.cost_per_base_unit = compute_cost_per_base_unit(
-            item.price, info.pack_size, info.pack_unit,
-        )
-        filled += 1
+
+        # Supplier — only fill when blank, never overwrite.
+        if not item.supplier:
+            inferred = infer_supplier(item.name, item.category)
+            if inferred:
+                item.supplier = inferred
+                supplier_filled += 1
+
+        # US Foods PN — only when supplier is US FOODS and PN is blank.
+        if item.supplier == "US FOODS" and not item.usfoods_pn:
+            pn = _try_match_usfoods_pn(item.name, pn_lookup)
+            if pn:
+                item.usfoods_pn = pn
+                pn_filled += 1
 
     await db.commit()
     logger.info(
-        "Catalog backfill: examined=%d filled=%d skipped=%d unrecognised=%d",
+        "Catalog backfill: examined=%d filled=%d skipped=%d unrecognised=%d "
+        "supplier_filled=%d pn_filled=%d",
         examined, filled, skipped_existing, len(unrecognised),
+        supplier_filled, pn_filled,
     )
     return {
         "examined": examined,
         "filled": filled,
         "skipped_existing": skipped_existing,
         "unrecognised_count": len(unrecognised),
+        "supplier_filled": supplier_filled,
+        "pn_filled": pn_filled,
         "unrecognised_sample": [
             {"id": i, "name": n, "description": d}
             for i, n, d in unrecognised[:25]

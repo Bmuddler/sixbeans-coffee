@@ -240,6 +240,10 @@ async def startup():
             "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS catalog_price_version "
             "INTEGER NOT NULL DEFAULT 0"
         ))
+        await conn.execute(text(
+            "ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS catalog_supplier_version "
+            "INTEGER NOT NULL DEFAULT 0"
+        ))
         # Recipe-costing fields on the supply catalog. All nullable so
         # existing rows aren't disturbed; the catalog UI prompts the
         # owner to fill these in over time.
@@ -261,6 +265,12 @@ async def startup():
         await conn.execute(text(
             "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP "
             "NOT NULL DEFAULT CURRENT_TIMESTAMP"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS supplier VARCHAR(40)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE supply_items ADD COLUMN IF NOT EXISTS usfoods_pn VARCHAR(20)"
         ))
 
         # H2: ensure unique constraints declared in the SQLAlchemy models
@@ -681,6 +691,38 @@ async def startup():
                 next_v, label, updated, total_old, total_new, total_new - total_old,
             )
             current_v = next_v
+
+        # One-shot Square-catalog supplier + US Foods PN backfill.
+        # Source: backend/app/data/square_catalog_supplier_map.py
+        # (generated from a Square catalog export). Maps Square token →
+        # (supplier, usfoods_pn). Only fills SupplyItem rows where the
+        # corresponding field is blank; never overwrites manual edits.
+        SUPPLIER_TARGET_VERSION = 1
+        sup_v = int(getattr(sysrow, "catalog_supplier_version", 0) or 0)
+        if sup_v < SUPPLIER_TARGET_VERSION:
+            from app.data.square_catalog_supplier_map import SQUARE_CATALOG_SUPPLIER_MAP
+            items = (await session.execute(
+                _select(SupplyItem).where(SupplyItem.square_token.is_not(None))
+            )).scalars().all()
+            sup_filled = 0
+            pn_filled = 0
+            for item in items:
+                entry = SQUARE_CATALOG_SUPPLIER_MAP.get(item.square_token or "")
+                if not entry:
+                    continue
+                sup, pn = entry
+                if sup and not item.supplier:
+                    item.supplier = sup
+                    sup_filled += 1
+                if pn and not item.usfoods_pn:
+                    item.usfoods_pn = pn
+                    pn_filled += 1
+            sysrow.catalog_supplier_version = SUPPLIER_TARGET_VERSION
+            await session.commit()
+            logger.warning(
+                "Square-catalog supplier backfill v%d: examined=%d supplier_filled=%d pn_filled=%d",
+                SUPPLIER_TARGET_VERSION, len(items), sup_filled, pn_filled,
+            )
 
         # USFoods: ensure the Victorville mapping picks up the typo'd shop
         # name "Six beans victorvillle" (three L's) we see on Square orders.

@@ -9,7 +9,11 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy.orm import selectinload
+
 from app.config import settings
+from app.models.location import Location
+from app.models.supply_catalog import SupplyItem, SupplyOrder, SupplyOrderItem
 from app.models.usfoods import (
     RunStatus,
     USFoodsProduct,
@@ -119,7 +123,27 @@ async def generate_weekly_run(db: AsyncSession) -> USFoodsWeeklyRun:
 
         # Map items to shops and aggregate
         aggregated = _aggregate_items(usfoods_items, catalog_names, shop_mappings, products_by_number)
-        logger.info("Aggregated into %d line items", len(aggregated))
+        logger.info("Aggregated into %d line items from Square", len(aggregated))
+
+        # Merge in portal-placed orders for the same window. Each portal
+        # SupplyOrderItem pointing to a SupplyItem with a US Foods PN
+        # gets folded into the same (shop_mapping, product) buckets.
+        portal_aggregated = await _aggregate_portal_orders(
+            db,
+            order_window_start.replace(tzinfo=None),
+            order_window_end.replace(tzinfo=None),
+            shop_mappings,
+            products_by_number,
+        )
+        for key, line_data in portal_aggregated.items():
+            if key in aggregated:
+                aggregated[key]["quantity"] += line_data["quantity"]
+            else:
+                aggregated[key] = line_data
+        logger.info(
+            "Aggregated %d portal lines, %d combined line items total",
+            len(portal_aggregated), len(aggregated),
+        )
 
         # Create run items
         items_created = 0
@@ -369,6 +393,77 @@ def _aggregate_items(
                 "unit": product.default_unit,
                 "square_item_name": display_name,
             }
+
+    return aggregated
+
+
+async def _aggregate_portal_orders(
+    db: AsyncSession,
+    start_naive: datetime,
+    end_naive: datetime,
+    shop_mappings: list,
+    products_by_number: dict,
+) -> dict[tuple[int, int], dict]:
+    """Walk SupplyOrder rows in the window and aggregate any items whose
+    SupplyItem carries a usfoods_pn into the same (shop_mapping, product)
+    buckets the Square-side aggregator produces.
+
+    Portal orders have a real Location FK so we map directly by
+    location_id when the shop mapping has one set; otherwise we fall
+    back to keyword matching on the location name (same as Square).
+    """
+    aggregated: dict[tuple[int, int], dict] = {}
+
+    rows = (await db.execute(
+        select(SupplyOrder)
+        .where(SupplyOrder.created_at >= start_naive)
+        .where(SupplyOrder.created_at < end_naive)
+        .options(
+            selectinload(SupplyOrder.items).selectinload(SupplyOrderItem.supply_item),
+            selectinload(SupplyOrder.location),
+        )
+    )).scalars().all()
+
+    for order in rows:
+        location_id = order.location_id
+        location_name = order.location.name if order.location else ""
+
+        # Direct location_id match first; fall back to keyword match.
+        mapping = next(
+            (m for m in shop_mappings if m.location_id == location_id),
+            None,
+        )
+        if mapping is None:
+            mapping = _match_shop(location_name, shop_mappings)
+        if mapping is None:
+            logger.warning(
+                "Portal order %d: no US Foods shop mapping for location '%s' (id=%s)",
+                order.id, location_name, location_id,
+            )
+            continue
+
+        for line in order.items:
+            si: SupplyItem | None = line.supply_item
+            if si is None or not si.usfoods_pn:
+                continue
+            product = products_by_number.get(si.usfoods_pn)
+            if product is None:
+                logger.warning(
+                    "Portal order %d: SupplyItem %s has PN %s with no matching active USFoodsProduct",
+                    order.id, si.name, si.usfoods_pn,
+                )
+                continue
+
+            qty = int(line.quantity or 1)
+            key = (mapping.id, product.id)
+            if key in aggregated:
+                aggregated[key]["quantity"] += qty
+            else:
+                aggregated[key] = {
+                    "quantity": qty,
+                    "unit": product.default_unit,
+                    "square_item_name": si.name,
+                }
 
     return aggregated
 

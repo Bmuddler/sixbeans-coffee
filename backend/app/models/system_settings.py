@@ -33,4 +33,6 @@ class SystemSettings(Base):
     # Bump the TARGET in main.py and boot multiplies every active
     # catalog price by the corresponding factor, exactly once.
     catalog_price_version = Column(Integer, default=0, nullable=False)
+    # Marker for the one-shot Square-catalog supplier/PN backfill.
+    catalog_supplier_version = Column(Integer, default=0, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

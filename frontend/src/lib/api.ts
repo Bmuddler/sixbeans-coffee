@@ -594,6 +594,8 @@ export const supplyOrders = {
     pack_unit?: string;
     is_count_item?: boolean;
     density_oz_per_cup?: number;
+    supplier?: string;
+    usfoods_pn?: string;
   }) =>
     api.post('/supply-orders/catalog', data).then((r) => r.data),
 
@@ -607,6 +609,8 @@ export const supplyOrders = {
     pack_unit?: string | null;
     is_count_item?: boolean;
     density_oz_per_cup?: number | null;
+    supplier?: string | null;
+    usfoods_pn?: string | null;
   }) =>
     api.patch(`/supply-orders/catalog/${id}`, data).then((r) => r.data),
 

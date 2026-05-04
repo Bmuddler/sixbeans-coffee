@@ -51,6 +51,8 @@ class CatalogItemIn(BaseModel):
     pack_unit: str | None = None
     is_count_item: bool = False
     density_oz_per_cup: float | None = None
+    supplier: str | None = None
+    usfoods_pn: str | None = None
 
 
 class CatalogItemUpdate(BaseModel):
@@ -64,6 +66,8 @@ class CatalogItemUpdate(BaseModel):
     pack_unit: str | None = None
     is_count_item: bool | None = None
     density_oz_per_cup: float | None = None
+    supplier: str | None = None
+    usfoods_pn: str | None = None
 
 
 # --- Endpoints ---
@@ -94,6 +98,8 @@ async def get_catalog(
             "density_oz_per_cup": item.density_oz_per_cup,
             "cost_per_base_unit": item.cost_per_base_unit,
             "base_unit": base_unit_for(item.pack_unit) if item.pack_unit else None,
+            "supplier": item.supplier,
+            "usfoods_pn": item.usfoods_pn,
         })
 
     categories = [
@@ -122,6 +128,8 @@ async def create_catalog_item(
         is_count_item=bool(body.is_count_item),
         density_oz_per_cup=body.density_oz_per_cup,
         cost_per_base_unit=compute_cost_per_base_unit(body.price, body.pack_size, pack_unit),
+        supplier=(body.supplier or None),
+        usfoods_pn=(body.usfoods_pn.strip() if body.usfoods_pn else None),
     )
     db.add(item)
     await db.flush()
@@ -213,6 +221,8 @@ async def copy_catalog_item(
         is_count_item=original.is_count_item,
         density_oz_per_cup=original.density_oz_per_cup,
         cost_per_base_unit=original.cost_per_base_unit,
+        supplier=original.supplier,
+        usfoods_pn=original.usfoods_pn,
     )
     db.add(copy)
     await db.flush()
@@ -234,6 +244,8 @@ def _serialize_item(item: SupplyItem) -> dict:
         "density_oz_per_cup": item.density_oz_per_cup,
         "cost_per_base_unit": item.cost_per_base_unit,
         "base_unit": base_unit_for(item.pack_unit) if item.pack_unit else None,
+        "supplier": item.supplier,
+        "usfoods_pn": item.usfoods_pn,
     }
 
 
