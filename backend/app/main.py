@@ -697,31 +697,19 @@ async def startup():
         # (generated from a Square catalog export). Maps Square token →
         # (supplier, usfoods_pn). Only fills SupplyItem rows where the
         # corresponding field is blank; never overwrites manual edits.
-        SUPPLIER_TARGET_VERSION = 1
+        # Bump SUPPLIER_TARGET_VERSION whenever the Square map is
+        # regenerated to force a re-run; the marker on system_settings
+        # ensures it never repeats within a single version.
+        SUPPLIER_TARGET_VERSION = 2  # bumped 2026-05-03: prior pass didn't apply
         sup_v = int(getattr(sysrow, "catalog_supplier_version", 0) or 0)
         if sup_v < SUPPLIER_TARGET_VERSION:
-            from app.data.square_catalog_supplier_map import SQUARE_CATALOG_SUPPLIER_MAP
-            items = (await session.execute(
-                _select(SupplyItem).where(SupplyItem.square_token.is_not(None))
-            )).scalars().all()
-            sup_filled = 0
-            pn_filled = 0
-            for item in items:
-                entry = SQUARE_CATALOG_SUPPLIER_MAP.get(item.square_token or "")
-                if not entry:
-                    continue
-                sup, pn = entry
-                if sup and not item.supplier:
-                    item.supplier = sup
-                    sup_filled += 1
-                if pn and not item.usfoods_pn:
-                    item.usfoods_pn = pn
-                    pn_filled += 1
+            from app.data.catalog_unit_backfill import backfill_from_square_map
+            sup_filled, pn_filled = await backfill_from_square_map(session, overwrite=False)
             sysrow.catalog_supplier_version = SUPPLIER_TARGET_VERSION
             await session.commit()
             logger.warning(
-                "Square-catalog supplier backfill v%d: examined=%d supplier_filled=%d pn_filled=%d",
-                SUPPLIER_TARGET_VERSION, len(items), sup_filled, pn_filled,
+                "Square-catalog supplier backfill v%d: supplier_filled=%d pn_filled=%d",
+                SUPPLIER_TARGET_VERSION, sup_filled, pn_filled,
             )
 
         # USFoods: ensure the Victorville mapping picks up the typo'd shop

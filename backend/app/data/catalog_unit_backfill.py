@@ -498,6 +498,40 @@ def _try_match_usfoods_pn(name: str, lookup: dict[str, str]) -> str | None:
     return best[1] if best else None
 
 
+async def backfill_from_square_map(
+    db: AsyncSession,
+    *,
+    overwrite: bool = False,
+) -> tuple[int, int]:
+    """Apply the Square-catalog supplier/PN map to every SupplyItem
+    linked by square_token. Returns (supplier_filled, pn_filled).
+
+    overwrite=False (default): only fills blanks.
+    overwrite=True: replaces whatever is there with the Square value.
+    """
+    from app.data.square_catalog_supplier_map import SQUARE_CATALOG_SUPPLIER_MAP
+
+    items = (await db.execute(
+        select(SupplyItem).where(SupplyItem.square_token.is_not(None))
+    )).scalars().all()
+    sup_filled = 0
+    pn_filled = 0
+    for item in items:
+        entry = SQUARE_CATALOG_SUPPLIER_MAP.get(item.square_token or "")
+        if not entry:
+            continue
+        sup, pn = entry
+        if sup and (overwrite or not item.supplier):
+            if item.supplier != sup:
+                item.supplier = sup
+                sup_filled += 1
+        if pn and (overwrite or not item.usfoods_pn):
+            if item.usfoods_pn != pn:
+                item.usfoods_pn = pn
+                pn_filled += 1
+    return sup_filled, pn_filled
+
+
 async def backfill_catalog_units(
     db: AsyncSession,
     *,
@@ -512,14 +546,20 @@ async def backfill_catalog_units(
     so the owner's manual edits are never clobbered. Pass True to
     re-run from scratch.
     """
+    # FIRST: apply the Square-catalog supplier+PN map for everything that
+    # has a square_token. This is the most accurate source — the supplier
+    # tag is authoritative on the Square side. Per-item overwrite flag
+    # mirrors the heuristic-block behaviour below.
+    sup_from_square, pn_from_square = await backfill_from_square_map(db, overwrite=overwrite)
+
     rows = (await db.execute(select(SupplyItem))).scalars().all()
     pn_lookup = await _build_usfoods_pn_lookup(db)
 
     examined = 0
     filled = 0
     skipped_existing = 0
-    supplier_filled = 0
-    pn_filled = 0
+    supplier_filled = sup_from_square
+    pn_filled = pn_from_square
     unrecognised: list[tuple[int, str, str]] = []
 
     for item in rows:
