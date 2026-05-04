@@ -463,14 +463,15 @@ def parse_pack_info(name: str, description: str | None) -> PackInfo | None:
 
 
 async def _build_usfoods_pn_lookup(db: AsyncSession) -> dict[str, str]:
-    """Map normalised USFoodsProduct names → product_number for fuzzy
-    matching against SupplyItem names."""
+    """Map normalised USFoodsProduct descriptions → product_number for
+    fuzzy matching against SupplyItem names."""
     rows = (await db.execute(select(USFoodsProduct))).scalars().all()
     lookup: dict[str, str] = {}
     for p in rows:
         if not p.product_number:
             continue
-        norm = re.sub(r"[^A-Z0-9]+", "", (p.name or "").upper())
+        # USFoodsProduct uses .description as the product name field.
+        norm = re.sub(r"[^A-Z0-9]+", "", (p.description or "").upper())
         if norm:
             lookup[norm] = p.product_number
     return lookup
