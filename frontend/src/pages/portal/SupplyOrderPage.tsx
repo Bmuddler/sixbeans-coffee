@@ -79,6 +79,9 @@ interface CartItem {
 interface OrderRecord {
   id: number;
   location_id: number;
+  location_name?: string | null;
+  ordered_by?: number | null;
+  orderer_name?: string | null;
   status: string;
   notes?: string;
   created_at: string;
@@ -1243,6 +1246,11 @@ function OrderHistoryView({
                   {order.items?.length ?? 0} items
                   {` \u00b7 ${formatPrice(orderTotal(order))}`}
                 </p>
+                {order.orderer_name && (
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    placed by {order.orderer_name}
+                  </p>
+                )}
               </div>
               <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
             </button>
@@ -1259,13 +1267,19 @@ function OrderHistoryView({
       >
         {selectedOrder && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm text-gray-600">
+            <div className="flex items-center flex-wrap gap-2 text-sm text-gray-600">
               <Badge variant={statusBadgeVariant(selectedOrder.status)}>
                 {selectedOrder.status}
               </Badge>
               <span>{locationName(selectedOrder.location_id)}</span>
               <span>&middot;</span>
               <span>{new Date(selectedOrder.created_at).toLocaleString()}</span>
+              {selectedOrder.orderer_name && (
+                <>
+                  <span>&middot;</span>
+                  <span>placed by <strong>{selectedOrder.orderer_name}</strong></span>
+                </>
+              )}
             </div>
 
             {selectedOrder.notes && (
