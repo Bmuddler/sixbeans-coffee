@@ -262,9 +262,15 @@ export function SupplyOrderPage() {
     mutationFn: (overwrite: boolean) => supplyOrders.autoFillCatalogUnits(overwrite),
     onSuccess: (resp) => {
       queryClient.invalidateQueries({ queryKey: ['supply-catalog'] });
-      toast.success(
-        `Auto-filled ${resp.filled} item(s)${resp.unrecognised_count ? ` · ${resp.unrecognised_count} still need manual review` : ''}.`,
-      );
+      const parts: string[] = [];
+      if (resp.filled) parts.push(`${resp.filled} pack info`);
+      if (resp.supplier_filled) parts.push(`${resp.supplier_filled} suppliers`);
+      if (resp.pn_filled) parts.push(`${resp.pn_filled} US Foods PNs`);
+      const summary = parts.length ? parts.join(' · ') : 'nothing changed';
+      const tail = resp.unrecognised_count
+        ? ` · ${resp.unrecognised_count} still need manual review`
+        : '';
+      toast.success(`Auto-fill: ${summary}${tail}`);
     },
     onError: () => toast.error('Auto-fill failed'),
   });
